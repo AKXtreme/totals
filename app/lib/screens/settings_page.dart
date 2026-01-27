@@ -157,7 +157,8 @@ class _SettingsPageState extends State<SettingsPage>
 
       if (applyToExisting == true && mounted) {
         // Apply to existing transactions
-        final provider = Provider.of<TransactionProvider>(context, listen: false);
+        final provider =
+            Provider.of<TransactionProvider>(context, listen: false);
         final count = await provider.applyAutoCategorizationToExisting();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -633,7 +634,6 @@ class _SettingsPageState extends State<SettingsPage>
     }
   }
 
-
   String _getProfileInitials(String profileName) {
     if (profileName.isEmpty) return 'U';
     final parts = profileName.trim().split(' ');
@@ -837,8 +837,8 @@ class _SettingsPageState extends State<SettingsPage>
                                   _isRefreshingWidget ? null : _refreshWidget,
                             ),
                             */
-                            ],
-                          ),
+                          ],
+                        ),
                         const SizedBox(height: 24),
 
                         // Section: Support

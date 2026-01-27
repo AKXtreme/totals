@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:home_widget/home_widget.dart';
 import 'package:totals/services/widget_data_provider.dart';
+import 'package:totals/services/widget_refresh_state_service.dart';
 
 class WidgetService {
   static const String appGroupId = 'group.com.example.totals.widget';
@@ -63,9 +64,8 @@ class WidgetService {
         prefix: 'income_category',
         categories: incomeCategories,
       );
-      await HomeWidget.updateWidget(
-        qualifiedAndroidName: androidWidgetQualifiedName,
-      );
+      await HomeWidget.updateWidget(androidName: androidWidgetName);
+      await WidgetRefreshStateService.instance.setLastRefreshAt(DateTime.now());
 
       print(
         'Widget updated: $formattedAmount / $formattedIncome at $lastUpdated',
@@ -111,5 +111,6 @@ class WidgetService {
     await HomeWidget.updateWidget(
       qualifiedAndroidName: androidWidgetQualifiedName,
     );
+    await WidgetRefreshStateService.instance.setLastRefreshAt(DateTime.now());
   }
 }

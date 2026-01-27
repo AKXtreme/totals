@@ -8,6 +8,8 @@ import 'package:totals/repositories/transaction_repository.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/widget_service.dart';
+import 'package:totals/services/widget_refresh_settings_service.dart';
+import 'package:totals/services/widget_refresh_state_service.dart';
 
 const String dailySpendingSummaryTask = 'dailySpendingSummary';
 const String dailySpendingSummaryUniqueName = 'dailySpendingSummaryUnique';
@@ -23,6 +25,17 @@ void callbackDispatcher() {
 
       if (task == widgetMidnightRefreshTask) {
         await WidgetService.initialize();
+        final now = DateTime.now();
+        final scheduledTime =
+            await WidgetRefreshSettingsService.instance.getWidgetRefreshTime();
+        final lastRefresh =
+            await WidgetRefreshStateService.instance.getLastRefreshAt();
+        if (!_isAfterOrEqualTimeOfDay(now, scheduledTime)) {
+          return true;
+        }
+        if (lastRefresh != null && _isSameDay(lastRefresh, now)) {
+          return true;
+        }
         await WidgetService.refreshWidget();
         return true;
       }
@@ -68,16 +81,6 @@ void callbackDispatcher() {
       return true;
     }
   });
-}
-
-Duration initialDelayUntil(TimeOfDay time) {
-  final now = DateTime.now();
-  var scheduled =
-      DateTime(now.year, now.month, now.day, time.hour, time.minute);
-  if (!scheduled.isAfter(now)) {
-    scheduled = scheduled.add(const Duration(days: 1));
-  }
-  return scheduled.difference(now);
 }
 
 bool _isSameDay(DateTime a, DateTime b) {

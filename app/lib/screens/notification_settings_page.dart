@@ -7,6 +7,9 @@ import 'package:totals/repositories/transaction_repository.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/notification_scheduler.dart';
 import 'package:totals/services/notification_settings_service.dart';
+import 'package:totals/services/widget_refresh_scheduler.dart';
+import 'package:totals/services/widget_refresh_settings_service.dart';
+import 'package:totals/services/widget_refresh_state_service.dart';
 import 'package:totals/utils/category_icons.dart';
 
 class NotificationSettingsPage extends StatefulWidget {
@@ -23,6 +26,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   bool _budgetEnabled = true;
   bool _dailyEnabled = true;
   TimeOfDay _dailyTime = const TimeOfDay(hour: 20, minute: 0);
+  TimeOfDay _widgetRefreshTime = const TimeOfDay(hour: 0, minute: 0);
   DateTime? _lastDailySummarySentAt;
   List<Category> _allCategories = [];
   List<int> _quickIncomeIds = [];
@@ -40,6 +44,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     final budget = await settings.isBudgetAlertsEnabled();
     final daily = await settings.isDailySummaryEnabled();
     final time = await settings.getDailySummaryTime();
+    final widgetTime =
+        await WidgetRefreshSettingsService.instance.getWidgetRefreshTime();
     final lastSent = await settings.getDailySummaryLastSentAt();
     final categories = await CategoryRepository().getCategories();
     final incomeIds = await settings.getQuickCategorizeIncomeIds();
@@ -50,6 +56,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       _budgetEnabled = budget;
       _dailyEnabled = daily;
       _dailyTime = time;
+      _widgetRefreshTime = widgetTime;
       _lastDailySummarySentAt = lastSent;
       _allCategories = categories;
       _quickIncomeIds = incomeIds;
@@ -85,6 +92,19 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     setState(() => _dailyTime = picked);
     await NotificationSettingsService.instance.setDailySummaryTime(picked);
     await NotificationScheduler.syncDailySummarySchedule();
+    await _load();
+  }
+
+  Future<void> _pickWidgetRefreshTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _widgetRefreshTime,
+    );
+    if (picked == null) return;
+    setState(() => _widgetRefreshTime = picked);
+    await WidgetRefreshSettingsService.instance.setWidgetRefreshTime(picked);
+    await WidgetRefreshStateService.instance.clearLastRefreshAt();
+    await WidgetRefreshScheduler.syncWidgetRefreshSchedule();
     await _load();
   }
 
@@ -446,6 +466,16 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     subtitle: Text(_dailyTime.format(context)),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: _dailyEnabled ? _pickDailyTime : null,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.widgets_rounded),
+                    title: const Text('Widget refresh time'),
+                    subtitle: Text(_widgetRefreshTime.format(context)),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _pickWidgetRefreshTime,
                   ),
                 ),
                 // const SizedBox(height: 8),
