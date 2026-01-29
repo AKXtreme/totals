@@ -14,6 +14,10 @@ import 'package:totals/background/daily_spending_worker.dart';
 import 'package:totals/services/notification_scheduler.dart';
 import 'package:totals/services/widget_service.dart';
 import 'package:totals/services/widget_refresh_scheduler.dart';
+import 'package:totals/_redesign/screens/home_page.dart';
+import 'package:totals/_redesign/theme/theme.dart';
+
+const bool useRedesign = true;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -74,34 +78,38 @@ class MyApp extends StatelessWidget {
         builder: (context, themeProvider, child) {
           return MaterialApp(
             title: 'Totals',
-            theme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.blue,
-                brightness: Brightness.light,
-              ),
-              useMaterial3: true,
-            ),
-            darkTheme: ThemeData(
-              colorScheme: const ColorScheme.dark(
-                primary: Color(0xFF294EC3),
-                secondary: Color(0xFF3B5FE8),
-                surface: Color(0xFF0A0E1A),
-                background: Color(0xFF0A0E1A),
-                surfaceVariant: Color(0xFF1A1F2E),
-                onPrimary: Colors.white,
-                onSecondary: Colors.white,
-                onSurface: Colors.white,
-                onBackground: Colors.white,
-                onSurfaceVariant: Colors.white70,
-                brightness: Brightness.dark,
-              ),
-              scaffoldBackgroundColor: const Color(0xFF0A0E1A),
-              cardColor: const Color(0xFF1A1F2E),
-              dividerColor: const Color(0xFF2A2F3E),
-              useMaterial3: true,
-            ),
+            theme: useRedesign
+                ? RedesignTheme.light()
+                : ThemeData(
+                    colorScheme: ColorScheme.fromSeed(
+                      seedColor: Colors.blue,
+                      brightness: Brightness.light,
+                    ),
+                    useMaterial3: true,
+                  ),
+            darkTheme: useRedesign
+                ? RedesignTheme.dark()
+                : ThemeData(
+                    colorScheme: const ColorScheme.dark(
+                      primary: Color(0xFF294EC3),
+                      secondary: Color(0xFF3B5FE8),
+                      surface: Color(0xFF0A0E1A),
+                      background: Color(0xFF0A0E1A),
+                      surfaceVariant: Color(0xFF1A1F2E),
+                      onPrimary: Colors.white,
+                      onSecondary: Colors.white,
+                      onSurface: Colors.white,
+                      onBackground: Colors.white,
+                      onSurfaceVariant: Colors.white70,
+                      brightness: Brightness.dark,
+                    ),
+                    scaffoldBackgroundColor: const Color(0xFF0A0E1A),
+                    cardColor: const Color(0xFF1A1F2E),
+                    dividerColor: const Color(0xFF2A2F3E),
+                    useMaterial3: true,
+                  ),
             themeMode: themeProvider.themeMode,
-            home: const HomePage(),
+            home: useRedesign ? const RedesignHomePage() : const HomePage(),
           );
         },
       ),
