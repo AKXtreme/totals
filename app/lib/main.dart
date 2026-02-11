@@ -14,10 +14,10 @@ import 'package:totals/background/daily_spending_worker.dart';
 import 'package:totals/services/notification_scheduler.dart';
 import 'package:totals/services/widget_service.dart';
 import 'package:totals/services/widget_refresh_scheduler.dart';
-import 'package:totals/_redesign/screens/home_page.dart';
+import 'package:totals/_redesign/screens/redesign_shell.dart';
 import 'package:totals/_redesign/theme/theme.dart';
 
-const bool useRedesign = true;
+const bool useRedesign = false;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -109,7 +109,7 @@ class MyApp extends StatelessWidget {
                     useMaterial3: true,
                   ),
             themeMode: themeProvider.themeMode,
-            home: useRedesign ? const RedesignHomePage() : const HomePage(),
+            home: useRedesign ? const RedesignShell() : const HomePage(),
           );
         },
       ),

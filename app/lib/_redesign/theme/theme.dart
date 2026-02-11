@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 
 class RedesignTheme {
@@ -21,7 +22,7 @@ class RedesignTheme {
       outline: AppColors.border,
     );
 
-    return ThemeData(
+    final base = ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppColors.slate50,
@@ -32,11 +33,11 @@ class RedesignTheme {
         backgroundColor: AppColors.slate50,
         foregroundColor: AppColors.slate900,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: AppColors.white,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(8),
           side: BorderSide(
             color: AppColors.border,
           ),
@@ -55,10 +56,12 @@ class RedesignTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.primaryLight, width: 1.5),
+          borderSide:
+              const BorderSide(color: AppColors.primaryLight, width: 1.5),
         ),
       ),
     );
+    return _applyClashGrotesk(base);
   }
 
   static ThemeData dark() {
@@ -78,7 +81,7 @@ class RedesignTheme {
       outline: AppColors.slate700,
     );
 
-    return ThemeData(
+    final base = ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppColors.slate900,
@@ -89,11 +92,11 @@ class RedesignTheme {
         backgroundColor: AppColors.slate900,
         foregroundColor: AppColors.white,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: AppColors.slate800,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(8),
           side: const BorderSide(color: AppColors.slate700),
         ),
       ),
@@ -110,9 +113,19 @@ class RedesignTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.primaryLight, width: 1.5),
+          borderSide:
+              const BorderSide(color: AppColors.primaryLight, width: 1.5),
         ),
       ),
+    );
+    return _applyClashGrotesk(base);
+  }
+
+  static ThemeData _applyClashGrotesk(ThemeData base) {
+    return base.copyWith(
+      textTheme: GoogleFonts.spaceGroteskTextTheme(base.textTheme),
+      primaryTextTheme:
+          GoogleFonts.spaceGroteskTextTheme(base.primaryTextTheme),
     );
   }
 }
