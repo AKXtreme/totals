@@ -16,8 +16,7 @@ import 'package:totals/services/widget_service.dart';
 import 'package:totals/services/widget_refresh_scheduler.dart';
 import 'package:totals/_redesign/screens/redesign_shell.dart';
 import 'package:totals/_redesign/theme/theme.dart';
-
-const bool useRedesign = false;
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +30,10 @@ void main() async {
 
   // Initialize home widget
   await WidgetService.initialize();
+
+  // Read redesign flag from SharedPreferences (persists across restarts)
+  final prefs = await SharedPreferences.getInstance();
+  final useRedesign = prefs.getBool('use_redesign') ?? true;
 
   if (!kIsWeb) {
     try {
@@ -49,11 +52,13 @@ void main() async {
     }
   }
 
-  runApp(MyApp());
+  runApp(MyApp(useRedesign: useRedesign));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool useRedesign;
+
+  const MyApp({super.key, required this.useRedesign});
 
   @override
   Widget build(BuildContext context) {

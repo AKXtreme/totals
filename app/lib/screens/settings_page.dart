@@ -17,6 +17,7 @@ import 'package:totals/screens/profile_management_page.dart';
 import 'package:totals/repositories/profile_repository.dart';
 import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/widget_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> _openSupportLink() async {
   final uri = Uri.parse('https://jami.bio/detached');
@@ -100,6 +101,8 @@ class _SettingsPageState extends State<SettingsPage>
   bool _isRefreshingWidget = false;
   bool _autoCategorizeEnabled = false;
   bool _isLoadingAutoCategorize = true;
+  bool _useRedesign = true;
+  bool _isLoadingRedesign = true;
 
   late AnimationController _shimmerController;
 
@@ -111,6 +114,29 @@ class _SettingsPageState extends State<SettingsPage>
       duration: const Duration(milliseconds: 2000),
     )..repeat();
     _loadAutoCategorizeSetting();
+    _loadRedesignSetting();
+  }
+
+  Future<void> _loadRedesignSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _useRedesign = prefs.getBool('use_redesign') ?? true;
+        _isLoadingRedesign = false;
+      });
+    }
+  }
+
+  Future<void> _toggleRedesign(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('use_redesign', value);
+    setState(() => _useRedesign = value);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Restart the app to apply the new design.'),
+      ),
+    );
   }
 
   Future<void> _loadAutoCategorizeSetting() async {
@@ -733,6 +759,18 @@ class _SettingsPageState extends State<SettingsPage>
                                 );
                               },
                             ),
+                            _buildDivider(context),
+                            _isLoadingRedesign
+                                ? const SizedBox.shrink()
+                                : _buildSettingTile(
+                                    icon: Icons.palette_rounded,
+                                    title: 'Use Redesign',
+                                    trailing: Switch(
+                                      value: _useRedesign,
+                                      onChanged: _toggleRedesign,
+                                    ),
+                                    onTap: null,
+                                  ),
                             _buildDivider(context),
                             _buildSettingTile(
                               icon: Icons.toc_rounded,

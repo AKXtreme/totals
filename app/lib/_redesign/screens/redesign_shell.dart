@@ -40,7 +40,7 @@ class _RedesignShellState extends State<RedesignShell> {
           RedesignPlaceholderPage(title: 'Money'),
           RedesignPlaceholderPage(title: 'Budget'),
           RedesignPlaceholderPage(title: 'Tools'),
-          RedesignPlaceholderPage(title: 'You'),
+          RedesignPlaceholderPage(title: 'You', showRedesignToggle: true),
         ],
       ),
       bottomNavigationBar: RedesignBottomNav(

@@ -171,8 +171,8 @@ class TransactionProvider with ChangeNotifier {
 
     // Calculate Bank Summaries
     _bankSummaries = groupedAccounts.entries.map((entry) {
-      int bankId = entry.key;
-      List<Account> accounts = entry.value;
+      final bankId = entry.key;
+      final accounts = entry.value;
 
       // Filter transactions for this bank (using valid transactions only)
       var bankTransactions =
@@ -291,8 +291,7 @@ class TransactionProvider with ChangeNotifier {
       }
 
       final isCashAccount = account.bank == CashConstants.bankId;
-      final accountBalance =
-          isCashAccount ? cashBalance : account.balance;
+      final accountBalance = isCashAccount ? cashBalance : account.balance;
 
       return AccountSummary(
         bankId: account.bank,
@@ -390,7 +389,8 @@ class TransactionProvider with ChangeNotifier {
   ) {
     final labels = <String, String>{};
     final byReference = {
-      for (final transaction in transactions) transaction.reference: transaction,
+      for (final transaction in transactions)
+        transaction.reference: transaction,
     };
 
     for (final transaction in transactions) {
