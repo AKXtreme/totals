@@ -561,6 +561,14 @@ class _TotalBalanceCard extends StatelessWidget {
     final abbreviated =
         formatNumberAbbreviated(totalBalance).replaceAll('k', 'K');
     final displayBalance = showBalance ? abbreviated : '***';
+    final todayIncomeLabel =
+        showBalance ? '+ ${_formatDelta(todayIncome)}' : '***';
+    final todayExpenseLabel =
+        showBalance ? '- ${_formatDelta(todayExpense)}' : '***';
+    final weekIncomeLabel =
+        showBalance ? '+ ${_formatDelta(weekIncome)}' : '***';
+    final weekExpenseLabel =
+        showBalance ? '- ${_formatDelta(weekExpense)}' : '***';
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -646,9 +654,9 @@ class _TotalBalanceCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _BalanceDelta(
-                    label: 'TODAY',
-                    income: '+ ETB ${_formatDelta(todayIncome)}',
-                    expense: '- ETB ${_formatDelta(todayExpense)}',
+                    label: 'Today (ETB)',
+                    income: todayIncomeLabel,
+                    expense: todayExpenseLabel,
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -660,9 +668,9 @@ class _TotalBalanceCard extends StatelessWidget {
                 const SizedBox(width: 16),
                 Expanded(
                   child: _BalanceDelta(
-                    label: 'THIS WEEK',
-                    income: '+ ETB ${_formatDelta(weekIncome)}',
-                    expense: '- ETB ${_formatDelta(weekExpense)}',
+                    label: 'This week (ETB)',
+                    income: weekIncomeLabel,
+                    expense: weekExpenseLabel,
                   ),
                 ),
               ],
@@ -729,23 +737,38 @@ class _BalanceDelta extends StatelessWidget {
             letterSpacing: 0.6,
           ),
         ),
-        const SizedBox(height: 6),
-        Text(
-          income,
-          style: const TextStyle(
-            color: AppColors.incomeSuccess,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          expense,
-          style: const TextStyle(
-            color: AppColors.red,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              income,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.incomeSuccess,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              width: 1,
+              height: 14,
+              color: AppColors.white.withValues(alpha: 0.35),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              expense,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.red,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       ],
     );
