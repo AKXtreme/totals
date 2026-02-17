@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' hide Category;
 import 'package:totals/models/account.dart';
 import 'package:totals/models/category.dart';
@@ -13,6 +15,50 @@ import 'package:totals/services/receiver_category_service.dart';
 import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/telebirr_bank_transfer_service.dart';
 import 'package:totals/services/widget_service.dart';
+import 'package:totals/utils/text_utils.dart';
+
+class TransactionTotals {
+  final double income;
+  final double expense;
+
+  const TransactionTotals({
+    required this.income,
+    required this.expense,
+  });
+
+  const TransactionTotals.zero()
+      : income = 0.0,
+        expense = 0.0;
+}
+
+class TransactionTrendSeries {
+  final List<double> incomePoints;
+  final List<double> expensePoints;
+  final double maxValue;
+  final double totalIncome;
+  final double totalExpense;
+  final int days;
+
+  const TransactionTrendSeries({
+    required this.incomePoints,
+    required this.expensePoints,
+    required this.maxValue,
+    required this.totalIncome,
+    required this.totalExpense,
+    required this.days,
+  });
+
+  factory TransactionTrendSeries.empty(int days) {
+    return TransactionTrendSeries(
+      incomePoints: List<double>.filled(days, 0),
+      expensePoints: List<double>.filled(days, 0),
+      maxValue: 0,
+      totalIncome: 0,
+      totalExpense: 0,
+      days: days,
+    );
+  }
+}
 
 class TransactionProvider with ChangeNotifier {
   final TransactionRepository _transactionRepo = TransactionRepository();
@@ -38,8 +84,21 @@ class TransactionProvider with ChangeNotifier {
   String _searchKey = "";
   DateTime _selectedDate = DateTime.now();
 
-  // Getters
   List<Transaction> _allTransactions = [];
+
+  // Redesign home cached metrics
+  List<Transaction> _todayTransactions = [];
+  List<Transaction> _monthTransactions = [];
+  TransactionTotals _todayTotals = const TransactionTotals.zero();
+  TransactionTotals _weekTotals = const TransactionTotals.zero();
+  TransactionTotals _monthTotals = const TransactionTotals.zero();
+  TransactionTotals _thirtyDayTotals = const TransactionTotals.zero();
+  int _selfTransferCount = 0;
+  String _monthlyInsight =
+      'No monthly activity yet. Keep using Totals to unlock insights.';
+  TransactionTrendSeries _weekTrendSeries = TransactionTrendSeries.empty(7);
+  TransactionTrendSeries _monthTrendSeries = TransactionTrendSeries.empty(30);
+  int _dataVersion = 0;
 
   // Getters
   List<Transaction> get transactions => _transactions;
@@ -50,6 +109,17 @@ class TransactionProvider with ChangeNotifier {
   List<BankSummary> get bankSummaries => _bankSummaries;
   List<AccountSummary> get accountSummaries => _accountSummaries;
   DateTime get selectedDate => _selectedDate;
+  List<Transaction> get todayTransactions => _todayTransactions;
+  List<Transaction> get monthTransactions => _monthTransactions;
+  TransactionTotals get todayTotals => _todayTotals;
+  TransactionTotals get weekTotals => _weekTotals;
+  TransactionTotals get monthTotals => _monthTotals;
+  TransactionTotals get thirtyDayTotals => _thirtyDayTotals;
+  int get selfTransferCount => _selfTransferCount;
+  String get monthlyInsight => _monthlyInsight;
+  TransactionTrendSeries get weekTrendSeries => _weekTrendSeries;
+  TransactionTrendSeries get monthTrendSeries => _monthTrendSeries;
+  int get dataVersion => _dataVersion;
 
   Category? getCategoryById(int? id) {
     if (id == null) return null;
@@ -95,6 +165,8 @@ class TransactionProvider with ChangeNotifier {
 
       await _calculateSummaries(_allTransactions);
       _filterTransactions(_allTransactions);
+      _recomputeRedesignHomeMetrics(_allTransactions);
+      _dataVersion += 1;
     } catch (e) {
       print("debug: Error loading data: $e");
     } finally {
@@ -407,6 +479,275 @@ class TransactionProvider with ChangeNotifier {
     }
 
     return labels;
+  }
+
+  void _recomputeRedesignHomeMetrics(List<Transaction> transactions) {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final tomorrowStart = todayStart.add(const Duration(days: 1));
+    final weekStart = todayStart.subtract(Duration(days: now.weekday - 1));
+    final monthStart = DateTime(now.year, now.month, 1);
+    final nextMonthStart = DateTime(now.year, now.month + 1, 1);
+    final last30Start = todayStart.subtract(const Duration(days: 29));
+
+    final todayEntries = <MapEntry<Transaction, DateTime>>[];
+    final monthTransactions = <Transaction>[];
+
+    var todayIncome = 0.0;
+    var todayExpense = 0.0;
+    var weekIncome = 0.0;
+    var weekExpense = 0.0;
+    var monthIncome = 0.0;
+    var monthExpense = 0.0;
+    var thirtyDayIncome = 0.0;
+    var thirtyDayExpense = 0.0;
+    var selfTransferCount = 0;
+
+    final weekIncomeBuckets = List<double>.filled(7, 0);
+    final weekExpenseBuckets = List<double>.filled(7, 0);
+    final monthIncomeBuckets = List<double>.filled(30, 0);
+    final monthExpenseBuckets = List<double>.filled(30, 0);
+
+    final monthNetByOffset = List<double>.filled(4, 0);
+    final monthHasTransactions = List<bool>.filled(4, false);
+
+    for (final transaction in transactions) {
+      final dt = _parseTransactionTimeLocal(transaction.time);
+      if (dt == null) continue;
+
+      final dateOnly = DateTime(dt.year, dt.month, dt.day);
+      final isToday =
+          !dateOnly.isBefore(todayStart) && dateOnly.isBefore(tomorrowStart);
+      final isWeek =
+          !dateOnly.isBefore(weekStart) && !dateOnly.isAfter(todayStart);
+      final isMonth =
+          !dateOnly.isBefore(monthStart) && dateOnly.isBefore(nextMonthStart);
+      final isLast30 =
+          !dateOnly.isBefore(last30Start) && !dateOnly.isAfter(todayStart);
+      final isSelfTransfer =
+          _selfTransferLabelByReference.containsKey(transaction.reference);
+
+      if (isToday) {
+        todayEntries.add(MapEntry(transaction, dt));
+      }
+      if (isMonth) {
+        monthTransactions.add(transaction);
+      }
+      if (isSelfTransfer) {
+        selfTransferCount += 1;
+      }
+
+      final monthOffset =
+          (now.year - dateOnly.year) * 12 + (now.month - dateOnly.month);
+      if (monthOffset >= 0 && monthOffset <= 3) {
+        monthHasTransactions[monthOffset] = true;
+      }
+
+      if (isSelfTransfer) continue;
+
+      final isCredit = transaction.type == 'CREDIT';
+      final isDebit = transaction.type == 'DEBIT';
+      if (!isCredit && !isDebit) continue;
+
+      final amount = transaction.amount;
+
+      if (isToday) {
+        if (isCredit) {
+          todayIncome += amount;
+        } else {
+          todayExpense += amount;
+        }
+      }
+
+      if (isWeek) {
+        if (isCredit) {
+          weekIncome += amount;
+        } else {
+          weekExpense += amount;
+        }
+
+        final weekIndex = dateOnly.difference(weekStart).inDays;
+        if (weekIndex >= 0 && weekIndex < 7) {
+          if (isCredit) {
+            weekIncomeBuckets[weekIndex] += amount;
+          } else {
+            weekExpenseBuckets[weekIndex] += amount;
+          }
+        }
+      }
+
+      if (isMonth) {
+        if (isCredit) {
+          monthIncome += amount;
+        } else {
+          monthExpense += amount;
+        }
+      }
+
+      if (isLast30) {
+        if (isCredit) {
+          thirtyDayIncome += amount;
+        } else {
+          thirtyDayExpense += amount;
+        }
+
+        final monthIndex = dateOnly.difference(last30Start).inDays;
+        if (monthIndex >= 0 && monthIndex < 30) {
+          if (isCredit) {
+            monthIncomeBuckets[monthIndex] += amount;
+          } else {
+            monthExpenseBuckets[monthIndex] += amount;
+          }
+        }
+      }
+
+      if (monthOffset >= 0 && monthOffset <= 3) {
+        monthNetByOffset[monthOffset] += isCredit ? amount : -amount;
+      }
+    }
+
+    todayEntries.sort((a, b) => b.value.compareTo(a.value));
+
+    _todayTransactions =
+        todayEntries.map((entry) => entry.key).toList(growable: false);
+    _monthTransactions = monthTransactions.toList(growable: false);
+    _todayTotals =
+        TransactionTotals(income: todayIncome, expense: todayExpense);
+    _weekTotals = TransactionTotals(income: weekIncome, expense: weekExpense);
+    _monthTotals =
+        TransactionTotals(income: monthIncome, expense: monthExpense);
+    _thirtyDayTotals = TransactionTotals(
+      income: thirtyDayIncome,
+      expense: thirtyDayExpense,
+    );
+    _selfTransferCount = selfTransferCount;
+    _weekTrendSeries =
+        _buildTrendSeriesFromBuckets(weekIncomeBuckets, weekExpenseBuckets);
+    _monthTrendSeries =
+        _buildTrendSeriesFromBuckets(monthIncomeBuckets, monthExpenseBuckets);
+    _monthlyInsight =
+        _buildMonthlyInsightFromNets(monthNetByOffset, monthHasTransactions);
+  }
+
+  DateTime? _parseTransactionTimeLocal(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return DateTime.parse(raw).toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  TransactionTrendSeries _buildTrendSeriesFromBuckets(
+    List<double> income,
+    List<double> expense,
+  ) {
+    final days = income.length;
+    final totalIncome = income.fold<double>(0.0, (sum, value) => sum + value);
+    final totalExpense = expense.fold<double>(0.0, (sum, value) => sum + value);
+    final maxIncome = income.fold<double>(0.0, math.max);
+    final maxExpense = expense.fold<double>(0.0, math.max);
+    final maxValue = math.max(maxIncome, maxExpense);
+
+    if (maxValue <= 0) {
+      return TransactionTrendSeries.empty(days);
+    }
+
+    List<double> normalize(List<double> values) {
+      return values
+          .map((value) => (value / maxValue).clamp(0.0, 1.0).toDouble())
+          .toList(growable: false);
+    }
+
+    return TransactionTrendSeries(
+      incomePoints: normalize(income),
+      expensePoints: normalize(expense),
+      maxValue: maxValue,
+      totalIncome: totalIncome,
+      totalExpense: totalExpense,
+      days: days,
+    );
+  }
+
+  String _buildMonthlyInsightFromNets(
+    List<double> monthNetByOffset,
+    List<bool> monthHasTransactions,
+  ) {
+    final currentNet = monthNetByOffset[0];
+    final priorNets = <double>[];
+
+    for (int offset = 1; offset <= 3; offset++) {
+      if (!monthHasTransactions[offset]) continue;
+      priorNets.add(monthNetByOffset[offset]);
+    }
+
+    if (!monthHasTransactions[0] && priorNets.isEmpty) {
+      return 'No monthly activity yet. Keep using Totals to unlock insights.';
+    }
+
+    final currentLabel = _formatEtbValue(currentNet.abs());
+    final currentSign = currentNet >= 0 ? 'saved' : 'spent more than earned';
+
+    if (priorNets.isEmpty) {
+      return currentNet >= 0
+          ? "You've saved ETB $currentLabel so far this month."
+          : "You've spent ETB $currentLabel more than you earned this month.";
+    }
+
+    final avgNet =
+        priorNets.reduce((sum, value) => sum + value) / priorNets.length;
+    if (avgNet.abs() < 0.01) {
+      return currentNet >= 0
+          ? "You've saved ETB $currentLabel so far this month."
+          : "You've spent ETB $currentLabel more than you earned this month.";
+    }
+
+    final deltaPercent = ((currentNet - avgNet).abs() / avgNet.abs()) * 100;
+    final roundedPercent = deltaPercent.isFinite ? deltaPercent.round() : 0;
+    final direction = currentNet >= avgNet ? 'better' : 'lower';
+
+    return "You've $currentSign ETB $currentLabel this month, $roundedPercent% $direction than your 3-month average.";
+  }
+
+  String _formatEtbValue(double value) {
+    final rounded = value.roundToDouble();
+    return formatNumberWithComma(rounded).replaceFirst(RegExp(r'\\.00$'), '');
+  }
+
+  Future<double> setCashWalletBalance({
+    required double targetBalance,
+    required String accountNumber,
+    String reason = 'Cash wallet adjustment',
+  }) async {
+    if (targetBalance < 0) {
+      throw ArgumentError('Target balance cannot be negative');
+    }
+
+    final currentBalance = _accountSummaries
+        .where((summary) => summary.bankId == CashConstants.bankId)
+        .fold<double>(0.0, (sum, summary) => sum + summary.balance);
+
+    final delta = targetBalance - currentBalance;
+    if (delta.abs() < 0.0001) return 0.0;
+
+    final now = DateTime.now();
+    final note = reason.trim();
+    final isDebit = delta < 0;
+    final transaction = Transaction(
+      amount: delta.abs(),
+      reference: CashConstants.buildManualReference(now.microsecondsSinceEpoch),
+      creditor: isDebit ? null : note,
+      receiver: isDebit ? note : null,
+      time: now.toIso8601String(),
+      bankId: CashConstants.bankId,
+      type: isDebit ? 'DEBIT' : 'CREDIT',
+      accountNumber: accountNumber.isNotEmpty
+          ? accountNumber
+          : CashConstants.defaultAccountNumber,
+    );
+
+    await addTransaction(transaction);
+    return delta;
   }
 
   // Method to handle new incoming SMS transaction

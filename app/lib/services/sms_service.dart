@@ -16,6 +16,8 @@ import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/budget_alert_service.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/services/widget_service.dart';
+import 'package:totals/repositories/profile_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum ParseStatus {
   success,
@@ -98,6 +100,8 @@ class SmsService {
   final Telephony _telephony = Telephony.instance;
   static final BankConfigService _bankConfigService = BankConfigService();
   static List<Bank>? _cachedBanks;
+  static const String _atmCashCutoffPrefPrefix =
+      'atm_cash_transfer_cutoff_iso_profile_';
 
   // Callback for foreground-only UI updates.
   ValueChanged<Transaction>? onTransactionSaved;
@@ -138,6 +142,8 @@ class SmsService {
     if (permissionGranted != true) {
       return const TodaySmsSyncResult(permissionDenied: true);
     }
+
+    await _getAtmCashTransferCutoff();
 
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
@@ -311,6 +317,12 @@ class SmsService {
     final bankId = withdrawal.bankId;
     if (bankId == null || bankId == CashConstants.bankId) return;
 
+    if (await _isWithdrawalBeforeCashCutoff(withdrawal)) {
+      print(
+          "debug: Skipping historical ATM cash transfer for ${withdrawal.reference}");
+      return;
+    }
+
     final cashReference = CashConstants.buildAtmReference(withdrawal.reference);
     if (existingTransactions.any((t) => t.reference == cashReference)) {
       return;
@@ -330,6 +342,61 @@ class SmsService {
     );
 
     await TransactionRepository().saveTransaction(cashTransaction);
+  }
+
+  static Future<bool> _isWithdrawalBeforeCashCutoff(Transaction withdrawal) async {
+    final withdrawalTime = DateTime.tryParse(withdrawal.time ?? '');
+    if (withdrawalTime == null) return false;
+    final cutoff = await _getAtmCashTransferCutoff();
+    return withdrawalTime.isBefore(cutoff);
+  }
+
+  static Future<DateTime> _getAtmCashTransferCutoff() async {
+    final profileRepo = ProfileRepository();
+    final activeProfileId = await profileRepo.getActiveProfileId();
+    final key = activeProfileId != null
+        ? '$_atmCashCutoffPrefPrefix$activeProfileId'
+        : '${_atmCashCutoffPrefPrefix}default';
+
+    final prefs = await SharedPreferences.getInstance();
+    final existingIso = prefs.getString(key);
+    if (existingIso != null) {
+      final parsed = DateTime.tryParse(existingIso);
+      if (parsed != null) return parsed;
+    }
+
+    final cutoff = (await profileRepo.getActiveProfile())?.createdAt ??
+        (await profileRepo.getDefaultProfile())?.createdAt ??
+        DateTime.now();
+
+    await prefs.setString(key, cutoff.toIso8601String());
+    await _cleanupHistoricalAtmCashTransactions(cutoff);
+    return cutoff;
+  }
+
+  static Future<void> _cleanupHistoricalAtmCashTransactions(
+      DateTime cutoff) async {
+    final txRepo = TransactionRepository();
+    final transactions = await txRepo.getTransactions();
+    final staleReferences = transactions
+        .where((transaction) {
+          if (transaction.bankId != CashConstants.bankId) return false;
+          if (!transaction.reference
+              .startsWith(CashConstants.atmReferencePrefix)) {
+            return false;
+          }
+          final txTime = DateTime.tryParse(transaction.time ?? '');
+          if (txTime == null) return false;
+          return txTime.isBefore(cutoff);
+        })
+        .map((transaction) => transaction.reference)
+        .toList(growable: false);
+
+    if (staleReferences.isEmpty) return;
+
+    await txRepo.deleteTransactionsByReferences(staleReferences);
+    print(
+        "debug: Removed ${staleReferences.length} historical ATM cash transfer(s) before cutoff");
   }
 
   // Static processing logic so it can be used by background handler too.
