@@ -275,7 +275,7 @@ class TransactionProvider with ChangeNotifier {
           accounts.fold(0.0, (sum, a) => sum + (a.pendingCredit ?? 0.0));
       final isCashBank = bankId == CashConstants.bankId;
       double totalBalance = isCashBank
-          ? cashBalance
+          ? accounts.fold(0.0, (sum, a) => sum + a.balance) + cashBalance
           : accounts.fold(0.0, (sum, a) => sum + a.balance);
 
       return BankSummary(
@@ -363,7 +363,8 @@ class TransactionProvider with ChangeNotifier {
       }
 
       final isCashAccount = account.bank == CashConstants.bankId;
-      final accountBalance = isCashAccount ? cashBalance : account.balance;
+      final accountBalance =
+          isCashAccount ? account.balance + cashBalance : account.balance;
 
       return AccountSummary(
         bankId: account.bank,
@@ -717,36 +718,58 @@ class TransactionProvider with ChangeNotifier {
   Future<double> setCashWalletBalance({
     required double targetBalance,
     required String accountNumber,
-    String reason = 'Cash wallet adjustment',
   }) async {
     if (targetBalance < 0) {
       throw ArgumentError('Target balance cannot be negative');
     }
 
-    final currentBalance = _accountSummaries
+    final cashAccounts =
+        _accounts.where((a) => a.bank == CashConstants.bankId).toList();
+
+    if (cashAccounts.isEmpty) {
+      final accountToCreate = accountNumber.isNotEmpty
+          ? accountNumber
+          : CashConstants.defaultAccountNumber;
+      await _accountRepo.saveAccount(
+        Account(
+          accountNumber: accountToCreate,
+          bank: CashConstants.bankId,
+          balance: targetBalance,
+          accountHolderName: CashConstants.defaultAccountHolderName,
+        ),
+      );
+      await loadData();
+      await WidgetService.refreshWidget();
+      return targetBalance;
+    }
+
+    final cashAccount = cashAccounts.firstWhere(
+      (a) => a.accountNumber == accountNumber,
+      orElse: () => cashAccounts.first,
+    );
+
+    final walletSummaries = _accountSummaries
         .where((summary) => summary.bankId == CashConstants.bankId)
-        .fold<double>(0.0, (sum, summary) => sum + summary.balance);
+        .toList();
+    final currentBalance = walletSummaries.isNotEmpty
+        ? walletSummaries.fold<double>(0.0, (sum, summary) => sum + summary.balance)
+        : cashAccounts.fold<double>(0.0, (sum, account) => sum + account.balance);
 
     final delta = targetBalance - currentBalance;
     if (delta.abs() < 0.0001) return 0.0;
 
-    final now = DateTime.now();
-    final note = reason.trim();
-    final isDebit = delta < 0;
-    final transaction = Transaction(
-      amount: delta.abs(),
-      reference: CashConstants.buildManualReference(now.microsecondsSinceEpoch),
-      creditor: isDebit ? null : note,
-      receiver: isDebit ? note : null,
-      time: now.toIso8601String(),
-      bankId: CashConstants.bankId,
-      type: isDebit ? 'DEBIT' : 'CREDIT',
-      accountNumber: accountNumber.isNotEmpty
-          ? accountNumber
-          : CashConstants.defaultAccountNumber,
+    final updatedCashAccount = Account(
+      accountNumber: cashAccount.accountNumber,
+      bank: cashAccount.bank,
+      balance: cashAccount.balance + delta,
+      accountHolderName: cashAccount.accountHolderName,
+      settledBalance: cashAccount.settledBalance,
+      pendingCredit: cashAccount.pendingCredit,
+      profileId: cashAccount.profileId,
     );
-
-    await addTransaction(transaction);
+    await _accountRepo.saveAccount(updatedCashAccount);
+    await loadData();
+    await WidgetService.refreshWidget();
     return delta;
   }
 

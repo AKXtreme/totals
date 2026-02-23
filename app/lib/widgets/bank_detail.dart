@@ -73,17 +73,11 @@ class _BankDetailState extends State<BankDetail> {
     return formatNumberWithComma(value).replaceFirst(RegExp(r'\.00$'), '');
   }
 
-  double? _parseAmount(String raw) {
-    final cleaned = raw.trim().replaceAll(',', '');
-    if (cleaned.isEmpty) return null;
-    return double.tryParse(cleaned);
-  }
-
   Future<void> _applyCashWalletTarget({
     required TransactionProvider provider,
     required String accountNumber,
     required double targetBalance,
-    required String reason,
+    String? successMessage,
   }) async {
     if (_isAdjustingCash) return;
 
@@ -95,7 +89,6 @@ class _BankDetailState extends State<BankDetail> {
       final delta = await provider.setCashWalletBalance(
         targetBalance: targetBalance,
         accountNumber: accountNumber,
-        reason: reason,
       );
 
       if (!mounted) return;
@@ -110,9 +103,11 @@ class _BankDetailState extends State<BankDetail> {
       } else {
         final direction = delta > 0 ? 'increased' : 'decreased';
         final amount = _formatEtb(delta.abs());
+        final message =
+            successMessage ?? 'Cash wallet $direction by ETB $amount';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Cash wallet $direction by ETB $amount'),
+            content: Text(message),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -143,7 +138,7 @@ class _BankDetailState extends State<BankDetail> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Clear cash wallet?'),
         content: const Text(
-          'This will set your cash wallet balance to ETB 0 by adding an adjustment transaction.',
+          'This will set your cash wallet balance to ETB 0.',
         ),
         actions: [
           TextButton(
@@ -164,62 +159,23 @@ class _BankDetailState extends State<BankDetail> {
       provider: provider,
       accountNumber: accountNumber,
       targetBalance: 0,
-      reason: 'Cash wallet cleared',
+      successMessage: 'cash wallet cleared',
     );
   }
 
-  Future<void> _showSetCashWalletDialog({
+  Future<void> _showSetCashWalletBottomSheet({
     required TransactionProvider provider,
     required String accountNumber,
     required double currentBalance,
   }) async {
-    final controller = TextEditingController(text: _formatEtb(currentBalance));
-    final formKey = GlobalKey<FormState>();
-
-    final result = await showDialog<double>(
+    final result = await showModalBottomSheet<double>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Set cash wallet amount'),
-          content: Form(
-            key: formKey,
-            child: TextFormField(
-              controller: controller,
-              autofocus: true,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Target balance',
-                prefixText: 'ETB ',
-                hintText: '0.00',
-              ),
-              validator: (value) {
-                final parsed = _parseAmount(value ?? '');
-                if (parsed == null) return 'Enter a valid amount';
-                if (parsed < 0) return 'Amount cannot be negative';
-                return null;
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (!formKey.currentState!.validate()) return;
-                final parsed = _parseAmount(controller.text);
-                Navigator.of(dialogContext).pop(parsed);
-              },
-              child: const Text('Set amount'),
-            ),
-          ],
-        );
-      },
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _SetCashWalletAmountSheet(
+        initialValue: _formatEtb(currentBalance),
+      ),
     );
-
-    controller.dispose();
 
     if (result == null) return;
 
@@ -227,7 +183,6 @@ class _BankDetailState extends State<BankDetail> {
       provider: provider,
       accountNumber: accountNumber,
       targetBalance: result,
-      reason: 'Cash wallet set to ETB ${_formatEtb(result)}',
     );
   }
 
@@ -366,7 +321,7 @@ class _BankDetailState extends State<BankDetail> {
                       child: OutlinedButton.icon(
                         onPressed: _isAdjustingCash
                             ? null
-                            : () => _showSetCashWalletDialog(
+                            : () => _showSetCashWalletBottomSheet(
                                   provider: provider,
                                   accountNumber: cashAccountNumber,
                                   currentBalance: totalBalance,
@@ -391,6 +346,101 @@ class _BankDetailState extends State<BankDetail> {
               visibleTotalBalancesForSubCards: visibleTotalBalancesForSubCards),
         ),
       ],
+    );
+  }
+}
+
+class _SetCashWalletAmountSheet extends StatefulWidget {
+  final String initialValue;
+
+  const _SetCashWalletAmountSheet({
+    required this.initialValue,
+  });
+
+  @override
+  State<_SetCashWalletAmountSheet> createState() =>
+      _SetCashWalletAmountSheetState();
+}
+
+class _SetCashWalletAmountSheetState extends State<_SetCashWalletAmountSheet> {
+  late final TextEditingController _controller;
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  double? _parseAmount(String raw) {
+    final cleaned = raw.trim().replaceAll(',', '');
+    if (cleaned.isEmpty) return null;
+    return double.tryParse(cleaned);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 8, 16, bottomInset + 16),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Set cash wallet amount',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _controller,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Target balance',
+                prefixText: 'ETB ',
+                hintText: '0.00',
+              ),
+              validator: (value) {
+                final parsed = _parseAmount(value ?? '');
+                if (parsed == null) return 'Enter a valid amount';
+                if (parsed < 0) return 'Amount cannot be negative';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () {
+                      if (!_formKey.currentState!.validate()) return;
+                      final parsed = _parseAmount(_controller.text);
+                      Navigator.of(context).pop(parsed);
+                    },
+                    child: const Text('Set amount'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:math' as math;
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/constants/cash_constants.dart';
@@ -37,35 +36,21 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
 
     return Consumer<TransactionProvider>(
       builder: (context, provider, child) {
-        final now = DateTime.now();
         final summary = provider.summary;
         final totalBalance = summary?.totalBalance ?? 0.0;
-        final today = _transactionsForDay(provider.allTransactions, now);
-        final week = _transactionsForWeek(provider.allTransactions, now);
-        final thisMonth = _transactionsForMonth(provider.allTransactions, now);
-        final last30Days = _transactionsForLastDays(
-          provider.allTransactions,
-          now,
-          30,
-        );
-        final todayTotals = _totalsFor(today, provider);
-        final weekTotals = _totalsFor(week, provider);
-        final monthTotals = _totalsFor(thisMonth, provider);
-        final thirtyDayTotals = _totalsFor(last30Days, provider);
-        final todaySorted = _sortedByTime(today);
+        final todaySorted = provider.todayTransactions;
+        final todayCount = todaySorted.length;
+        final monthTransactionsCount = provider.monthTransactions.length;
         final todayList = todaySorted.take(3).toList(growable: false);
-        final selfTransferCount = provider.allTransactions
-            .where((transaction) => provider.isSelfTransfer(transaction))
-            .length;
-        final insightMessage =
-            _buildMonthlyInsight(provider.allTransactions, provider, now);
-        final chartDays = _chartRange == _ChartRange.week ? 7 : 30;
-        final trendSeries = _buildTrendSeries(
-          provider.allTransactions,
-          provider,
-          now,
-          days: chartDays,
-        );
+        final todayTotals = provider.todayTotals;
+        final weekTotals = provider.weekTotals;
+        final monthTotals = provider.monthTotals;
+        final thirtyDayTotals = provider.thirtyDayTotals;
+        final selfTransferCount = provider.selfTransferCount;
+        final insightMessage = provider.monthlyInsight;
+        final trendSeries = _chartRange == _ChartRange.week
+            ? provider.weekTrendSeries
+            : provider.monthTrendSeries;
 
         return Scaffold(
           backgroundColor: AppColors.slate50,
@@ -93,7 +78,7 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                       },
                       onBreakdownTap: () => _openBalanceBreakdown(
                         totalBalance: totalBalance,
-                        monthTransactions: thisMonth.length,
+                        monthTransactions: monthTransactionsCount,
                         selfTransferCount: selfTransferCount,
                         monthTotals: monthTotals,
                         thirtyDayTotals: thirtyDayTotals,
@@ -106,7 +91,7 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Today (${today.length})',
+                          'Today ($todayCount)',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                             color: AppColors.slate900,
@@ -252,8 +237,8 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
     required double totalBalance,
     required int monthTransactions,
     required int selfTransferCount,
-    required _Totals monthTotals,
-    required _Totals thirtyDayTotals,
+    required TransactionTotals monthTotals,
+    required TransactionTotals thirtyDayTotals,
   }) {
     showModalBottomSheet<void>(
       context: context,
@@ -272,84 +257,6 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
   }
 }
 
-class _Totals {
-  final double income;
-  final double expense;
-
-  const _Totals({required this.income, required this.expense});
-}
-
-class _TrendSeries {
-  final List<double> incomePoints;
-  final List<double> expensePoints;
-  final double maxValue;
-  final double totalIncome;
-  final double totalExpense;
-  final int days;
-
-  const _TrendSeries({
-    required this.incomePoints,
-    required this.expensePoints,
-    required this.maxValue,
-    required this.totalIncome,
-    required this.totalExpense,
-    required this.days,
-  });
-}
-
-List<Transaction> _transactionsForDay(
-  List<Transaction> transactions,
-  DateTime day,
-) {
-  return transactions.where((t) {
-    final dt = _parseTransactionTime(t.time);
-    if (dt == null) return false;
-    return dt.year == day.year && dt.month == day.month && dt.day == day.day;
-  }).toList(growable: false);
-}
-
-List<Transaction> _transactionsForWeek(
-  List<Transaction> transactions,
-  DateTime day,
-) {
-  final start = day.subtract(Duration(days: day.weekday - 1));
-  final startDate = DateTime(start.year, start.month, start.day);
-  final endDate = DateTime(day.year, day.month, day.day, 23, 59, 59, 999);
-  return transactions.where((t) {
-    final dt = _parseTransactionTime(t.time);
-    if (dt == null) return false;
-    return !dt.isBefore(startDate) && !dt.isAfter(endDate);
-  }).toList(growable: false);
-}
-
-List<Transaction> _transactionsForMonth(
-  List<Transaction> transactions,
-  DateTime day,
-) {
-  final startDate = DateTime(day.year, day.month, 1);
-  final nextMonthStart = DateTime(day.year, day.month + 1, 1);
-  return transactions.where((t) {
-    final dt = _parseTransactionTime(t.time);
-    if (dt == null) return false;
-    return !dt.isBefore(startDate) && dt.isBefore(nextMonthStart);
-  }).toList(growable: false);
-}
-
-List<Transaction> _transactionsForLastDays(
-  List<Transaction> transactions,
-  DateTime day,
-  int days,
-) {
-  final endDate = DateTime(day.year, day.month, day.day, 23, 59, 59, 999);
-  final startDate =
-      DateTime(day.year, day.month, day.day).subtract(Duration(days: days - 1));
-  return transactions.where((t) {
-    final dt = _parseTransactionTime(t.time);
-    if (dt == null) return false;
-    return !dt.isBefore(startDate) && !dt.isAfter(endDate);
-  }).toList(growable: false);
-}
-
 DateTime? _parseTransactionTime(String? raw) {
   if (raw == null || raw.isEmpty) return null;
   try {
@@ -357,138 +264,6 @@ DateTime? _parseTransactionTime(String? raw) {
   } catch (_) {
     return null;
   }
-}
-
-List<Transaction> _sortedByTime(List<Transaction> transactions) {
-  final list = List<Transaction>.from(transactions);
-  list.sort((a, b) {
-    final at = _parseTransactionTime(a.time);
-    final bt = _parseTransactionTime(b.time);
-    if (at == null && bt == null) return 0;
-    if (at == null) return 1;
-    if (bt == null) return -1;
-    return bt.compareTo(at);
-  });
-  return list;
-}
-
-_Totals _totalsFor(
-  List<Transaction> transactions,
-  TransactionProvider provider,
-) {
-  double income = 0.0;
-  double expense = 0.0;
-  for (final t in transactions) {
-    if (provider.isSelfTransfer(t)) continue;
-    if (t.type == 'CREDIT') {
-      income += t.amount;
-    } else if (t.type == 'DEBIT') {
-      expense += t.amount;
-    }
-  }
-  return _Totals(income: income, expense: expense);
-}
-
-_TrendSeries _buildTrendSeries(
-  List<Transaction> transactions,
-  TransactionProvider provider,
-  DateTime day, {
-  required int days,
-}) {
-  final endDate = DateTime(day.year, day.month, day.day);
-  final startDate = endDate.subtract(Duration(days: days - 1));
-  final income = List<double>.filled(days, 0);
-  final expense = List<double>.filled(days, 0);
-
-  for (final transaction in transactions) {
-    final dt = _parseTransactionTime(transaction.time);
-    if (dt == null) continue;
-    if (provider.isSelfTransfer(transaction)) continue;
-    final dateOnly = DateTime(dt.year, dt.month, dt.day);
-    if (dateOnly.isBefore(startDate) || dateOnly.isAfter(endDate)) continue;
-    final index = dateOnly.difference(startDate).inDays;
-    if (index < 0 || index >= days) continue;
-
-    if (transaction.type == 'CREDIT') {
-      income[index] += transaction.amount;
-    } else if (transaction.type == 'DEBIT') {
-      expense[index] += transaction.amount;
-    }
-  }
-
-  final totalIncome = income.fold<double>(0.0, (sum, value) => sum + value);
-  final totalExpense = expense.fold<double>(0.0, (sum, value) => sum + value);
-  final maxValue = [...income, ...expense]
-      .fold<double>(0.0, (current, value) => math.max(current, value));
-
-  if (maxValue <= 0) {
-    return _TrendSeries(
-      incomePoints: List<double>.filled(days, 0),
-      expensePoints: List<double>.filled(days, 0),
-      maxValue: 0,
-      totalIncome: 0,
-      totalExpense: 0,
-      days: days,
-    );
-  }
-
-  List<double> normalized(List<double> values) =>
-      values.map((value) => (value / maxValue).clamp(0.0, 1.0)).toList();
-
-  return _TrendSeries(
-    incomePoints: normalized(income),
-    expensePoints: normalized(expense),
-    maxValue: maxValue,
-    totalIncome: totalIncome,
-    totalExpense: totalExpense,
-    days: days,
-  );
-}
-
-String _buildMonthlyInsight(
-  List<Transaction> transactions,
-  TransactionProvider provider,
-  DateTime now,
-) {
-  final thisMonth = _transactionsForMonth(transactions, now);
-  final thisMonthTotals = _totalsFor(thisMonth, provider);
-  final currentNet = thisMonthTotals.income - thisMonthTotals.expense;
-
-  final priorNets = <double>[];
-  for (int offset = 1; offset <= 3; offset++) {
-    final monthDate = DateTime(now.year, now.month - offset, 1);
-    final monthTransactions = _transactionsForMonth(transactions, monthDate);
-    if (monthTransactions.isEmpty) continue;
-    final monthTotals = _totalsFor(monthTransactions, provider);
-    priorNets.add(monthTotals.income - monthTotals.expense);
-  }
-
-  if (thisMonth.isEmpty && priorNets.isEmpty) {
-    return 'No monthly activity yet. Keep using Totals to unlock insights.';
-  }
-
-  final currentLabel = _formatEtbValue(currentNet.abs());
-  final currentSign = currentNet >= 0 ? 'saved' : 'spent more than earned';
-
-  if (priorNets.isEmpty) {
-    return currentNet >= 0
-        ? "You've saved ETB $currentLabel so far this month."
-        : "You've spent ETB $currentLabel more than you earned this month.";
-  }
-
-  final avgNet = priorNets.reduce((sum, value) => sum + value) /
-      priorNets.length.toDouble();
-  if (avgNet.abs() < 0.01) {
-    return currentNet >= 0
-        ? "You've saved ETB $currentLabel so far this month."
-        : "You've spent ETB $currentLabel more than you earned this month.";
-  }
-
-  final deltaPercent = (((currentNet - avgNet).abs() / avgNet.abs()) * 100);
-  final roundedPercent = deltaPercent.isFinite ? deltaPercent.round() : 0;
-  final direction = currentNet >= avgNet ? 'better' : 'lower';
-
-  return "You've $currentSign ETB $currentLabel this month, $roundedPercent% $direction than your 3-month average.";
 }
 
 String _formatEtbValue(double value) {
@@ -1103,7 +878,7 @@ class _EmptyTransactions extends StatelessWidget {
 }
 
 class _IncomeExpenseCard extends StatelessWidget {
-  final _TrendSeries trendSeries;
+  final TransactionTrendSeries trendSeries;
   final _ChartRange selectedRange;
   final ValueChanged<_ChartRange> onRangeChanged;
 
@@ -1336,8 +1111,8 @@ class _BalanceBreakdownSheet extends StatelessWidget {
   final double totalBalance;
   final int monthTransactions;
   final int selfTransferCount;
-  final _Totals monthTotals;
-  final _Totals thirtyDayTotals;
+  final TransactionTotals monthTotals;
+  final TransactionTotals thirtyDayTotals;
 
   const _BalanceBreakdownSheet({
     required this.totalBalance,
