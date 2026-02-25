@@ -22,6 +22,7 @@ import 'package:totals/screens/tools_page.dart';
 import 'package:totals/screens/settings_page.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/notification_intent_bus.dart';
+import 'package:totals/services/widget_launch_intent_service.dart';
 import 'package:totals/data/consts.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/widgets/today_transactions_list.dart';
@@ -60,6 +61,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int activeTab = 0;
   int _bottomNavIndex = 2; // Home is now at index 2 (center)
   StreamSubscription<NotificationIntent>? _notificationIntentSub;
+  StreamSubscription<WidgetLaunchTarget>? _widgetLaunchIntentSub;
   String? _pendingNotificationReference;
   String? _highlightedReference;
   Set<int?> _selectedTodayIncomeCategoryIds = {};
@@ -81,6 +83,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         }
       },
     );
+
+    _widgetLaunchIntentSub = WidgetLaunchIntentService.instance.stream.listen(
+      (target) {
+        if (target != WidgetLaunchTarget.budget) return;
+        _openBudgetFromWidget();
+      },
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final initialTarget =
+          WidgetLaunchIntentService.instance.consumePendingTarget();
+      if (initialTarget != WidgetLaunchTarget.budget) return;
+      _openBudgetFromWidget();
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await NotificationService.instance.emitLaunchIntentIfAny();
@@ -183,9 +199,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _notificationIntentSub?.cancel();
+    _widgetLaunchIntentSub?.cancel();
     _pageController.dispose();
     _mainPageController.dispose();
     super.dispose();
+  }
+
+  void _openBudgetFromWidget() {
+    if (!mounted) return;
+    if (_bottomNavIndex == 1) return;
+    setState(() {
+      _bottomNavIndex = 1;
+    });
+    _mainPageController.jumpToPage(1);
   }
 
   Future<void> _openTodayAndCategorize(String reference) async {
@@ -256,9 +282,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _handleQuickCategorize(String reference, int categoryId) async {
     if (!mounted) return;
     final provider = Provider.of<TransactionProvider>(context, listen: false);
-    final transaction = provider.transactions.where(
-      (t) => t.reference == reference,
-    ).firstOrNull;
+    final transaction = provider.transactions
+        .where(
+          (t) => t.reference == reference,
+        )
+        .firstOrNull;
 
     if (transaction == null) {
       if (kDebugMode) {
@@ -277,7 +305,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     await provider.setCategoryForTransaction(transaction, category);
     if (kDebugMode) {
-      print('debug: Quick categorized ${transaction.reference} as ${category.name}');
+      print(
+          'debug: Quick categorized ${transaction.reference} as ${category.name}');
     }
   }
 

@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
@@ -382,10 +381,9 @@ class _TotalsRandomColorSymbol extends PrettyQrShape {
     final moduleDimension = canvasBounds.longestSide / matrix.version.dimension;
 
     final radius = moduleDimension / 2;
-    final effectiveRadius =
-        PrettyQrShape.clampDouble(radius * rounding, 0, radius);
+    final effectiveRadius = (radius * rounding).clamp(0.0, radius).toDouble();
     final effectiveDensity =
-        radius - PrettyQrShape.clampDouble(radius * density, 1, radius);
+        radius - (radius * density).clamp(1.0, radius).toDouble();
 
     for (final module in matrix) {
       if (!module.isDark) continue;

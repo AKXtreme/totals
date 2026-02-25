@@ -13,6 +13,7 @@ import 'package:workmanager/workmanager.dart';
 import 'package:totals/background/daily_spending_worker.dart';
 import 'package:totals/services/notification_scheduler.dart';
 import 'package:totals/services/widget_service.dart';
+import 'package:totals/services/widget_launch_intent_service.dart';
 import 'package:totals/services/widget_refresh_scheduler.dart';
 import 'package:totals/_redesign/screens/redesign_shell.dart';
 import 'package:totals/_redesign/theme/theme.dart';
@@ -30,6 +31,7 @@ void main() async {
 
   // Initialize home widget
   await WidgetService.initialize();
+  await WidgetLaunchIntentService.instance.initialize();
 
   // Read redesign flag from SharedPreferences (persists across restarts)
   final prefs = await SharedPreferences.getInstance();

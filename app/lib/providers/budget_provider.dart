@@ -3,6 +3,7 @@ import 'package:totals/models/budget.dart';
 import 'package:totals/repositories/budget_repository.dart';
 import 'package:totals/services/budget_service.dart';
 import 'package:totals/services/budget_alert_service.dart';
+import 'package:totals/services/widget_service.dart';
 import 'package:totals/providers/transaction_provider.dart';
 
 export 'package:totals/services/budget_service.dart' show BudgetStatus;
@@ -34,6 +35,7 @@ class BudgetProvider with ChangeNotifier {
     try {
       _budgets = await _budgetRepository.getActiveBudgets();
       await _refreshBudgetStatuses();
+      await _refreshBudgetWidgetSafe();
     } catch (e) {
       print("debug: Error loading budgets: $e");
     } finally {
@@ -132,6 +134,7 @@ class BudgetProvider with ChangeNotifier {
 
   Future<void> refreshBudgetStatuses() async {
     await _refreshBudgetStatuses();
+    await _refreshBudgetWidgetSafe();
     notifyListeners();
   }
 
@@ -152,5 +155,13 @@ class BudgetProvider with ChangeNotifier {
     // If multiple exist, use the most recent one
     final budget = budgets.first;
     return await _budgetService.getBudgetStatus(budget);
+  }
+
+  Future<void> _refreshBudgetWidgetSafe() async {
+    try {
+      await WidgetService.refreshBudgetWidget();
+    } catch (e) {
+      print("debug: Error refreshing budget widget: $e");
+    }
   }
 }
