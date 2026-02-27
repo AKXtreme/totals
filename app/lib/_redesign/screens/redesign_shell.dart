@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:totals/_redesign/screens/home_page.dart';
+import 'package:totals/_redesign/screens/money/money_page.dart';
 import 'package:totals/_redesign/screens/placeholder_page.dart';
 import 'package:totals/_redesign/widgets/redesign_bottom_nav.dart';
 import 'package:totals/services/widget_launch_intent_service.dart';
@@ -63,7 +64,7 @@ class _RedesignShellState extends State<RedesignShell> {
         physics: const NeverScrollableScrollPhysics(),
         children: const [
           RedesignHomePage(),
-          RedesignPlaceholderPage(title: 'Money'),
+          RedesignMoneyPage(),
           RedesignPlaceholderPage(title: 'Budget'),
           RedesignPlaceholderPage(title: 'Tools'),
           RedesignPlaceholderPage(title: 'You', showRedesignToggle: true),
