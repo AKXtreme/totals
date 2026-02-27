@@ -5,8 +5,10 @@ import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/data/consts.dart';
+import 'package:totals/models/summary_models.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
+import 'package:totals/utils/gradients.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/widgets/categorize_transaction_sheet.dart';
 
@@ -21,11 +23,48 @@ enum _TopTab { activity, accounts }
 
 enum _SubTab { transactions, analytics, ledger }
 
+/// Filter state passed from the filter bottom sheet.
+class _TransactionFilter {
+  final String? type; // null = All, 'DEBIT' = Expense, 'CREDIT' = Income
+  final int? bankId; // null = All Banks
+  final String? accountNumber; // null = All Accounts
+  final DateTime? startDate;
+  final DateTime? endDate;
+
+  const _TransactionFilter({
+    this.type,
+    this.bankId,
+    this.accountNumber,
+    this.startDate,
+    this.endDate,
+  });
+
+  bool get isActive =>
+      type != null ||
+      bankId != null ||
+      accountNumber != null ||
+      startDate != null ||
+      endDate != null;
+
+  int get activeCount {
+    int count = 0;
+    if (type != null) count++;
+    if (bankId != null) count++;
+    if (accountNumber != null) count++;
+    if (startDate != null || endDate != null) count++;
+    return count;
+  }
+}
+
 class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
   _TopTab _topTab = _TopTab.activity;
   _SubTab _subTab = _SubTab.transactions;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  _TransactionFilter _filter = const _TransactionFilter();
+  int? _selectedBankId;
+  String? _expandedAccountNumber;
+  bool _showAccountBalances = true;
 
   @override
   void dispose() {
@@ -52,7 +91,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                 Expanded(
                   child: _topTab == _TopTab.activity
                       ? _buildActivityContent(provider)
-                      : _buildAccountsPlaceholder(),
+                      : _buildAccountsContent(provider),
                 ),
               ],
             ),
@@ -105,7 +144,8 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                   _SearchFilterRow(
                     controller: _searchController,
                     onChanged: (value) => setState(() => _searchQuery = value),
-                    onFilterTap: () {},
+                    onFilterTap: () => _openFilterSheet(provider),
+                    activeFilterCount: _filter.activeCount,
                   ),
                 ],
               ),
@@ -207,30 +247,198 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     );
   }
 
-  Widget _buildAccountsPlaceholder() {
-    return const Center(
-      child: Text(
-        'Accounts',
-        style: TextStyle(
-          color: AppColors.slate500,
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
+  Widget _buildAccountsContent(TransactionProvider provider) {
+    final summary = provider.summary;
+    final bankSummaries = provider.bankSummaries;
+    final accountSummaries = provider.accountSummaries;
+    final isOverview = _selectedBankId == null;
+
+    // Overview data
+    final totalBalance = summary?.totalBalance ?? 0.0;
+    final bankCount = summary?.banks ?? 0;
+    final accountCount = summary?.accounts ?? 0;
+    final totalCredit = summary?.totalCredit ?? 0.0;
+    final totalDebit = summary?.totalDebit ?? 0.0;
+    final totalTxnCount = provider.transactions.length;
+
+    // Bank detail data
+    BankSummary? bankSummary;
+    if (!isOverview) {
+      for (final b in bankSummaries) {
+        if (b.bankId == _selectedBankId) {
+          bankSummary = b;
+          break;
+        }
+      }
+      if (bankSummary == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _selectedBankId = null);
+        });
+        return const SizedBox.shrink();
+      }
+    }
+
+    final accounts = isOverview
+        ? <AccountSummary>[]
+        : accountSummaries
+            .where((a) => a.bankId == _selectedBankId)
+            .toList();
+    final bankTxnCount = isOverview
+        ? 0
+        : provider.transactions
+            .where((t) => t.bankId == _selectedBankId)
+            .length;
+
+    return RefreshIndicator(
+      color: AppColors.primaryLight,
+      onRefresh: provider.loadData,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
+        child: Column(
+          children: [
+            // Selector strip: Totals icon + bank icons
+            _BankSelectorStrip(
+              bankSummaries: bankSummaries,
+              selectedBankId: _selectedBankId,
+              onBankSelected: (id) => setState(() {
+                _selectedBankId = id;
+                _expandedAccountNumber = null;
+              }),
+              onTotalsSelected: () => setState(() {
+                _selectedBankId = null;
+                _expandedAccountNumber = null;
+              }),
+            ),
+            const SizedBox(height: 12),
+
+            // Balance card
+            _AccountsBalanceCard(
+              balance: isOverview ? totalBalance : bankSummary!.totalBalance,
+              subtitle: isOverview
+                  ? '$bankCount Banks | $accountCount Accounts'
+                  : '${bankSummary!.accountCount} Account${bankSummary!.accountCount == 1 ? '' : 's'}',
+              transactionCount: isOverview ? totalTxnCount : bankTxnCount,
+              totalCredit:
+                  isOverview ? totalCredit : bankSummary!.totalCredit,
+              totalDebit: isOverview ? totalDebit : bankSummary!.totalDebit,
+              showBalance: _showAccountBalances,
+              onToggleBalance: () =>
+                  setState(() => _showAccountBalances = !_showAccountBalances),
+            ),
+            const SizedBox(height: 16),
+
+            // Content below balance card
+            if (isOverview)
+              _BankGrid(
+                bankSummaries: bankSummaries,
+                showBalance: _showAccountBalances,
+                onBankTap: (bankId) =>
+                    setState(() => _selectedBankId = bankId),
+              )
+            else
+              ...accounts.map((account) {
+                final acctTxnCount = account.totalTransactions.toInt();
+                return _AccountCard(
+                  account: account,
+                  bankId: _selectedBankId!,
+                  isExpanded:
+                      _expandedAccountNumber == account.accountNumber,
+                  showBalance: _showAccountBalances,
+                  transactionCount: acctTxnCount,
+                  onToggleExpand: () => setState(() {
+                    _expandedAccountNumber =
+                        _expandedAccountNumber == account.accountNumber
+                            ? null
+                            : account.accountNumber;
+                  }),
+                );
+              }),
+          ],
         ),
       ),
     );
   }
 
+  Future<void> _openFilterSheet(TransactionProvider provider) async {
+    // Derive unique bank IDs and account numbers from transactions.
+    final allTxns = provider.transactions;
+    final bankIds = <int>{};
+    final accountNumbers = <String>{};
+    for (final t in allTxns) {
+      if (t.bankId != null) bankIds.add(t.bankId!);
+      if (t.accountNumber != null && t.accountNumber!.isNotEmpty) {
+        accountNumbers.add(t.accountNumber!);
+      }
+    }
+
+    final result = await showModalBottomSheet<_TransactionFilter>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _FilterTransactionsSheet(
+        currentFilter: _filter,
+        bankIds: bankIds.toList()..sort(),
+        accountNumbers: accountNumbers.toList()..sort(),
+      ),
+    );
+    if (result != null) {
+      setState(() => _filter = result);
+    }
+  }
+
   List<Transaction> _filterTransactions(List<Transaction> transactions) {
-    if (_searchQuery.isEmpty) return transactions;
-    final query = _searchQuery.toLowerCase();
-    return transactions.where((t) {
-      final receiver = t.receiver?.toLowerCase() ?? '';
-      final creditor = t.creditor?.toLowerCase() ?? '';
-      final bank = _bankLabel(t.bankId).toLowerCase();
-      return receiver.contains(query) ||
-          creditor.contains(query) ||
-          bank.contains(query);
-    }).toList();
+    var result = transactions;
+
+    // Type filter
+    if (_filter.type != null) {
+      result = result.where((t) => t.type == _filter.type).toList();
+    }
+
+    // Bank filter
+    if (_filter.bankId != null) {
+      result = result.where((t) => t.bankId == _filter.bankId).toList();
+    }
+
+    // Account filter
+    if (_filter.accountNumber != null) {
+      result = result
+          .where((t) => t.accountNumber == _filter.accountNumber)
+          .toList();
+    }
+
+    // Date range filter
+    if (_filter.startDate != null || _filter.endDate != null) {
+      result = result.where((t) {
+        final dt = _parseTransactionTime(t.time);
+        if (dt == null) return false;
+        if (_filter.startDate != null && dt.isBefore(_filter.startDate!)) {
+          return false;
+        }
+        if (_filter.endDate != null) {
+          final endOfDay = _filter.endDate!
+              .add(const Duration(days: 1))
+              .subtract(const Duration(milliseconds: 1));
+          if (dt.isAfter(endOfDay)) return false;
+        }
+        return true;
+      }).toList();
+    }
+
+    // Search query filter
+    if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
+      result = result.where((t) {
+        final receiver = t.receiver?.toLowerCase() ?? '';
+        final creditor = t.creditor?.toLowerCase() ?? '';
+        final bank = _bankLabel(t.bankId).toLowerCase();
+        return receiver.contains(query) ||
+            creditor.contains(query) ||
+            bank.contains(query);
+      }).toList();
+    }
+
+    return result;
   }
 }
 
@@ -303,6 +511,33 @@ String _transactionCounterparty(Transaction transaction) {
   if (receiver != null && receiver.isNotEmpty) return receiver.toUpperCase();
   if (creditor != null && creditor.isNotEmpty) return creditor.toUpperCase();
   return 'UNKNOWN';
+}
+
+String _formatCount(int count) {
+  final formatted = formatNumberWithComma(count.toDouble());
+  return formatted.replaceFirst(RegExp(r'\.00$'), '');
+}
+
+String _formatEtbAbbrev(double value) {
+  return formatNumberAbbreviated(value).replaceAll('k', 'K');
+}
+
+String _getBankImage(int bankId) {
+  if (bankId == CashConstants.bankId) return CashConstants.bankImage;
+  try {
+    return AppConstants.banks.firstWhere((b) => b.id == bankId).image;
+  } catch (_) {
+    return '';
+  }
+}
+
+String _getBankName(int bankId) {
+  if (bankId == CashConstants.bankId) return CashConstants.bankShortName;
+  try {
+    return AppConstants.banks.firstWhere((b) => b.id == bankId).shortName;
+  } catch (_) {
+    return 'Bank $bankId';
+  }
 }
 
 Map<String, List<Transaction>> _groupByDate(List<Transaction> transactions) {
@@ -658,15 +893,19 @@ class _SearchFilterRow extends StatelessWidget {
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
   final VoidCallback onFilterTap;
+  final int activeFilterCount;
 
   const _SearchFilterRow({
     required this.controller,
     required this.onChanged,
     required this.onFilterTap,
+    this.activeFilterCount = 0,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasFilters = activeFilterCount > 0;
+
     return Row(
       children: [
         Expanded(
@@ -675,7 +914,6 @@ class _SearchFilterRow extends StatelessWidget {
             decoration: BoxDecoration(
               color: AppColors.white,
               borderRadius: BorderRadius.circular(10),
-              // border: Border.all(color: AppColors.border),
             ),
             child: TextField(
               controller: controller,
@@ -699,19 +937,53 @@ class _SearchFilterRow extends StatelessWidget {
         const SizedBox(width: 10),
         GestureDetector(
           onTap: onFilterTap,
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.white,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: const Icon(
-              Icons.filter_list,
-              color: AppColors.slate500,
-              size: 22,
-            ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: hasFilters
+                      ? AppColors.primaryDark.withValues(alpha: 0.1)
+                      : AppColors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color:
+                        hasFilters ? AppColors.primaryDark : AppColors.border,
+                  ),
+                ),
+                child: Icon(
+                  Icons.filter_list,
+                  color:
+                      hasFilters ? AppColors.primaryDark : AppColors.slate500,
+                  size: 22,
+                ),
+              ),
+              if (hasFilters)
+                Positioned(
+                  top: -4,
+                  right: -4,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: const BoxDecoration(
+                      color: AppColors.primaryDark,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '$activeFilterCount',
+                        style: const TextStyle(
+                          color: AppColors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ],
@@ -927,6 +1199,1118 @@ class _EmptyTransactions extends StatelessWidget {
             color: AppColors.slate500,
             fontSize: 14,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Accounts Widgets ─────────────────────────────────────────────
+
+const _balanceCardGradient = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [Color(0xFF312E81), Color(0xFF4F46E5)],
+);
+
+class _AccountsBalanceCard extends StatelessWidget {
+  final double balance;
+  final String subtitle;
+  final int transactionCount;
+  final double totalCredit;
+  final double totalDebit;
+  final bool showBalance;
+  final VoidCallback onToggleBalance;
+
+  const _AccountsBalanceCard({
+    required this.balance,
+    required this.subtitle,
+    required this.transactionCount,
+    required this.totalCredit,
+    required this.totalDebit,
+    required this.showBalance,
+    required this.onToggleBalance,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final balanceLabel =
+        showBalance ? 'ETB ${_formatEtbAbbrev(balance)}' : 'ETB ***';
+    final creditLabel =
+        showBalance ? '+ETB ${_formatEtbAbbrev(totalCredit)}' : '+ETB ***';
+    final debitLabel =
+        showBalance ? '-ETB ${_formatEtbAbbrev(totalDebit)}' : '-ETB ***';
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: _balanceCardGradient,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'TOTAL BALANCE',
+                style: TextStyle(
+                  color: AppColors.white.withValues(alpha: 0.85),
+                  fontSize: 12,
+                  letterSpacing: 1.2,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: onToggleBalance,
+                child: Icon(
+                  showBalance
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  color: AppColors.white.withValues(alpha: 0.9),
+                  size: 22,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            balanceLabel,
+            style: const TextStyle(
+              color: AppColors.white,
+              fontSize: 32,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '$subtitle | ${_formatCount(transactionCount)} Txns',
+            style: TextStyle(
+              color: AppColors.white.withValues(alpha: 0.8),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            height: 1,
+            color: AppColors.white.withValues(alpha: 0.2),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Text(
+                creditLabel,
+                style: const TextStyle(
+                  color: AppColors.incomeSuccess,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                ' | ',
+                style: TextStyle(
+                  color: AppColors.white.withValues(alpha: 0.5),
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                debitLabel,
+                style: const TextStyle(
+                  color: AppColors.red,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BankGrid extends StatelessWidget {
+  final List<BankSummary> bankSummaries;
+  final bool showBalance;
+  final ValueChanged<int> onBankTap;
+
+  const _BankGrid({
+    required this.bankSummaries,
+    required this.showBalance,
+    required this.onBankTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cards = <Widget>[
+      ...bankSummaries.map((bank) {
+        return _BankGridCard(
+          bankId: bank.bankId,
+          accountCount: bank.accountCount,
+          balance: bank.totalBalance,
+          showBalance: showBalance,
+          onTap: () => onBankTap(bank.bankId),
+        );
+      }),
+      const _AddAccountCard(),
+    ];
+
+    final rows = <Widget>[];
+    for (int i = 0; i < cards.length; i += 2) {
+      rows.add(
+        Padding(
+          padding: EdgeInsets.only(bottom: i + 2 < cards.length ? 12 : 0),
+          child: Row(
+            children: [
+              Expanded(child: cards[i]),
+              const SizedBox(width: 12),
+              Expanded(
+                child: i + 1 < cards.length ? cards[i + 1] : const SizedBox(),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(children: rows);
+  }
+}
+
+class _BankGridCard extends StatelessWidget {
+  final int bankId;
+  final int accountCount;
+  final double balance;
+  final bool showBalance;
+  final VoidCallback onTap;
+
+  const _BankGridCard({
+    required this.bankId,
+    required this.accountCount,
+    required this.balance,
+    required this.showBalance,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bankName = _getBankName(bankId);
+    final bankImage = _getBankImage(bankId);
+    final balanceLabel =
+        showBalance ? 'ETB ${_formatEtbAbbrev(balance)}' : '*****';
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    bankName,
+                    style: const TextStyle(
+                      color: AppColors.slate900,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                _BankLogoCircle(imagePath: bankImage, size: 40),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$accountCount Account${accountCount == 1 ? '' : 's'}',
+              style: const TextStyle(
+                color: AppColors.slate500,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    balanceLabel,
+                    style: TextStyle(
+                      color:
+                          showBalance ? AppColors.slate700 : AppColors.slate500,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: showBalance ? 0 : 2,
+                    ),
+                  ),
+                ),
+                Icon(
+                  showBalance
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  color: AppColors.slate400,
+                  size: 18,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AddAccountCard extends StatelessWidget {
+  const _AddAccountCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {},
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border, style: BorderStyle.solid),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Add\nAccount',
+                    style: TextStyle(
+                      color: AppColors.slate900,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.slate200, width: 1.5),
+                  ),
+                  child: const Icon(
+                    Icons.add,
+                    color: AppColors.slate500,
+                    size: 22,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Register new',
+              style: TextStyle(
+                color: AppColors.slate500,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Bank Account',
+              style: TextStyle(
+                color: AppColors.slate500,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BankSelectorStrip extends StatelessWidget {
+  final List<BankSummary> bankSummaries;
+  final int? selectedBankId;
+  final ValueChanged<int> onBankSelected;
+  final VoidCallback onTotalsSelected;
+
+  const _BankSelectorStrip({
+    required this.bankSummaries,
+    required this.selectedBankId,
+    required this.onBankSelected,
+    required this.onTotalsSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isTotalsSelected = selectedBankId == null;
+
+    return SizedBox(
+      width: double.infinity,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              // Totals icon (first)
+              GestureDetector(
+                onTap: onTotalsSelected,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 6),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: isTotalsSelected
+                        ? Border.all(
+                            color: AppColors.primaryLight, width: 2.5)
+                        : null,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/icon/totals_icon.png',
+                        width: 36,
+                        height: 36,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // Bank icons
+              ...bankSummaries.map((bank) {
+                final isSelected = bank.bankId == selectedBankId;
+                final image = _getBankImage(bank.bankId);
+                return GestureDetector(
+                  onTap: () => onBankSelected(bank.bankId),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: isSelected
+                          ? Border.all(
+                              color: AppColors.primaryLight, width: 2.5)
+                          : null,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: _BankLogoCircle(
+                        imagePath: image,
+                        size: 36,
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountCard extends StatelessWidget {
+  final AccountSummary account;
+  final int bankId;
+  final bool isExpanded;
+  final bool showBalance;
+  final int transactionCount;
+  final VoidCallback onToggleExpand;
+
+  const _AccountCard({
+    required this.account,
+    required this.bankId,
+    required this.isExpanded,
+    required this.showBalance,
+    required this.transactionCount,
+    required this.onToggleExpand,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bankImage = _getBankImage(bankId);
+    final balanceLabel = showBalance
+        ? 'ETB ${formatNumberWithComma(account.balance).replaceFirst(RegExp(r'\.00\$'), '')}'
+        : '*****';
+    final creditLabel =
+        showBalance ? '+ETB ${_formatEtbAbbrev(account.totalCredit)}' : '***';
+    final debitLabel =
+        showBalance ? '-ETB ${_formatEtbAbbrev(account.totalDebit)}' : '***';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: InkWell(
+        onTap: onToggleExpand,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  _BankLogoCircle(imagePath: bankImage, size: 44),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          account.accountNumber,
+                          style: const TextStyle(
+                            color: AppColors.slate900,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          account.accountHolderName.toUpperCase(),
+                          style: const TextStyle(
+                            color: AppColors.slate500,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                        if (isExpanded) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            balanceLabel,
+                            style: const TextStyle(
+                              color: AppColors.slate900,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Column(
+                    children: [
+                      Icon(
+                        isExpanded
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                        color: AppColors.slate500,
+                        size: 22,
+                      ),
+                      const SizedBox(height: 8),
+                      Icon(
+                        showBalance
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        color: AppColors.slate400,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              if (!isExpanded) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const SizedBox(width: 56),
+                    Text(
+                      balanceLabel,
+                      style: TextStyle(
+                        color: showBalance
+                            ? AppColors.slate700
+                            : AppColors.slate500,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: showBalance ? 0 : 2,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (isExpanded) ...[
+                const SizedBox(height: 14),
+                Container(height: 1, color: AppColors.border),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'TRANSACTIONS',
+                          style: TextStyle(
+                            color: AppColors.slate500,
+                            fontSize: 10,
+                            letterSpacing: 0.8,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _formatCount(transactionCount),
+                          style: const TextStyle(
+                            color: AppColors.slate900,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 24),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'IN & OUT',
+                          style: TextStyle(
+                            color: AppColors.slate500,
+                            fontSize: 10,
+                            letterSpacing: 0.8,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              creditLabel,
+                              style: const TextStyle(
+                                color: AppColors.incomeSuccess,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const Text(
+                              ' | ',
+                              style: TextStyle(
+                                color: AppColors.slate400,
+                                fontSize: 14,
+                              ),
+                            ),
+                            Text(
+                              debitLabel,
+                              style: const TextStyle(
+                                color: AppColors.red,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BankLogoCircle extends StatelessWidget {
+  final String imagePath;
+  final double size;
+
+  const _BankLogoCircle({
+    required this.imagePath,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (imagePath.isEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: const BoxDecoration(
+          color: AppColors.slate200,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          Icons.account_balance,
+          size: size * 0.5,
+          color: AppColors.slate500,
+        ),
+      );
+    }
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(shape: BoxShape.circle),
+      clipBehavior: Clip.antiAlias,
+      child: Image.asset(
+        imagePath,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
+          color: AppColors.slate200,
+          child: Icon(
+            Icons.account_balance,
+            size: size * 0.5,
+            color: AppColors.slate500,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Filter Bottom Sheet ──────────────────────────────────────────
+
+class _FilterTransactionsSheet extends StatefulWidget {
+  final _TransactionFilter currentFilter;
+  final List<int> bankIds;
+  final List<String> accountNumbers;
+
+  const _FilterTransactionsSheet({
+    required this.currentFilter,
+    required this.bankIds,
+    required this.accountNumbers,
+  });
+
+  @override
+  State<_FilterTransactionsSheet> createState() =>
+      _FilterTransactionsSheetState();
+}
+
+class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
+  late String? _selectedType;
+  late int? _selectedBankId;
+  late String? _selectedAccountNumber;
+  DateTime? _startDate;
+  DateTime? _endDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedType = widget.currentFilter.type;
+    _selectedBankId = widget.currentFilter.bankId;
+    _selectedAccountNumber = widget.currentFilter.accountNumber;
+    _startDate = widget.currentFilter.startDate;
+    _endDate = widget.currentFilter.endDate;
+  }
+
+  void _clearAll() {
+    setState(() {
+      _selectedType = null;
+      _selectedBankId = null;
+      _selectedAccountNumber = null;
+      _startDate = null;
+      _endDate = null;
+    });
+  }
+
+  void _apply() {
+    Navigator.of(context).pop(
+      _TransactionFilter(
+        type: _selectedType,
+        bankId: _selectedBankId,
+        accountNumber: _selectedAccountNumber,
+        startDate: _startDate,
+        endDate: _endDate,
+      ),
+    );
+  }
+
+  Future<void> _pickDate({required bool isStart}) async {
+    final initial = (isStart ? _startDate : _endDate) ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primaryDark,
+              onPrimary: AppColors.white,
+              surface: AppColors.white,
+              onSurface: AppColors.slate900,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        if (isStart) {
+          _startDate = picked;
+        } else {
+          _endDate = picked;
+        }
+      });
+    }
+  }
+
+  String _maskAccount(String accountNumber) {
+    if (accountNumber.length <= 6) return accountNumber;
+    final visible = accountNumber.length > 10 ? 4 : 3;
+    final prefix = accountNumber.substring(0, visible);
+    final suffix = accountNumber.substring(accountNumber.length - visible);
+    final masked = '*' * (accountNumber.length - visible * 2);
+    return '$prefix$masked$suffix';
+  }
+
+  String _formatDate(DateTime date) {
+    return '${_months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      decoration: const BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.slate400,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 12, 0),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Filter Transactions',
+                    style: TextStyle(
+                      color: AppColors.slate900,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close, color: AppColors.slate500),
+                  splashRadius: 20,
+                ),
+              ],
+            ),
+          ),
+
+          // Scrollable content
+          Flexible(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottomPadding),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── TYPE ──
+                  _sectionLabel('TYPE'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _FilterChip(
+                        label: 'All',
+                        selected: _selectedType == null,
+                        onTap: () => setState(() => _selectedType = null),
+                      ),
+                      _FilterChip(
+                        label: 'Expense',
+                        selected: _selectedType == 'DEBIT',
+                        onTap: () => setState(() => _selectedType = 'DEBIT'),
+                      ),
+                      _FilterChip(
+                        label: 'Income',
+                        selected: _selectedType == 'CREDIT',
+                        onTap: () => setState(() => _selectedType = 'CREDIT'),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ── BANK ──
+                  _sectionLabel('BANK'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _FilterChip(
+                        label: 'All Banks',
+                        selected: _selectedBankId == null,
+                        onTap: () => setState(() => _selectedBankId = null),
+                      ),
+                      for (final bankId in widget.bankIds)
+                        _FilterChip(
+                          label: _bankLabel(bankId),
+                          selected: _selectedBankId == bankId,
+                          onTap: () => setState(() => _selectedBankId = bankId),
+                        ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ── ACCOUNT ──
+                  _sectionLabel('ACCOUNT'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _FilterChip(
+                        label: 'All Accounts',
+                        selected: _selectedAccountNumber == null,
+                        onTap: () =>
+                            setState(() => _selectedAccountNumber = null),
+                      ),
+                      for (final account in widget.accountNumbers)
+                        _FilterChip(
+                          label: _maskAccount(account),
+                          selected: _selectedAccountNumber == account,
+                          onTap: () =>
+                              setState(() => _selectedAccountNumber = account),
+                        ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ── DATE RANGE ──
+                  _sectionLabel('DATE RANGE'),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _DatePickerField(
+                          hint: 'Start date',
+                          value: _startDate != null
+                              ? _formatDate(_startDate!)
+                              : null,
+                          onTap: () => _pickDate(isStart: true),
+                          onClear: _startDate != null
+                              ? () => setState(() => _startDate = null)
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _DatePickerField(
+                          hint: 'End date',
+                          value:
+                              _endDate != null ? _formatDate(_endDate!) : null,
+                          onTap: () => _pickDate(isStart: false),
+                          onClear: _endDate != null
+                              ? () => setState(() => _endDate = null)
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // ── ACTIONS ──
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _clearAll,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.slate700,
+                            side: const BorderSide(color: AppColors.border),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text(
+                            'Clear All',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: _apply,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryDark,
+                            foregroundColor: AppColors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text(
+                            'Apply Filters',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: AppColors.slate500,
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.8,
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primaryDark : AppColors.slate50,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? AppColors.primaryDark : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? AppColors.white : AppColors.slate700,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DatePickerField extends StatelessWidget {
+  final String hint;
+  final String? value;
+  final VoidCallback onTap;
+  final VoidCallback? onClear;
+
+  const _DatePickerField({
+    required this.hint,
+    required this.value,
+    required this.onTap,
+    this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: AppColors.slate50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                value ?? hint,
+                style: TextStyle(
+                  color:
+                      value != null ? AppColors.slate900 : AppColors.slate400,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            if (onClear != null)
+              GestureDetector(
+                onTap: onClear,
+                child: const Icon(
+                  Icons.close,
+                  size: 16,
+                  color: AppColors.slate400,
+                ),
+              )
+            else
+              const Icon(
+                Icons.calendar_today_outlined,
+                size: 16,
+                color: AppColors.slate400,
+              ),
+          ],
         ),
       ),
     );
