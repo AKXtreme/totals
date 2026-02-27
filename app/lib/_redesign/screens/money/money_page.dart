@@ -259,7 +259,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     final accountCount = summary?.accounts ?? 0;
     final totalCredit = summary?.totalCredit ?? 0.0;
     final totalDebit = summary?.totalDebit ?? 0.0;
-    final totalTxnCount = provider.transactions.length;
+    final totalTxnCount = provider.allTransactions.length;
 
     // Bank detail data
     BankSummary? bankSummary;
@@ -285,7 +285,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
             .toList();
     final bankTxnCount = isOverview
         ? 0
-        : provider.transactions
+        : provider.allTransactions
             .where((t) => t.bankId == _selectedBankId)
             .length;
 
@@ -523,7 +523,7 @@ String _formatEtbAbbrev(double value) {
 }
 
 String _getBankImage(int bankId) {
-  if (bankId == CashConstants.bankId) return CashConstants.bankImage;
+  if (bankId == CashConstants.bankId) return 'assets/images/eth_birr.png';
   try {
     return AppConstants.banks.firstWhere((b) => b.id == bankId).image;
   } catch (_) {
@@ -1439,28 +1439,15 @@ class _BankGridCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    balanceLabel,
-                    style: TextStyle(
-                      color:
-                          showBalance ? AppColors.slate700 : AppColors.slate500,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: showBalance ? 0 : 2,
-                    ),
-                  ),
-                ),
-                Icon(
-                  showBalance
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
-                  color: AppColors.slate400,
-                  size: 18,
-                ),
-              ],
+            Text(
+              balanceLabel,
+              style: TextStyle(
+                color:
+                    showBalance ? AppColors.slate700 : AppColors.slate500,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                letterSpacing: showBalance ? 0 : 2,
+              ),
             ),
           ],
         ),
