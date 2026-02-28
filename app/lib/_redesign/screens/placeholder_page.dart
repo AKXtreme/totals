@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
+import 'package:totals/providers/theme_provider.dart';
 
 class RedesignPlaceholderPage extends StatefulWidget {
   final String title;
@@ -52,65 +54,130 @@ class _RedesignPlaceholderPageState extends State<RedesignPlaceholderPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final themeProvider = context.watch<ThemeProvider>();
+    final isDark = themeProvider.themeMode == ThemeMode.dark;
 
     return Scaffold(
-      backgroundColor: AppColors.slate50,
+      backgroundColor: AppColors.background(context),
       body: SafeArea(
-        child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                decoration: BoxDecoration(
-                  color: AppColors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Text(
-                  widget.title,
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.slate900,
-                  ),
+              Text(
+                'You',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary(context),
                 ),
               ),
-              if (widget.showRedesignToggle && !_isLoading) ...[
-                const SizedBox(height: 24),
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 24),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.palette_rounded,
-                          size: 20, color: AppColors.slate700),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Use Redesign',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.slate900,
-                          ),
-                        ),
-                      ),
-                      Switch(
-                        value: _useRedesign,
-                        onChanged: _toggleRedesign,
-                      ),
-                    ],
+              const SizedBox(height: 4),
+              Text(
+                'Preferences & settings.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.textSecondary(context),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Dark Mode toggle
+              _SettingTile(
+                icon: Icons.dark_mode_outlined,
+                iconColor: AppColors.primaryLight,
+                title: 'Dark Mode',
+                subtitle: 'Switch between light and dark theme',
+                trailing: Switch(
+                  value: isDark,
+                  onChanged: (_) => themeProvider.toggleTheme(),
+                  activeColor: AppColors.primaryLight,
+                ),
+              ),
+
+              // Redesign toggle
+              if (widget.showRedesignToggle && !_isLoading)
+                _SettingTile(
+                  icon: Icons.palette_rounded,
+                  iconColor: AppColors.amber,
+                  title: 'Use Redesign',
+                  subtitle: 'Switch to the new design system',
+                  trailing: Switch(
+                    value: _useRedesign,
+                    onChanged: _toggleRedesign,
+                    activeColor: AppColors.primaryLight,
                   ),
                 ),
-              ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final Widget trailing;
+
+  const _SettingTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(context),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.borderColor(context)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary(context),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            trailing,
+          ],
         ),
       ),
     );

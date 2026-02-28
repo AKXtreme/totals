@@ -18,8 +18,8 @@ class RedesignBottomNav extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: AppColors.white,
-          border: Border(top: BorderSide(color: AppColors.border)),
+          color: AppColors.cardColor(context),
+          border: Border(top: BorderSide(color: AppColors.borderColor(context))),
           boxShadow: [
             BoxShadow(
               color: AppColors.black.withOpacity(0.06),
@@ -83,7 +83,9 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isActive ? AppColors.slate900 : AppColors.slate400;
+    final color = isActive
+        ? AppColors.textPrimary(context)
+        : AppColors.textTertiary(context);
 
     return Expanded(
       child: InkWell(

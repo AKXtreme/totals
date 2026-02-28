@@ -95,7 +95,7 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
             : provider.monthTrendSeries;
 
         return Scaffold(
-          backgroundColor: AppColors.slate50,
+          backgroundColor: AppColors.background(context),
           body: SafeArea(
             child: RefreshIndicator(
               color: AppColors.primaryLight,
@@ -136,7 +136,7 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                           'Today ($todayCount)',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
-                            color: AppColors.slate900,
+                            color: AppColors.textPrimary(context),
                           ),
                         ),
                         Row(
@@ -492,10 +492,12 @@ class _RefreshButton extends StatelessWidget {
       child: IconButton(
         onPressed: isLoading ? null : onTap,
         style: IconButton.styleFrom(
-          backgroundColor: AppColors.white,
-          side: const BorderSide(color: AppColors.border),
-          foregroundColor: AppColors.slate700,
-          disabledForegroundColor: AppColors.slate400,
+          backgroundColor: AppColors.cardColor(context),
+          side: BorderSide(color: AppColors.borderColor(context)),
+          foregroundColor: AppColors.isDark(context)
+              ? AppColors.slate400
+              : AppColors.slate700,
+          disabledForegroundColor: AppColors.textTertiary(context),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
@@ -669,9 +671,9 @@ class _InsightCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: AppColors.cardColor(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.borderColor(context)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -697,7 +699,7 @@ class _InsightCard extends StatelessWidget {
                 Text(
                   'INSIGHT',
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: AppColors.slate500,
+                    color: AppColors.textSecondary(context),
                     letterSpacing: 0.8,
                     fontWeight: FontWeight.w700,
                   ),
@@ -706,7 +708,9 @@ class _InsightCard extends StatelessWidget {
                 Text(
                   message,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.slate700,
+                    color: AppColors.isDark(context)
+                        ? AppColors.slate400
+                        : AppColors.slate700,
                     height: 1.4,
                   ),
                 ),
@@ -753,10 +757,12 @@ class _TransactionTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: selected
             ? AppColors.primaryLight.withValues(alpha: 0.08)
-            : AppColors.white,
+            : AppColors.cardColor(context),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: selected ? AppColors.primaryLight : AppColors.border,
+          color: selected
+              ? AppColors.primaryLight
+              : AppColors.borderColor(context),
         ),
       ),
       child: InkWell(
@@ -783,7 +789,7 @@ class _TransactionTile extends StatelessWidget {
                       bank,
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
-                        color: AppColors.slate900,
+                        color: AppColors.textPrimary(context),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -808,7 +814,7 @@ class _TransactionTile extends StatelessWidget {
                   Text(
                     name,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.slate500,
+                      color: AppColors.textSecondary(context),
                       letterSpacing: 0.4,
                     ),
                   ),
@@ -816,7 +822,7 @@ class _TransactionTile extends StatelessWidget {
                   Text(
                     timestamp,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.slate400,
+                      color: AppColors.textTertiary(context),
                       fontSize: 10,
                     ),
                   ),
@@ -904,7 +910,7 @@ class _SelectionBar extends StatelessWidget {
           GestureDetector(
             onTap: onClear,
             child: Icon(Icons.close_rounded,
-                size: 20, color: AppColors.slate600),
+                size: 20, color: AppColors.textSecondary(context)),
           ),
         ],
       ),
@@ -924,9 +930,9 @@ class _LoadingTransactions extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
           decoration: BoxDecoration(
-            color: AppColors.white,
+            color: AppColors.cardColor(context),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: AppColors.borderColor(context)),
           ),
           child: Row(
             children: [
@@ -934,7 +940,9 @@ class _LoadingTransactions extends StatelessWidget {
                 child: Container(
                   height: 12,
                   decoration: BoxDecoration(
-                    color: AppColors.slate200,
+                    color: AppColors.isDark(context)
+                        ? AppColors.slate700
+                        : AppColors.slate200,
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -957,9 +965,9 @@ class _EmptyTransactions extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: AppColors.cardColor(context),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.borderColor(context)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -967,13 +975,15 @@ class _EmptyTransactions extends StatelessWidget {
           Icon(
             Icons.receipt_long_rounded,
             size: 40,
-            color: AppColors.slate400,
+            color: AppColors.textTertiary(context),
           ),
           const SizedBox(height: 10),
           Text(
             'No transactions today',
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: AppColors.slate700,
+              color: AppColors.isDark(context)
+                  ? AppColors.slate400
+                  : AppColors.slate700,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -982,7 +992,7 @@ class _EmptyTransactions extends StatelessWidget {
             'New transactions will appear here as they come in.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
-              color: AppColors.slate400,
+              color: AppColors.textTertiary(context),
             ),
           ),
         ],
@@ -1009,9 +1019,9 @@ class _IncomeExpenseCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: AppColors.cardColor(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.borderColor(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1022,7 +1032,7 @@ class _IncomeExpenseCard extends StatelessWidget {
                 'Income vs Expense',
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w700,
-                  color: AppColors.slate900,
+                  color: AppColors.textPrimary(context),
                 ),
               ),
               const Spacer(),
@@ -1040,6 +1050,9 @@ class _IncomeExpenseCard extends StatelessWidget {
               painter: _IncomeExpenseChartPainter(
                 incomePoints: trendSeries.incomePoints,
                 expensePoints: trendSeries.expensePoints,
+                gridColor: AppColors.isDark(context)
+                    ? AppColors.slate700
+                    : AppColors.slate200,
               ),
             ),
           ),
@@ -1065,14 +1078,14 @@ class _IncomeExpenseCard extends StatelessWidget {
               Text(
                 'Peak: ETB ${_formatEtbValue(trendSeries.maxValue)}',
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.slate500,
+                  color: AppColors.textSecondary(context),
                   fontWeight: FontWeight.w600,
                 ),
               ),
               Text(
                 'Last ${trendSeries.days} days',
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.slate500,
+                  color: AppColors.textSecondary(context),
                 ),
               ),
             ],
@@ -1094,9 +1107,13 @@ class _RangeToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final toggleBg = AppColors.isDark(context)
+        ? AppColors.slate700.withValues(alpha: 0.6)
+        : AppColors.slate200.withValues(alpha: 0.6);
+
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.slate200.withValues(alpha: 0.6),
+        color: toggleBg,
         borderRadius: BorderRadius.circular(8),
       ),
       padding: const EdgeInsets.all(2),
@@ -1138,7 +1155,7 @@ class _RangeToggleButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? AppColors.white : Colors.transparent,
+          color: selected ? AppColors.cardColor(context) : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
@@ -1146,7 +1163,9 @@ class _RangeToggleButton extends StatelessWidget {
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w700,
-            color: selected ? AppColors.slate900 : AppColors.slate500,
+            color: selected
+                ? AppColors.textPrimary(context)
+                : AppColors.textSecondary(context),
           ),
         ),
       ),
@@ -1157,16 +1176,18 @@ class _RangeToggleButton extends StatelessWidget {
 class _IncomeExpenseChartPainter extends CustomPainter {
   final List<double> incomePoints;
   final List<double> expensePoints;
+  final Color gridColor;
 
   _IncomeExpenseChartPainter({
     required this.incomePoints,
     required this.expensePoints,
+    required this.gridColor,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final gridPaint = Paint()
-      ..color = AppColors.slate200
+      ..color = gridColor
       ..strokeWidth = 1;
     const dashWidth = 4.0;
     const dashSpace = 4.0;
@@ -1217,7 +1238,8 @@ class _IncomeExpenseChartPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _IncomeExpenseChartPainter oldDelegate) {
     return oldDelegate.incomePoints != incomePoints ||
-        oldDelegate.expensePoints != expensePoints;
+        oldDelegate.expensePoints != expensePoints ||
+        oldDelegate.gridColor != gridColor;
   }
 }
 
@@ -1246,9 +1268,9 @@ class _BalanceBreakdownSheet extends StatelessWidget {
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
-      decoration: const BoxDecoration(
-        color: AppColors.slate50,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      decoration: BoxDecoration(
+        color: AppColors.background(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: SafeArea(
         top: false,
@@ -1260,7 +1282,7 @@ class _BalanceBreakdownSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.slate400,
+                color: AppColors.textTertiary(context),
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
@@ -1272,7 +1294,7 @@ class _BalanceBreakdownSheet extends StatelessWidget {
                     'Balance breakdown',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
-                      color: AppColors.slate900,
+                      color: AppColors.textPrimary(context),
                     ),
                   ),
                   const Spacer(),
@@ -1283,7 +1305,7 @@ class _BalanceBreakdownSheet extends StatelessWidget {
                 ],
               ),
             ),
-            const Divider(height: 1, color: AppColors.border),
+            Divider(height: 1, color: AppColors.borderColor(context)),
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -1293,14 +1315,16 @@ class _BalanceBreakdownSheet extends StatelessWidget {
                     _BreakdownValueRow(
                       label: 'Current balance',
                       value: 'ETB ${_formatEtbValue(totalBalance)}',
-                      valueColor: AppColors.slate900,
+                      valueColor: AppColors.textPrimary(context),
                       emphasize: true,
                     ),
                     const SizedBox(height: 14),
                     Text(
                       'This month',
                       style: theme.textTheme.labelLarge?.copyWith(
-                        color: AppColors.slate700,
+                        color: AppColors.isDark(context)
+                            ? AppColors.slate400
+                            : AppColors.slate700,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1326,7 +1350,9 @@ class _BalanceBreakdownSheet extends StatelessWidget {
                     Text(
                       'Last 30 days',
                       style: theme.textTheme.labelLarge?.copyWith(
-                        color: AppColors.slate700,
+                        color: AppColors.isDark(context)
+                            ? AppColors.slate400
+                            : AppColors.slate700,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1353,7 +1379,7 @@ class _BalanceBreakdownSheet extends StatelessWidget {
                     Text(
                       '$monthTransactions transactions counted this month.',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: AppColors.slate600,
+                        color: AppColors.textSecondary(context),
                       ),
                     ),
                     if (selfTransferCount > 0) ...[
@@ -1361,7 +1387,7 @@ class _BalanceBreakdownSheet extends StatelessWidget {
                       Text(
                         '$selfTransferCount self transfers are excluded from income and expense totals.',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppColors.slate500,
+                          color: AppColors.textSecondary(context),
                         ),
                       ),
                     ],
@@ -1400,7 +1426,7 @@ class _BreakdownValueRow extends StatelessWidget {
             child: Text(
               label,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppColors.slate600,
+                color: AppColors.textSecondary(context),
               ),
             ),
           ),
@@ -1416,4 +1442,3 @@ class _BreakdownValueRow extends StatelessWidget {
     );
   }
 }
-

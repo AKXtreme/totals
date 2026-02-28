@@ -13,7 +13,7 @@ class RedesignToolsPage extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: AppColors.slate50,
+      backgroundColor: AppColors.background(context),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -24,14 +24,14 @@ class RedesignToolsPage extends StatelessWidget {
                 'Tools',
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
-                  color: AppColors.slate900,
+                  color: AppColors.textPrimary(context),
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 'Handy utilities at your fingertips.',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: AppColors.slate500,
+                  color: AppColors.textSecondary(context),
                 ),
               ),
               const SizedBox(height: 20),
@@ -107,7 +107,7 @@ class _ToolTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: AppColors.white,
+        color: AppColors.cardColor(context),
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onTap,
@@ -116,7 +116,7 @@ class _ToolTile extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: AppColors.borderColor(context)),
             ),
             child: Row(
               children: [
@@ -138,22 +138,22 @@ class _ToolTile extends StatelessWidget {
                         title,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w700,
-                          color: AppColors.slate900,
+                          color: AppColors.textPrimary(context),
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppColors.slate500,
+                          color: AppColors.textSecondary(context),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const Icon(
+                Icon(
                   Icons.chevron_right_rounded,
-                  color: AppColors.slate400,
+                  color: AppColors.textTertiary(context),
                   size: 20,
                 ),
               ],

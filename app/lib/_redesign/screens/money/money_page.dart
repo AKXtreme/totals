@@ -123,7 +123,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     return Consumer<TransactionProvider>(
       builder: (context, provider, child) {
         return Scaffold(
-          backgroundColor: AppColors.slate50,
+          backgroundColor: AppColors.background(context),
           body: SafeArea(
             child: Column(
               children: [
@@ -244,8 +244,8 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
               child: Center(
                 child: Text(
                   _subTab == _SubTab.analytics ? 'Analytics' : 'Ledger',
-                  style: const TextStyle(
-                    color: AppColors.slate500,
+                  style: TextStyle(
+                    color: AppColors.textSecondary(context),
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
@@ -561,26 +561,26 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.white,
+        backgroundColor: AppColors.cardColor(dialogContext),
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16)),
-        title: const Text(
+        title: Text(
           'Clear Cash Wallet',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
-            color: AppColors.slate900,
+            color: AppColors.textPrimary(dialogContext),
           ),
         ),
-        content: const Text(
+        content: Text(
           'This will set your cash wallet balance to zero.',
-          style: TextStyle(fontSize: 14, color: AppColors.slate700),
+          style: TextStyle(fontSize: 14, color: AppColors.textSecondary(dialogContext)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.slate700)),
+            child: Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary(dialogContext))),
           ),
           TextButton(
             onPressed: () {
@@ -661,30 +661,30 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: AppColors.white,
+          backgroundColor: AppColors.cardColor(dialogContext),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text(
+          title: Text(
             'Delete Account',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
-              color: AppColors.slate900,
+              color: AppColors.textPrimary(dialogContext),
             ),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Are you sure you want to delete this account?',
-                style: TextStyle(fontSize: 14, color: AppColors.slate700),
+                style: TextStyle(fontSize: 14, color: AppColors.textSecondary(dialogContext)),
               ),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppColors.slate50,
+                  color: AppColors.background(dialogContext),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -692,26 +692,26 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                   children: [
                     Text(
                       'Account: ${account.accountNumber}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
-                          color: AppColors.slate900),
+                          color: AppColors.textPrimary(dialogContext)),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Holder: ${account.accountHolderName}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
-                          color: AppColors.slate900),
+                          color: AppColors.textPrimary(dialogContext)),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Bank: ${_getBankName(account.bankId)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
-                          color: AppColors.slate900),
+                          color: AppColors.textPrimary(dialogContext)),
                     ),
                   ],
                 ),
@@ -730,9 +730,9 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text(
+              child: Text(
                 'Cancel',
-                style: TextStyle(color: AppColors.slate700),
+                style: TextStyle(color: AppColors.textSecondary(dialogContext)),
               ),
             ),
             TextButton(
@@ -958,7 +958,7 @@ class _TopTabItem extends StatelessWidget {
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: selected ? AppColors.primaryLight : AppColors.border,
+              color: selected ? AppColors.primaryLight : AppColors.borderColor(context),
               width: selected ? 2.5 : 1,
             ),
           ),
@@ -966,7 +966,7 @@ class _TopTabItem extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? AppColors.primaryLight : AppColors.slate500,
+            color: selected ? AppColors.primaryLight : AppColors.textSecondary(context),
             fontSize: 20,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           ),
@@ -1001,9 +1001,9 @@ class _FinancialHealthCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: AppColors.cardColor(context),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.borderColor(context)),
       ),
       child: Row(
         children: [
@@ -1014,7 +1014,7 @@ class _FinancialHealthCard extends StatelessWidget {
                 Text(
                   'FINANCIAL HEALTH',
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: AppColors.slate500,
+                    color: AppColors.textSecondary(context),
                     letterSpacing: 0.8,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1031,10 +1031,10 @@ class _FinancialHealthCard extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const Text(
+                    Text(
                       ' / 100',
                       style: TextStyle(
-                        color: AppColors.slate500,
+                        color: AppColors.textSecondary(context),
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                       ),
@@ -1045,7 +1045,7 @@ class _FinancialHealthCard extends StatelessWidget {
                 Text(
                   'CASH FLOW ($monthName)',
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: AppColors.slate500,
+                    color: AppColors.textSecondary(context),
                     letterSpacing: 0.8,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1062,10 +1062,10 @@ class _FinancialHealthCard extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const Text(
+                    Text(
                       ' | ',
                       style: TextStyle(
-                        color: AppColors.slate400,
+                        color: AppColors.textTertiary(context),
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
                       ),
@@ -1164,7 +1164,7 @@ class _SubTabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.slate200.withValues(alpha: 0.6),
+        color: (AppColors.isDark(context) ? AppColors.slate700 : AppColors.slate200).withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(10),
       ),
       padding: const EdgeInsets.all(3),
@@ -1222,7 +1222,7 @@ class _SubTabButton extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? AppColors.white : AppColors.slate600,
+            color: selected ? AppColors.white : AppColors.textSecondary(context),
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -1255,17 +1255,17 @@ class _SearchFilterRow extends StatelessWidget {
           child: Container(
             height: 44,
             decoration: BoxDecoration(
-              color: AppColors.white,
+              color: AppColors.cardColor(context),
               borderRadius: BorderRadius.circular(10),
             ),
             child: TextField(
               controller: controller,
               onChanged: onChanged,
-              style: const TextStyle(fontSize: 14, color: AppColors.slate900),
-              decoration: const InputDecoration(
+              style: TextStyle(fontSize: 14, color: AppColors.textPrimary(context)),
+              decoration: InputDecoration(
                 hintText: 'Search Transactions',
                 hintStyle: TextStyle(
-                  color: AppColors.slate400,
+                  color: AppColors.textTertiary(context),
                   fontSize: 14,
                   fontWeight: FontWeight.w400,
                 ),
@@ -1289,17 +1289,17 @@ class _SearchFilterRow extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: hasFilters
                       ? AppColors.primaryDark.withValues(alpha: 0.1)
-                      : AppColors.white,
+                      : AppColors.cardColor(context),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
                     color:
-                        hasFilters ? AppColors.primaryDark : AppColors.border,
+                        hasFilters ? AppColors.primaryDark : AppColors.borderColor(context),
                   ),
                 ),
                 child: Icon(
                   Icons.filter_list,
                   color:
-                      hasFilters ? AppColors.primaryDark : AppColors.slate500,
+                      hasFilters ? AppColors.primaryDark : AppColors.textSecondary(context),
                   size: 22,
                 ),
               ),
@@ -1394,8 +1394,8 @@ class _DateHeader extends StatelessWidget {
       padding: const EdgeInsets.only(top: 16, bottom: 8),
       child: Text(
         label,
-        style: const TextStyle(
-          color: AppColors.slate700,
+        style: TextStyle(
+          color: AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700,
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
@@ -1436,10 +1436,10 @@ class _TransactionTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: selected
             ? AppColors.primaryLight.withValues(alpha: 0.08)
-            : AppColors.white,
+            : AppColors.cardColor(context),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: selected ? AppColors.primaryLight : AppColors.border,
+          color: selected ? AppColors.primaryLight : AppColors.borderColor(context),
         ),
       ),
       child: InkWell(
@@ -1466,7 +1466,7 @@ class _TransactionTile extends StatelessWidget {
                       bank,
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
-                        color: AppColors.slate900,
+                        color: AppColors.textPrimary(context),
                         fontSize: 16,
                       ),
                     ),
@@ -1493,7 +1493,7 @@ class _TransactionTile extends StatelessWidget {
                   Text(
                     name,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.slate500,
+                      color: AppColors.textSecondary(context),
                       letterSpacing: 0.4,
                     ),
                   ),
@@ -1539,13 +1539,13 @@ class _CategoryChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        border: Border.all(color: AppColors.slate400),
+        border: Border.all(color: AppColors.textTertiary(context)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         label,
-        style: const TextStyle(
-          color: AppColors.slate700,
+        style: TextStyle(
+          color: AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700,
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
@@ -1566,9 +1566,9 @@ class _LoadingTransactions extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
           decoration: BoxDecoration(
-            color: AppColors.white,
+            color: AppColors.cardColor(context),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: AppColors.borderColor(context)),
           ),
           child: Row(
             children: [
@@ -1576,7 +1576,7 @@ class _LoadingTransactions extends StatelessWidget {
                 child: Container(
                   height: 12,
                   decoration: BoxDecoration(
-                    color: AppColors.slate200,
+                    color: AppColors.isDark(context) ? AppColors.slate700 : AppColors.slate200,
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -1597,15 +1597,15 @@ class _EmptyTransactions extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: AppColors.cardColor(context),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.borderColor(context)),
       ),
-      child: const Center(
+      child: Center(
         child: Text(
           'No transactions found',
           style: TextStyle(
-            color: AppColors.slate500,
+            color: AppColors.textSecondary(context),
             fontSize: 14,
           ),
         ),
@@ -1824,9 +1824,9 @@ class _BankGridCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AppColors.white,
+          color: AppColors.cardColor(context),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: AppColors.borderColor(context)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1837,8 +1837,8 @@ class _BankGridCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     bankName,
-                    style: const TextStyle(
-                      color: AppColors.slate900,
+                    style: TextStyle(
+                      color: AppColors.textPrimary(context),
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                     ),
@@ -1850,8 +1850,8 @@ class _BankGridCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               subtitleLabel,
-              style: const TextStyle(
-                color: AppColors.slate500,
+              style: TextStyle(
+                color: AppColors.textSecondary(context),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -1861,7 +1861,7 @@ class _BankGridCard extends StatelessWidget {
               balanceLabel,
               style: TextStyle(
                 color:
-                    showBalance ? AppColors.slate700 : AppColors.slate500,
+                    showBalance ? (AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700) : AppColors.textSecondary(context),
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 letterSpacing: showBalance ? 0 : 2,
@@ -1886,9 +1886,9 @@ class _AddAccountCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AppColors.white,
+          color: AppColors.cardColor(context),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border, style: BorderStyle.solid),
+          border: Border.all(color: AppColors.borderColor(context), style: BorderStyle.solid),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1896,11 +1896,11 @@ class _AddAccountCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Add\nAccount',
                     style: TextStyle(
-                      color: AppColors.slate900,
+                      color: AppColors.textPrimary(context),
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                     ),
@@ -1911,30 +1911,30 @@ class _AddAccountCard extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.slate200, width: 1.5),
+                    border: Border.all(color: AppColors.isDark(context) ? AppColors.slate700 : AppColors.slate200, width: 1.5),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.add,
-                    color: AppColors.slate500,
+                    color: AppColors.textSecondary(context),
                     size: 22,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Register new',
               style: TextStyle(
-                color: AppColors.slate500,
+                color: AppColors.textSecondary(context),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Bank Account',
               style: TextStyle(
-                color: AppColors.slate500,
+                color: AppColors.textSecondary(context),
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -1968,9 +1968,9 @@ class _BankSelectorStrip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         decoration: BoxDecoration(
-          color: AppColors.white,
+          color: AppColors.cardColor(context),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: AppColors.borderColor(context)),
         ),
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -2083,9 +2083,9 @@ class _AccountCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: AppColors.cardColor(context),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.borderColor(context)),
       ),
       child: InkWell(
         onTap: onToggleExpand,
@@ -2104,8 +2104,8 @@ class _AccountCard extends StatelessWidget {
                       children: [
                         Text(
                           accountLabel,
-                          style: const TextStyle(
-                            color: AppColors.slate900,
+                          style: TextStyle(
+                            color: AppColors.textPrimary(context),
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
                           ),
@@ -2113,8 +2113,8 @@ class _AccountCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           holderLabel,
-                          style: const TextStyle(
-                            color: AppColors.slate500,
+                          style: TextStyle(
+                            color: AppColors.textSecondary(context),
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
                             letterSpacing: 0.3,
@@ -2124,8 +2124,8 @@ class _AccountCard extends StatelessWidget {
                           const SizedBox(height: 4),
                           Text(
                             balanceLabel,
-                            style: const TextStyle(
-                              color: AppColors.slate900,
+                            style: TextStyle(
+                              color: AppColors.textPrimary(context),
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
                             ),
@@ -2138,7 +2138,7 @@ class _AccountCard extends StatelessWidget {
                     isExpanded
                         ? Icons.keyboard_arrow_up
                         : Icons.keyboard_arrow_down,
-                    color: AppColors.slate500,
+                    color: AppColors.textSecondary(context),
                     size: 22,
                   ),
                 ],
@@ -2152,8 +2152,8 @@ class _AccountCard extends StatelessWidget {
                       balanceLabel,
                       style: TextStyle(
                         color: showBalance
-                            ? AppColors.slate700
-                            : AppColors.slate500,
+                            ? (AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700)
+                            : AppColors.textSecondary(context),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         letterSpacing: showBalance ? 0 : 2,
@@ -2164,17 +2164,17 @@ class _AccountCard extends StatelessWidget {
               ],
               if (isExpanded) ...[
                 const SizedBox(height: 14),
-                Container(height: 1, color: AppColors.border),
+                Container(height: 1, color: AppColors.borderColor(context)),
                 const SizedBox(height: 12),
                 Row(
                   children: [
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'TRANSACTIONS',
                           style: TextStyle(
-                            color: AppColors.slate500,
+                            color: AppColors.textSecondary(context),
                             fontSize: 10,
                             letterSpacing: 0.8,
                             fontWeight: FontWeight.w500,
@@ -2183,8 +2183,8 @@ class _AccountCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           _formatCount(transactionCount),
-                          style: const TextStyle(
-                            color: AppColors.slate900,
+                          style: TextStyle(
+                            color: AppColors.textPrimary(context),
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                           ),
@@ -2195,10 +2195,10 @@ class _AccountCard extends StatelessWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'IN & OUT',
                           style: TextStyle(
-                            color: AppColors.slate500,
+                            color: AppColors.textSecondary(context),
                             fontSize: 10,
                             letterSpacing: 0.8,
                             fontWeight: FontWeight.w500,
@@ -2216,10 +2216,10 @@ class _AccountCard extends StatelessWidget {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const Text(
+                            Text(
                               ' | ',
                               style: TextStyle(
-                                color: AppColors.slate400,
+                                color: AppColors.textTertiary(context),
                                 fontSize: 14,
                               ),
                             ),
@@ -2240,7 +2240,7 @@ class _AccountCard extends StatelessWidget {
                 // Delete for non-cash accounts
                 if (onDelete != null) ...[
                   const SizedBox(height: 14),
-                  Container(height: 1, color: AppColors.border),
+                  Container(height: 1, color: AppColors.borderColor(context)),
                   const SizedBox(height: 8),
                   GestureDetector(
                     onTap: onDelete,
@@ -2269,7 +2269,7 @@ class _AccountCard extends StatelessWidget {
               // Cash wallet actions – always visible below the card
               if (isCash) ...[
                 const SizedBox(height: 12),
-                Container(height: 1, color: AppColors.border),
+                Container(height: 1, color: AppColors.borderColor(context)),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -2340,14 +2340,14 @@ class _BankLogoCircle extends StatelessWidget {
       return Container(
         width: size,
         height: size,
-        decoration: const BoxDecoration(
-          color: AppColors.slate200,
+        decoration: BoxDecoration(
+          color: AppColors.isDark(context) ? AppColors.slate700 : AppColors.slate200,
           shape: BoxShape.circle,
         ),
         child: Icon(
           Icons.account_balance,
           size: size * 0.5,
-          color: AppColors.slate500,
+          color: AppColors.textSecondary(context),
         ),
       );
     }
@@ -2361,11 +2361,11 @@ class _BankLogoCircle extends StatelessWidget {
         imagePath,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => Container(
-          color: AppColors.slate200,
+          color: AppColors.isDark(context) ? AppColors.slate700 : AppColors.slate200,
           child: Icon(
             Icons.account_balance,
             size: size * 0.5,
-            color: AppColors.slate500,
+            color: AppColors.textSecondary(context),
           ),
         ),
       ),
@@ -2395,7 +2395,7 @@ class _CashActionButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: outlined ? AppColors.white : color,
+          color: outlined ? AppColors.cardColor(context) : color,
           borderRadius: BorderRadius.circular(10),
           border: outlined ? Border.all(color: color.withValues(alpha: 0.5)) : null,
         ),
@@ -2461,9 +2461,9 @@ class _SetCashAmountSheetState extends State<_SetCashAmountSheet> {
 
     return Container(
       padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + 20),
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Form(
         key: _formKey,
@@ -2482,10 +2482,10 @@ class _SetCashAmountSheetState extends State<_SetCashAmountSheet> {
                 ),
               ),
             ),
-            const Text(
+            Text(
               'Set cash wallet amount',
               style: TextStyle(
-                color: AppColors.slate900,
+                color: AppColors.textPrimary(context),
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),
@@ -2496,29 +2496,29 @@ class _SetCashAmountSheetState extends State<_SetCashAmountSheet> {
               autofocus: true,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
-              style: const TextStyle(
-                color: AppColors.slate900,
+              style: TextStyle(
+                color: AppColors.textPrimary(context),
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
               ),
               decoration: InputDecoration(
                 labelText: 'Target balance',
                 prefixText: 'ETB ',
-                prefixStyle: const TextStyle(
-                  color: AppColors.slate500,
+                prefixStyle: TextStyle(
+                  color: AppColors.textSecondary(context),
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                 ),
                 hintText: '0.00',
                 filled: true,
-                fillColor: AppColors.slate50,
+                fillColor: AppColors.surfaceColor(context),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.border),
+                  borderSide: BorderSide(color: AppColors.borderColor(context)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.border),
+                  borderSide: BorderSide(color: AppColors.borderColor(context)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -2541,14 +2541,14 @@ class _SetCashAmountSheetState extends State<_SetCashAmountSheet> {
                     onPressed: () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: const BorderSide(color: AppColors.border),
+                      side: BorderSide(color: AppColors.borderColor(context)),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: const Text(
+                    child: Text(
                       'Cancel',
-                      style: TextStyle(color: AppColors.slate700),
+                      style: TextStyle(color: AppColors.textSecondary(context)),
                     ),
                   ),
                 ),
@@ -2705,9 +2705,9 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
 
     return Container(
       padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + 20),
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Form(
         key: _formKey,
@@ -2732,10 +2732,10 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  Text(
                     'Add Account',
                     style: TextStyle(
-                      color: AppColors.slate900,
+                      color: AppColors.textPrimary(context),
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
                     ),
@@ -2745,12 +2745,12 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                     child: Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: AppColors.slate50,
+                        color: AppColors.surfaceColor(context),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.close,
-                        color: AppColors.slate500,
+                        color: AppColors.textSecondary(context),
                         size: 20,
                       ),
                     ),
@@ -2760,10 +2760,10 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               const SizedBox(height: 24),
 
               // Bank selector
-              const Text(
+              Text(
                 'Bank',
                 style: TextStyle(
-                  color: AppColors.slate700,
+                  color: AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -2774,9 +2774,9 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppColors.slate50,
+                    color: AppColors.surfaceColor(context),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
+                    border: Border.all(color: AppColors.borderColor(context)),
                   ),
                   child: Row(
                     children: [
@@ -2794,16 +2794,16 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                               : 'Select a bank',
                           style: TextStyle(
                             color: _selectedBankId != null
-                                ? AppColors.slate900
-                                : AppColors.slate400,
+                                ? AppColors.textPrimary(context)
+                                : AppColors.textTertiary(context),
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
-                      const Icon(
+                      Icon(
                         Icons.keyboard_arrow_down_rounded,
-                        color: AppColors.slate500,
+                        color: AppColors.textSecondary(context),
                       ),
                     ],
                   ),
@@ -2812,10 +2812,10 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               const SizedBox(height: 20),
 
               // Account number
-              const Text(
+              Text(
                 'Account Number',
                 style: TextStyle(
-                  color: AppColors.slate700,
+                  color: AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -2824,22 +2824,22 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               TextFormField(
                 controller: _accountNumberController,
                 keyboardType: TextInputType.number,
-                style: const TextStyle(
-                  color: AppColors.slate900,
+                style: TextStyle(
+                  color: AppColors.textPrimary(context),
                   fontSize: 15,
                 ),
                 decoration: InputDecoration(
                   hintText: 'Enter account number',
-                  hintStyle: const TextStyle(color: AppColors.slate400),
+                  hintStyle: TextStyle(color: AppColors.textTertiary(context)),
                   filled: true,
-                  fillColor: AppColors.slate50,
+                  fillColor: AppColors.surfaceColor(context),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.border),
+                    borderSide: BorderSide(color: AppColors.borderColor(context)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.border),
+                    borderSide: BorderSide(color: AppColors.borderColor(context)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -2855,10 +2855,10 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               const SizedBox(height: 20),
 
               // Account holder name
-              const Text(
+              Text(
                 'Account Holder Name',
                 style: TextStyle(
-                  color: AppColors.slate700,
+                  color: AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -2866,22 +2866,22 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               const SizedBox(height: 8),
               TextFormField(
                 controller: _holderNameController,
-                style: const TextStyle(
-                  color: AppColors.slate900,
+                style: TextStyle(
+                  color: AppColors.textPrimary(context),
                   fontSize: 15,
                 ),
                 decoration: InputDecoration(
                   hintText: 'Enter account holder name',
-                  hintStyle: const TextStyle(color: AppColors.slate400),
+                  hintStyle: TextStyle(color: AppColors.textTertiary(context)),
                   filled: true,
-                  fillColor: AppColors.slate50,
+                  fillColor: AppColors.surfaceColor(context),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.border),
+                    borderSide: BorderSide(color: AppColors.borderColor(context)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.border),
+                    borderSide: BorderSide(color: AppColors.borderColor(context)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -2904,15 +2904,15 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                       onPressed: () => Navigator.pop(context),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        side: const BorderSide(color: AppColors.border),
+                        side: BorderSide(color: AppColors.borderColor(context)),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text(
+                      child: Text(
                         'Cancel',
                         style: TextStyle(
-                          color: AppColors.slate700,
+                          color: AppColors.textSecondary(context),
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -2929,8 +2929,8 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                         backgroundColor: AppColors.primaryDark,
                         foregroundColor: AppColors.white,
                         elevation: 0,
-                        disabledBackgroundColor: AppColors.slate200,
-                        disabledForegroundColor: AppColors.slate400,
+                        disabledBackgroundColor: AppColors.isDark(context) ? AppColors.slate700 : AppColors.slate200,
+                        disabledForegroundColor: AppColors.textTertiary(context),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -2968,11 +2968,11 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
+      builder: (sheetContext) => Container(
         height: MediaQuery.of(context).size.height * 0.6,
-        decoration: const BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(sheetContext),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
           children: [
@@ -2987,12 +2987,12 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                 ),
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.all(16),
+            Padding(
+              padding: const EdgeInsets.all(16),
               child: Text(
                 'Select Bank',
                 style: TextStyle(
-                  color: AppColors.slate900,
+                  color: AppColors.textPrimary(sheetContext),
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                 ),
@@ -3021,12 +3021,12 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                       decoration: BoxDecoration(
                         color: isSelected
                             ? AppColors.primaryLight.withValues(alpha: 0.1)
-                            : AppColors.slate50,
+                            : AppColors.surfaceColor(context),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
                           color: isSelected
                               ? AppColors.primaryLight
-                              : AppColors.border,
+                              : AppColors.borderColor(context),
                           width: isSelected ? 2 : 1,
                         ),
                       ),
@@ -3050,7 +3050,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                                   : FontWeight.w500,
                               color: isSelected
                                   ? AppColors.primaryDark
-                                  : AppColors.slate900,
+                                  : AppColors.textPrimary(context),
                             ),
                           ),
                         ],
@@ -3131,15 +3131,23 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
       initialDate: initial,
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
-      builder: (context, child) {
+      builder: (ctx, child) {
+        final dark = AppColors.isDark(ctx);
         return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.primaryDark,
-              onPrimary: AppColors.white,
-              surface: AppColors.white,
-              onSurface: AppColors.slate900,
-            ),
+          data: Theme.of(ctx).copyWith(
+            colorScheme: dark
+                ? const ColorScheme.dark(
+                    primary: AppColors.primaryLight,
+                    onPrimary: AppColors.white,
+                    surface: AppColors.slate800,
+                    onSurface: AppColors.white,
+                  )
+                : const ColorScheme.light(
+                    primary: AppColors.primaryDark,
+                    onPrimary: AppColors.white,
+                    surface: AppColors.white,
+                    onSurface: AppColors.slate900,
+                  ),
           ),
           child: child!,
         );
@@ -3177,9 +3185,9 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -3200,11 +3208,11 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
             padding: const EdgeInsets.fromLTRB(20, 16, 12, 0),
             child: Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Filter Transactions',
                     style: TextStyle(
-                      color: AppColors.slate900,
+                      color: AppColors.textPrimary(context),
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
                     ),
@@ -3212,7 +3220,7 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: AppColors.slate500),
+                  icon: Icon(Icons.close, color: AppColors.textSecondary(context)),
                   splashRadius: 20,
                 ),
               ],
@@ -3342,8 +3350,8 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
                         child: OutlinedButton(
                           onPressed: _clearAll,
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.slate700,
-                            side: const BorderSide(color: AppColors.border),
+                            foregroundColor: AppColors.textSecondary(context),
+                            side: BorderSide(color: AppColors.borderColor(context)),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
@@ -3395,8 +3403,8 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
   Widget _sectionLabel(String text) {
     return Text(
       text,
-      style: const TextStyle(
-        color: AppColors.slate500,
+      style: TextStyle(
+        color: AppColors.textSecondary(context),
         fontSize: 12,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.8,
@@ -3424,16 +3432,16 @@ class _FilterChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? AppColors.primaryDark : AppColors.slate50,
+          color: selected ? AppColors.primaryDark : AppColors.surfaceColor(context),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected ? AppColors.primaryDark : AppColors.border,
+            color: selected ? AppColors.primaryDark : AppColors.borderColor(context),
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? AppColors.white : AppColors.slate700,
+            color: selected ? AppColors.white : AppColors.textSecondary(context),
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -3464,9 +3472,9 @@ class _DatePickerField extends StatelessWidget {
         height: 44,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: AppColors.slate50,
+          color: AppColors.surfaceColor(context),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: AppColors.borderColor(context)),
         ),
         child: Row(
           children: [
@@ -3475,7 +3483,7 @@ class _DatePickerField extends StatelessWidget {
                 value ?? hint,
                 style: TextStyle(
                   color:
-                      value != null ? AppColors.slate900 : AppColors.slate400,
+                      value != null ? AppColors.textPrimary(context) : AppColors.textTertiary(context),
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
@@ -3484,17 +3492,17 @@ class _DatePickerField extends StatelessWidget {
             if (onClear != null)
               GestureDetector(
                 onTap: onClear,
-                child: const Icon(
+                child: Icon(
                   Icons.close,
                   size: 16,
-                  color: AppColors.slate400,
+                  color: AppColors.textTertiary(context),
                 ),
               )
             else
-              const Icon(
+              Icon(
                 Icons.calendar_today_outlined,
                 size: 16,
-                color: AppColors.slate400,
+                color: AppColors.textTertiary(context),
               ),
           ],
         ),

@@ -68,9 +68,9 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
         final transactions = provider.todayTransactions;
 
         return Scaffold(
-          backgroundColor: AppColors.slate50,
+          backgroundColor: AppColors.background(context),
           appBar: AppBar(
-            backgroundColor: AppColors.slate50,
+            backgroundColor: AppColors.background(context),
             surfaceTintColor: Colors.transparent,
             leading: _isSelecting
                 ? IconButton(
@@ -89,7 +89,7 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
                 fontWeight: FontWeight.w700,
                 color: _isSelecting
                     ? AppColors.primaryDark
-                    : AppColors.slate900,
+                    : AppColors.textPrimary(context),
               ),
             ),
             actions: [
@@ -109,13 +109,13 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
                       Icon(
                         Icons.receipt_long_rounded,
                         size: 48,
-                        color: AppColors.slate400,
+                        color: AppColors.textTertiary(context),
                       ),
                       const SizedBox(height: 12),
                       Text(
                         'No transactions today',
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: AppColors.slate500,
+                          color: AppColors.textSecondary(context),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -242,10 +242,12 @@ class _TransactionTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: selected
             ? AppColors.primaryLight.withValues(alpha: 0.08)
-            : AppColors.white,
+            : AppColors.cardColor(context),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: selected ? AppColors.primaryLight : AppColors.border,
+          color: selected
+              ? AppColors.primaryLight
+              : AppColors.borderColor(context),
         ),
       ),
       child: InkWell(
@@ -272,7 +274,7 @@ class _TransactionTile extends StatelessWidget {
                       bank,
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
-                        color: AppColors.slate900,
+                        color: AppColors.textPrimary(context),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -297,7 +299,7 @@ class _TransactionTile extends StatelessWidget {
                   Text(
                     name,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.slate500,
+                      color: AppColors.textSecondary(context),
                       letterSpacing: 0.4,
                     ),
                   ),
@@ -306,7 +308,7 @@ class _TransactionTile extends StatelessWidget {
                     Text(
                       timestamp,
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: AppColors.slate400,
+                        color: AppColors.textTertiary(context),
                         fontSize: 10,
                       ),
                     ),

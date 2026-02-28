@@ -185,9 +185,9 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     final selfTransferLabel = _provider.getSelfTransferLabel(_tx);
 
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: SafeArea(
         top: false,
@@ -201,7 +201,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.slate400,
+                  color: AppColors.textTertiary(context),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -217,13 +217,13 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                       'Transaction Details',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w800,
-                        color: AppColors.slate900,
+                        color: AppColors.textPrimary(context),
                       ),
                     ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, size: 20),
-                    color: AppColors.slate600,
+                    color: AppColors.textSecondary(context),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -246,7 +246,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
             Text(
               _bankFullName,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppColors.slate600,
+                color: AppColors.textSecondary(context),
               ),
             ),
 
@@ -334,8 +334,10 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.border, width: 1)),
+      decoration: BoxDecoration(
+        border: Border(
+            bottom: BorderSide(
+                color: AppColors.borderColor(context), width: 1)),
       ),
       child: Row(
         children: [
@@ -344,7 +346,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
             child: Text(
               'Category',
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppColors.slate500,
+                color: AppColors.textSecondary(context),
               ),
             ),
           ),
@@ -372,7 +374,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                   Text(
                     'Categorize',
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: AppColors.slate400,
+                      color: AppColors.textTertiary(context),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -382,7 +384,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                       ? Icons.keyboard_arrow_up
                       : Icons.keyboard_arrow_down,
                   size: 18,
-                  color: AppColors.slate400,
+                  color: AppColors.textTertiary(context),
                 ),
               ],
             ),
@@ -458,14 +460,16 @@ class _DetailRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final valueStyle = theme.textTheme.bodyMedium?.copyWith(
-      color: AppColors.slate900,
+      color: AppColors.textPrimary(context),
       fontWeight: FontWeight.w600,
     );
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.border, width: 1)),
+      decoration: BoxDecoration(
+        border: Border(
+            bottom: BorderSide(
+                color: AppColors.borderColor(context), width: 1)),
       ),
       child: Row(
         children: [
@@ -474,7 +478,7 @@ class _DetailRow extends StatelessWidget {
             child: Text(
               label,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppColors.slate500,
+                color: AppColors.textSecondary(context),
               ),
             ),
           ),
@@ -602,7 +606,8 @@ class _CategoryPickerChip extends StatelessWidget {
     final bg = isSelected
         ? color.withValues(alpha: 0.15)
         : Colors.transparent;
-    final border = isSelected ? color : AppColors.border;
+    final border =
+        isSelected ? color : AppColors.borderColor(context);
     final textColor = isRemove ? AppColors.red : color;
 
     return GestureDetector(

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
+import 'package:totals/constants/cash_constants.dart';
+import 'package:totals/data/consts.dart';
+import 'package:totals/providers/transaction_provider.dart';
 
 class RedesignLockScreen extends StatefulWidget {
   final VoidCallback onUnlock;
@@ -41,8 +45,22 @@ class _RedesignLockScreenState extends State<RedesignLockScreen>
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<TransactionProvider>();
+    final bankSummaries = provider.bankSummaries;
+
+    // Resolve bank images (exclude cash wallet)
+    final bankImages = <String>[];
+    for (final bs in bankSummaries) {
+      if (bs.bankId == CashConstants.bankId) continue;
+      try {
+        final bank =
+            AppConstants.banks.firstWhere((b) => b.id == bs.bankId);
+        bankImages.add(bank.image);
+      } catch (_) {}
+    }
+
     return Scaffold(
-      backgroundColor: AppColors.slate50,
+      backgroundColor: AppColors.background(context),
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.onUnlock,
@@ -72,14 +90,10 @@ class _RedesignLockScreenState extends State<RedesignLockScreen>
                     ),
                   );
                 },
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: Image.asset(
-                    'assets/icon/totals_icon.png',
-                    width: 96,
-                    height: 96,
-                    fit: BoxFit.cover,
-                  ),
+                child: Image.asset(
+                  'assets/images/logo-text.png',
+                  width: 120,
+                  fit: BoxFit.contain,
                 ),
               ),
               const SizedBox(height: 24),
@@ -90,10 +104,46 @@ class _RedesignLockScreenState extends State<RedesignLockScreen>
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.slate500,
+                  color: AppColors.textSecondary(context),
                 ),
               ),
-              const SizedBox(height: 40),
+
+              // Bank icons row
+              if (bankImages.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: bankImages.map((image) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: AppColors.cardColor(context),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: AppColors.borderColor(context)),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(9),
+                          child: Image.asset(
+                            image,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Icon(
+                              Icons.account_balance_rounded,
+                              size: 18,
+                              color: AppColors.textTertiary(context),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+
+              const SizedBox(height: 60),
 
               // Unlock prompt
               Container(

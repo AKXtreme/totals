@@ -23,4 +23,29 @@ class AppColors {
   static const Color slate50 = Color(0xFFF8FAFC);
   static const Color border = Color(0xFFE2E8F0);
   static const Color black = Color(0xFF000000);
+
+  // ── Theme-aware helpers ──────────────────────────────────────────────────
+  static bool isDark(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark;
+
+  static Color background(BuildContext context) =>
+      isDark(context) ? slate900 : slate50;
+
+  static Color cardColor(BuildContext context) =>
+      isDark(context) ? slate800 : white;
+
+  static Color textPrimary(BuildContext context) =>
+      isDark(context) ? white : slate900;
+
+  static Color textSecondary(BuildContext context) =>
+      isDark(context) ? slate400 : slate500;
+
+  static Color textTertiary(BuildContext context) =>
+      isDark(context) ? slate500 : slate400;
+
+  static Color borderColor(BuildContext context) =>
+      isDark(context) ? slate700 : border;
+
+  static Color surfaceColor(BuildContext context) =>
+      isDark(context) ? slate900 : surface;
 }
