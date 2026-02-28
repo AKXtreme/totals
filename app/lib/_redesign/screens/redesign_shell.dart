@@ -70,6 +70,7 @@ class RedesignShellState extends State<RedesignShell>
     if (state == AppLifecycleState.paused) {
       setState(() {
         _isAuthenticated = false;
+        _currentIndex = _homeIndex;
       });
     }
     if (state == AppLifecycleState.resumed && !_isAuthenticated) {
@@ -132,7 +133,10 @@ class RedesignShellState extends State<RedesignShell>
   }
 
   void lockApp() {
-    setState(() => _isAuthenticated = false);
+    setState(() {
+      _isAuthenticated = false;
+      _currentIndex = _homeIndex;
+    });
   }
 
   void _onTabSelected(int index) {
