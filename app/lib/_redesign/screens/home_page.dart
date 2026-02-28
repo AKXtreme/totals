@@ -6,6 +6,7 @@ import 'package:totals/data/consts.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/utils/text_utils.dart';
+import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
 import 'package:totals/widgets/categorize_transaction_sheet.dart';
 
 class RedesignHomePage extends StatefulWidget {
@@ -214,22 +215,10 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
     required TransactionProvider provider,
     required Transaction transaction,
   }) async {
-    if (provider.isSelfTransfer(transaction)) {
-      final label = provider.getSelfTransferLabel(transaction) ?? 'self';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'This transaction is marked as "$label" and excluded from totals.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    await showCategorizeTransactionSheet(
+    await showTransactionDetailsSheet(
       context: context,
-      provider: provider,
       transaction: transaction,
+      provider: provider,
     );
   }
 

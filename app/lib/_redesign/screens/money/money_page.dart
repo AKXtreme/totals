@@ -4,12 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/constants/cash_constants.dart';
+import 'package:totals/data/all_banks_from_assets.dart';
 import 'package:totals/data/consts.dart';
+import 'package:totals/models/bank.dart' as bank_model;
 import 'package:totals/models/summary_models.dart';
 import 'package:totals/models/transaction.dart';
+import 'package:totals/models/user_account.dart';
 import 'package:totals/providers/transaction_provider.dart';
-import 'package:totals/utils/gradients.dart';
+import 'package:totals/repositories/account_repository.dart';
+import 'package:totals/repositories/user_account_repository.dart';
 import 'package:totals/utils/text_utils.dart';
+import 'package:totals/widgets/add_cash_transaction_sheet.dart';
+import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
 import 'package:totals/widgets/categorize_transaction_sheet.dart';
 
 class RedesignMoneyPage extends StatefulWidget {
@@ -227,23 +233,10 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     TransactionProvider provider,
     Transaction transaction,
   ) async {
-    if (provider.isSelfTransfer(transaction)) {
-      final label = provider.getSelfTransferLabel(transaction) ?? 'self';
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'This transaction is marked as "$label" and excluded from totals.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    await showCategorizeTransactionSheet(
+    await showTransactionDetailsSheet(
       context: context,
-      provider: provider,
       transaction: transaction,
+      provider: provider,
     );
   }
 
@@ -335,13 +328,17 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                 showBalance: _showAccountBalances,
                 onBankTap: (bankId) =>
                     setState(() => _selectedBankId = bankId),
+                onAddAccount: _showAddAccountSheet,
               )
             else
               ...accounts.map((account) {
+                final isCash =
+                    account.bankId == CashConstants.bankId;
                 final acctTxnCount = account.totalTransactions.toInt();
                 return _AccountCard(
                   account: account,
                   bankId: _selectedBankId!,
+                  isCash: isCash,
                   isExpanded:
                       _expandedAccountNumber == account.accountNumber,
                   showBalance: _showAccountBalances,
@@ -352,6 +349,13 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                             ? null
                             : account.accountNumber;
                   }),
+                  onDelete: isCash
+                      ? null
+                      : () => _showDeleteConfirmation(account),
+                  onCashExpense: isCash ? _showCashExpenseSheet : null,
+                  onCashIncome: isCash ? _showCashIncomeSheet : null,
+                  onSetCashAmount: isCash ? _showSetCashAmountSheet : null,
+                  onClearCash: isCash ? _confirmClearCashWallet : null,
                 );
               }),
           ],
@@ -439,6 +443,289 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     }
 
     return result;
+  }
+
+  bool _isAdjustingCash = false;
+
+  String _cashAccountNumber() {
+    final provider =
+        Provider.of<TransactionProvider>(context, listen: false);
+    final cashAccounts = provider.accountSummaries
+        .where((a) => a.bankId == CashConstants.bankId)
+        .toList();
+    return cashAccounts.isNotEmpty
+        ? cashAccounts.first.accountNumber
+        : CashConstants.defaultAccountNumber;
+  }
+
+  void _showCashExpenseSheet() {
+    final provider =
+        Provider.of<TransactionProvider>(context, listen: false);
+    showAddCashTransactionSheet(
+      context: context,
+      provider: provider,
+      accountNumber: _cashAccountNumber(),
+      initialIsDebit: true,
+    );
+  }
+
+  void _showCashIncomeSheet() {
+    final provider =
+        Provider.of<TransactionProvider>(context, listen: false);
+    showAddCashTransactionSheet(
+      context: context,
+      provider: provider,
+      accountNumber: _cashAccountNumber(),
+      initialIsDebit: false,
+    );
+  }
+
+  void _showSetCashAmountSheet() async {
+    final provider =
+        Provider.of<TransactionProvider>(context, listen: false);
+    final cashSummaries = provider.accountSummaries
+        .where((a) => a.bankId == CashConstants.bankId)
+        .toList();
+    final currentBalance = cashSummaries.isNotEmpty
+        ? cashSummaries.fold<double>(0.0, (sum, a) => sum + a.balance)
+        : 0.0;
+
+    final result = await showModalBottomSheet<double>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _SetCashAmountSheet(currentBalance: currentBalance),
+    );
+    if (result != null) {
+      _applyCashTarget(result);
+    }
+  }
+
+  void _confirmClearCashWallet() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.white,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Clear Cash Wallet',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: AppColors.slate900,
+          ),
+        ),
+        content: const Text(
+          'This will set your cash wallet balance to zero.',
+          style: TextStyle(fontSize: 14, color: AppColors.slate700),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppColors.slate700)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _applyCashTarget(0);
+            },
+            child: Text('Clear',
+                style: TextStyle(
+                    color: Colors.red[600], fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _applyCashTarget(double targetBalance) async {
+    if (_isAdjustingCash) return;
+    setState(() => _isAdjustingCash = true);
+
+    try {
+      final provider =
+          Provider.of<TransactionProvider>(context, listen: false);
+      final delta = await provider.setCashWalletBalance(
+        targetBalance: targetBalance,
+        accountNumber: _cashAccountNumber(),
+      );
+
+      if (!mounted) return;
+
+      if (delta.abs() < 0.0001) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cash wallet is already at that amount'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        final direction = delta > 0 ? 'increased' : 'decreased';
+        final amount = formatNumberWithComma(delta.abs());
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cash wallet $direction by ETB $amount'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update cash wallet: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAdjustingCash = false);
+    }
+  }
+
+  void _showAddAccountSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AddAccountSheet(
+        onAccountAdded: () {
+          Provider.of<TransactionProvider>(context, listen: false).loadData();
+        },
+      ),
+    );
+  }
+
+  void _showDeleteConfirmation(AccountSummary account) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.white,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Delete Account',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: AppColors.slate900,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Are you sure you want to delete this account?',
+                style: TextStyle(fontSize: 14, color: AppColors.slate700),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.slate50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Account: ${account.accountNumber}',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.slate900),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Holder: ${account.accountHolderName}',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.slate900),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Bank: ${_getBankName(account.bankId)}',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.slate900),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'This action cannot be undone.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.red[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: AppColors.slate700),
+              ),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(dialogContext);
+                await _deleteAccount(account);
+              },
+              child: Text(
+                'Delete',
+                style: TextStyle(
+                  color: Colors.red[600],
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteAccount(AccountSummary account) async {
+    try {
+      final accountRepo = AccountRepository();
+      await accountRepo.deleteAccount(account.accountNumber, account.bankId);
+
+      if (mounted) {
+        Provider.of<TransactionProvider>(context, listen: false).loadData();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Account deleted successfully'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting account: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -1336,26 +1623,30 @@ class _BankGrid extends StatelessWidget {
   final List<BankSummary> bankSummaries;
   final bool showBalance;
   final ValueChanged<int> onBankTap;
+  final VoidCallback onAddAccount;
 
   const _BankGrid({
     required this.bankSummaries,
     required this.showBalance,
     required this.onBankTap,
+    required this.onAddAccount,
   });
 
   @override
   Widget build(BuildContext context) {
     final cards = <Widget>[
       ...bankSummaries.map((bank) {
+        final isCash = bank.bankId == CashConstants.bankId;
         return _BankGridCard(
           bankId: bank.bankId,
+          isCash: isCash,
           accountCount: bank.accountCount,
           balance: bank.totalBalance,
           showBalance: showBalance,
           onTap: () => onBankTap(bank.bankId),
         );
       }),
-      const _AddAccountCard(),
+      _AddAccountCard(onTap: onAddAccount),
     ];
 
     final rows = <Widget>[];
@@ -1381,6 +1672,7 @@ class _BankGrid extends StatelessWidget {
 
 class _BankGridCard extends StatelessWidget {
   final int bankId;
+  final bool isCash;
   final int accountCount;
   final double balance;
   final bool showBalance;
@@ -1388,6 +1680,7 @@ class _BankGridCard extends StatelessWidget {
 
   const _BankGridCard({
     required this.bankId,
+    required this.isCash,
     required this.accountCount,
     required this.balance,
     required this.showBalance,
@@ -1396,10 +1689,13 @@ class _BankGridCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bankName = _getBankName(bankId);
+    final bankName = isCash ? 'Cash Wallet' : _getBankName(bankId);
     final bankImage = _getBankImage(bankId);
     final balanceLabel =
         showBalance ? 'ETB ${_formatEtbAbbrev(balance)}' : '*****';
+    final subtitleLabel = isCash
+        ? 'On-hand cash'
+        : '$accountCount Account${accountCount == 1 ? '' : 's'}';
 
     return GestureDetector(
       onTap: onTap,
@@ -1431,7 +1727,7 @@ class _BankGridCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '$accountCount Account${accountCount == 1 ? '' : 's'}',
+              subtitleLabel,
               style: const TextStyle(
                 color: AppColors.slate500,
                 fontSize: 12,
@@ -1457,12 +1753,14 @@ class _BankGridCard extends StatelessWidget {
 }
 
 class _AddAccountCard extends StatelessWidget {
-  const _AddAccountCard();
+  final VoidCallback onTap;
+
+  const _AddAccountCard({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {},
+      onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -1584,6 +1882,7 @@ class _BankSelectorStrip extends StatelessWidget {
               // Bank icons
               ...bankSummaries.map((bank) {
                 final isSelected = bank.bankId == selectedBankId;
+                final isCash = bank.bankId == CashConstants.bankId;
                 final image = _getBankImage(bank.bankId);
                 return GestureDetector(
                   onTap: () => onBankSelected(bank.bankId),
@@ -1599,9 +1898,9 @@ class _BankSelectorStrip extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.all(2),
                       child: _BankLogoCircle(
-                        imagePath: image,
-                        size: 36,
-                      ),
+                              imagePath: image,
+                              size: 36,
+                            ),
                     ),
                   ),
                 );
@@ -1617,18 +1916,30 @@ class _BankSelectorStrip extends StatelessWidget {
 class _AccountCard extends StatelessWidget {
   final AccountSummary account;
   final int bankId;
+  final bool isCash;
   final bool isExpanded;
   final bool showBalance;
   final int transactionCount;
   final VoidCallback onToggleExpand;
+  final VoidCallback? onDelete;
+  final VoidCallback? onCashExpense;
+  final VoidCallback? onCashIncome;
+  final VoidCallback? onSetCashAmount;
+  final VoidCallback? onClearCash;
 
   const _AccountCard({
     required this.account,
     required this.bankId,
+    required this.isCash,
     required this.isExpanded,
     required this.showBalance,
     required this.transactionCount,
     required this.onToggleExpand,
+    this.onDelete,
+    this.onCashExpense,
+    this.onCashIncome,
+    this.onSetCashAmount,
+    this.onClearCash,
   });
 
   @override
@@ -1641,6 +1952,11 @@ class _AccountCard extends StatelessWidget {
         showBalance ? '+ETB ${_formatEtbAbbrev(account.totalCredit)}' : '***';
     final debitLabel =
         showBalance ? '-ETB ${_formatEtbAbbrev(account.totalDebit)}' : '***';
+
+    final accountLabel =
+        isCash ? 'On-hand cash' : account.accountNumber;
+    final holderLabel =
+        isCash ? 'Personal funds' : account.accountHolderName.toUpperCase();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1665,7 +1981,7 @@ class _AccountCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          account.accountNumber,
+                          accountLabel,
                           style: const TextStyle(
                             color: AppColors.slate900,
                             fontSize: 15,
@@ -1674,7 +1990,7 @@ class _AccountCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          account.accountHolderName.toUpperCase(),
+                          holderLabel,
                           style: const TextStyle(
                             color: AppColors.slate500,
                             fontSize: 11,
@@ -1696,24 +2012,12 @@ class _AccountCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Column(
-                    children: [
-                      Icon(
-                        isExpanded
-                            ? Icons.keyboard_arrow_up
-                            : Icons.keyboard_arrow_down,
-                        color: AppColors.slate500,
-                        size: 22,
-                      ),
-                      const SizedBox(height: 8),
-                      Icon(
-                        showBalance
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                        color: AppColors.slate400,
-                        size: 18,
-                      ),
-                    ],
+                  Icon(
+                    isExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    color: AppColors.slate500,
+                    size: 22,
                   ),
                 ],
               ),
@@ -1811,6 +2115,85 @@ class _AccountCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                // Cash wallet actions
+                if (isCash) ...[
+                  const SizedBox(height: 14),
+                  Container(height: 1, color: AppColors.border),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _CashActionButton(
+                          label: 'Expense',
+                          icon: Icons.remove_circle_outline,
+                          color: AppColors.red,
+                          onTap: onCashExpense,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _CashActionButton(
+                          label: 'Income',
+                          icon: Icons.add_circle_outline,
+                          color: AppColors.incomeSuccess,
+                          onTap: onCashIncome,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _CashActionButton(
+                          label: 'Clear',
+                          icon: Icons.cleaning_services_outlined,
+                          color: AppColors.red,
+                          outlined: true,
+                          onTap: onClearCash,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _CashActionButton(
+                          label: 'Set amount',
+                          icon: Icons.tune,
+                          color: AppColors.primaryDark,
+                          outlined: true,
+                          onTap: onSetCashAmount,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                // Delete for non-cash accounts
+                if (onDelete != null) ...[
+                  const SizedBox(height: 14),
+                  Container(height: 1, color: AppColors.border),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: onDelete,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.delete_outline_rounded,
+                          size: 16,
+                          color: AppColors.red.withValues(alpha: 0.7),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Remove Account',
+                          style: TextStyle(
+                            color: AppColors.red.withValues(alpha: 0.7),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ],
           ),
@@ -1862,6 +2245,700 @@ class _BankLogoCircle extends StatelessWidget {
             size: size * 0.5,
             color: AppColors.slate500,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CashActionButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool outlined;
+  final VoidCallback? onTap;
+
+  const _CashActionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    this.outlined = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: outlined ? AppColors.white : color,
+          borderRadius: BorderRadius.circular(10),
+          border: outlined ? Border.all(color: color.withValues(alpha: 0.5)) : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: outlined ? color : AppColors.white),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: outlined ? color : AppColors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Set Cash Amount Sheet ───────────────────────────────────────
+
+class _SetCashAmountSheet extends StatefulWidget {
+  final double currentBalance;
+
+  const _SetCashAmountSheet({required this.currentBalance});
+
+  @override
+  State<_SetCashAmountSheet> createState() => _SetCashAmountSheetState();
+}
+
+class _SetCashAmountSheetState extends State<_SetCashAmountSheet> {
+  late final TextEditingController _controller;
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.currentBalance > 0
+        ? widget.currentBalance.toStringAsFixed(2)
+        : '';
+    _controller = TextEditingController(text: initial);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  double? _parseAmount(String raw) {
+    final cleaned = raw.trim().replaceAll(',', '');
+    if (cleaned.isEmpty) return null;
+    return double.tryParse(cleaned);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + 20),
+      decoration: const BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 16),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.slate400,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const Text(
+              'Set cash wallet amount',
+              style: TextStyle(
+                color: AppColors.slate900,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _controller,
+              autofocus: true,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              style: const TextStyle(
+                color: AppColors.slate900,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+              decoration: InputDecoration(
+                labelText: 'Target balance',
+                prefixText: 'ETB ',
+                prefixStyle: const TextStyle(
+                  color: AppColors.slate500,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+                hintText: '0.00',
+                filled: true,
+                fillColor: AppColors.slate50,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      const BorderSide(color: AppColors.primaryLight),
+                ),
+              ),
+              validator: (value) {
+                final parsed = _parseAmount(value ?? '');
+                if (parsed == null) return 'Enter a valid amount';
+                if (parsed < 0) return 'Amount cannot be negative';
+                return null;
+              },
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: const BorderSide(color: AppColors.border),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(color: AppColors.slate700),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      if (!_formKey.currentState!.validate()) return;
+                      final parsed = _parseAmount(_controller.text);
+                      Navigator.pop(context, parsed);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      backgroundColor: AppColors.primaryDark,
+                      foregroundColor: AppColors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Set amount',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Add Account Sheet ───────────────────────────────────────────
+
+class _AddAccountSheet extends StatefulWidget {
+  final VoidCallback onAccountAdded;
+
+  const _AddAccountSheet({required this.onAccountAdded});
+
+  @override
+  State<_AddAccountSheet> createState() => _AddAccountSheetState();
+}
+
+class _AddAccountSheetState extends State<_AddAccountSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _accountNumberController = TextEditingController();
+  final _holderNameController = TextEditingController();
+  List<bank_model.Bank> _banks = [];
+  int? _selectedBankId;
+  bool _isFormValid = false;
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _accountNumberController.addListener(_validateForm);
+    _holderNameController.addListener(_validateForm);
+    _loadBanks();
+  }
+
+  @override
+  void dispose() {
+    _accountNumberController.dispose();
+    _holderNameController.dispose();
+    super.dispose();
+  }
+
+  void _loadBanks() {
+    final banks = AllBanksFromAssets.getAllBanks();
+    if (mounted) {
+      setState(() {
+        _banks = banks;
+        if (banks.isNotEmpty) _selectedBankId = banks.first.id;
+      });
+    }
+  }
+
+  void _validateForm() {
+    setState(() {
+      _isFormValid = _accountNumberController.text.trim().isNotEmpty &&
+          _holderNameController.text.trim().isNotEmpty;
+    });
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate() || _selectedBankId == null) return;
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final accountRepo = UserAccountRepository();
+      final exists = await accountRepo.userAccountExists(
+        _accountNumberController.text.trim(),
+        _selectedBankId!,
+      );
+
+      if (exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This account already exists'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          setState(() => _isSubmitting = false);
+        }
+        return;
+      }
+
+      final account = UserAccount(
+        accountNumber: _accountNumberController.text.trim(),
+        bankId: _selectedBankId!,
+        accountHolderName: _holderNameController.text.trim(),
+        createdAt: DateTime.now().toIso8601String(),
+      );
+
+      await accountRepo.saveUserAccount(account);
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        widget.onAccountAdded();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Account added successfully'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error adding account: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + 20),
+      decoration: const BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 16),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.slate400,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Add Account',
+                    style: TextStyle(
+                      color: AppColors.slate900,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppColors.slate50,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.close,
+                        color: AppColors.slate500,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Bank selector
+              const Text(
+                'Bank',
+                style: TextStyle(
+                  color: AppColors.slate700,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: _showBankPicker,
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.slate50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      if (_selectedBankId != null) ...[
+                        _BankLogoCircle(
+                          imagePath: _getBankImage(_selectedBankId!),
+                          size: 36,
+                        ),
+                        const SizedBox(width: 12),
+                      ],
+                      Expanded(
+                        child: Text(
+                          _selectedBankId != null
+                              ? _getBankName(_selectedBankId!)
+                              : 'Select a bank',
+                          style: TextStyle(
+                            color: _selectedBankId != null
+                                ? AppColors.slate900
+                                : AppColors.slate400,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: AppColors.slate500,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Account number
+              const Text(
+                'Account Number',
+                style: TextStyle(
+                  color: AppColors.slate700,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _accountNumberController,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(
+                  color: AppColors.slate900,
+                  fontSize: 15,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Enter account number',
+                  hintStyle: const TextStyle(color: AppColors.slate400),
+                  filled: true,
+                  fillColor: AppColors.slate50,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                        const BorderSide(color: AppColors.primaryLight),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 14),
+                ),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
+              ),
+              const SizedBox(height: 20),
+
+              // Account holder name
+              const Text(
+                'Account Holder Name',
+                style: TextStyle(
+                  color: AppColors.slate700,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _holderNameController,
+                style: const TextStyle(
+                  color: AppColors.slate900,
+                  fontSize: 15,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Enter account holder name',
+                  hintStyle: const TextStyle(color: AppColors.slate400),
+                  filled: true,
+                  fillColor: AppColors.slate50,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                        const BorderSide(color: AppColors.primaryLight),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 14),
+                ),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
+              ),
+              const SizedBox(height: 28),
+
+              // Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: const BorderSide(color: AppColors.border),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(
+                          color: AppColors.slate700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton(
+                      onPressed:
+                          (_isFormValid && !_isSubmitting) ? _submit : null,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: AppColors.primaryDark,
+                        foregroundColor: AppColors.white,
+                        elevation: 0,
+                        disabledBackgroundColor: AppColors.slate200,
+                        disabledForegroundColor: AppColors.slate400,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.white,
+                              ),
+                            )
+                          : const Text(
+                              'Add Account',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showBankPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.slate400,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Select Bank',
+                style: TextStyle(
+                  color: AppColors.slate900,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.all(16),
+                gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 14,
+                  mainAxisSpacing: 14,
+                  childAspectRatio: 0.85,
+                ),
+                itemCount: _banks.length,
+                itemBuilder: (context, index) {
+                  final bank = _banks[index];
+                  final isSelected = _selectedBankId == bank.id;
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() => _selectedBankId = bank.id);
+                      Navigator.pop(context);
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.primaryLight.withValues(alpha: 0.1)
+                            : AppColors.slate50,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppColors.primaryLight
+                              : AppColors.border,
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _BankLogoCircle(
+                            imagePath: bank.image,
+                            size: 44,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            bank.shortName,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: isSelected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: isSelected
+                                  ? AppColors.primaryDark
+                                  : AppColors.slate900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
