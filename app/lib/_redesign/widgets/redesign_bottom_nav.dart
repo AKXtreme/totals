@@ -33,31 +33,36 @@ class RedesignBottomNav extends StatelessWidget {
           children: [
             _NavItem(
               label: 'Home',
-              icon: Icons.home_filled,
+              activeIcon: Icons.home_filled,
+              inactiveIcon: Icons.home_outlined,
               isActive: currentIndex == 0,
               onTap: () => onTap(0),
             ),
             _NavItem(
               label: 'Money',
-              icon: Icons.account_balance_wallet_outlined,
+              activeIcon: Icons.account_balance_wallet,
+              inactiveIcon: Icons.account_balance_wallet_outlined,
               isActive: currentIndex == 1,
               onTap: () => onTap(1),
             ),
             _NavItem(
               label: 'Budget',
-              icon: Icons.savings_outlined,
+              activeIcon: Icons.savings,
+              inactiveIcon: Icons.savings_outlined,
               isActive: currentIndex == 2,
               onTap: () => onTap(2),
             ),
             _NavItem(
               label: 'Tools',
-              icon: Icons.grid_view_outlined,
+              activeIcon: Icons.grid_view_rounded,
+              inactiveIcon: Icons.grid_view_outlined,
               isActive: currentIndex == 3,
               onTap: () => onTap(3),
             ),
             _NavItem(
               label: 'You',
-              icon: Icons.person_outline,
+              activeIcon: Icons.person,
+              inactiveIcon: Icons.person_outline,
               isActive: currentIndex == 4,
               onTap: () => onTap(4),
             ),
@@ -70,13 +75,15 @@ class RedesignBottomNav extends StatelessWidget {
 
 class _NavItem extends StatelessWidget {
   final String label;
-  final IconData icon;
+  final IconData activeIcon;
+  final IconData inactiveIcon;
   final bool isActive;
   final VoidCallback onTap;
 
   const _NavItem({
     required this.label,
-    required this.icon,
+    required this.activeIcon,
+    required this.inactiveIcon,
     required this.isActive,
     required this.onTap,
   });
@@ -84,7 +91,7 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = isActive
-        ? AppColors.textPrimary(context)
+        ? AppColors.primaryLight
         : AppColors.textTertiary(context);
 
     return Expanded(
@@ -96,7 +103,7 @@ class _NavItem extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 22, color: color),
+              Icon(isActive ? activeIcon : inactiveIcon, size: 22, color: color),
               const SizedBox(height: 4),
               Text(
                 label,
