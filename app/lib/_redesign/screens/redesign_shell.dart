@@ -1,9 +1,14 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:totals/_redesign/screens/home_page.dart';
+import 'package:totals/_redesign/screens/lock_screen.dart';
 import 'package:totals/_redesign/screens/money/money_page.dart';
 import 'package:totals/_redesign/screens/placeholder_page.dart';
+import 'package:totals/_redesign/screens/tools_page.dart';
 import 'package:totals/_redesign/widgets/redesign_bottom_nav.dart';
 import 'package:totals/services/widget_launch_intent_service.dart';
 
@@ -11,10 +16,11 @@ class RedesignShell extends StatefulWidget {
   const RedesignShell({super.key});
 
   @override
-  State<RedesignShell> createState() => _RedesignShellState();
+  State<RedesignShell> createState() => RedesignShellState();
 }
 
-class _RedesignShellState extends State<RedesignShell> {
+class RedesignShellState extends State<RedesignShell>
+    with WidgetsBindingObserver {
   static const int _homeIndex = 0;
   static const int _budgetIndex = 2;
   final PageController _pageController =
@@ -22,9 +28,15 @@ class _RedesignShellState extends State<RedesignShell> {
   int _currentIndex = _homeIndex;
   StreamSubscription<WidgetLaunchTarget>? _widgetLaunchIntentSub;
 
+  // Auth state
+  final LocalAuthentication _auth = LocalAuthentication();
+  bool _isAuthenticated = false;
+  bool _isAuthenticating = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _widgetLaunchIntentSub = WidgetLaunchIntentService.instance.stream.listen(
       (target) {
@@ -39,13 +51,88 @@ class _RedesignShellState extends State<RedesignShell> {
       if (initialTarget != WidgetLaunchTarget.budget) return;
       _onTabSelected(_budgetIndex);
     });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _authenticateIfAvailable();
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _widgetLaunchIntentSub?.cancel();
     _pageController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      setState(() {
+        _isAuthenticated = false;
+      });
+    }
+    if (state == AppLifecycleState.resumed && !_isAuthenticated) {
+      _authenticateIfAvailable();
+    }
+  }
+
+  bool _shouldBypassSecurity(PlatformException error) {
+    final code = error.code.toLowerCase();
+    return code.contains('notavailable') ||
+        code.contains('notenrolled') ||
+        code.contains('passcodenotset') ||
+        code.contains('passcode_not_set') ||
+        code.contains('not_enrolled') ||
+        code.contains('not_available');
+  }
+
+  Future<void> _authenticateIfAvailable() async {
+    if (_isAuthenticated || _isAuthenticating) return;
+
+    if (kIsWeb) {
+      setState(() => _isAuthenticated = true);
+      return;
+    }
+
+    setState(() => _isAuthenticating = true);
+
+    try {
+      final canCheckBiometrics = await _auth.canCheckBiometrics;
+      final isDeviceSupported = await _auth.isDeviceSupported();
+
+      if (!canCheckBiometrics && !isDeviceSupported) {
+        if (mounted) setState(() => _isAuthenticated = true);
+        return;
+      }
+
+      final didAuthenticate = await _auth.authenticate(
+        localizedReason: 'Authenticate to access Totals',
+        options: const AuthenticationOptions(
+          biometricOnly: false,
+          stickyAuth: true,
+        ),
+      );
+
+      if (!mounted) return;
+      if (didAuthenticate) {
+        setState(() => _isAuthenticated = true);
+      }
+    } on PlatformException catch (e) {
+      if (_shouldBypassSecurity(e)) {
+        if (mounted) setState(() => _isAuthenticated = true);
+      } else {
+        if (kDebugMode) print('debug: Auth error: $e');
+      }
+    } catch (e) {
+      if (kDebugMode) print('debug: Auth error: $e');
+    } finally {
+      if (mounted) setState(() => _isAuthenticating = false);
+    }
+  }
+
+  void lockApp() {
+    setState(() => _isAuthenticated = false);
   }
 
   void _onTabSelected(int index) {
@@ -57,6 +144,10 @@ class _RedesignShellState extends State<RedesignShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_isAuthenticated) {
+      return RedesignLockScreen(onUnlock: _authenticateIfAvailable);
+    }
+
     return Scaffold(
       extendBody: true,
       body: PageView(
@@ -66,7 +157,7 @@ class _RedesignShellState extends State<RedesignShell> {
           RedesignHomePage(),
           RedesignMoneyPage(),
           RedesignPlaceholderPage(title: 'Budget'),
-          RedesignPlaceholderPage(title: 'Tools'),
+          RedesignToolsPage(),
           RedesignPlaceholderPage(title: 'You', showRedesignToggle: true),
         ],
       ),

@@ -6,8 +6,8 @@ import 'package:totals/data/consts.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/utils/text_utils.dart';
+import 'package:totals/_redesign/screens/todays_transactions_page.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
-import 'package:totals/widgets/categorize_transaction_sheet.dart';
 
 class RedesignHomePage extends StatefulWidget {
   const RedesignHomePage({super.key});
@@ -21,6 +21,47 @@ enum _ChartRange { week, month }
 class _RedesignHomePageState extends State<RedesignHomePage> {
   bool _showBalance = true;
   _ChartRange _chartRange = _ChartRange.week;
+  final Set<String> _selectedRefs = {};
+
+  bool get _isSelecting => _selectedRefs.isNotEmpty;
+
+  void _toggleSelection(Transaction transaction) {
+    setState(() {
+      if (_selectedRefs.contains(transaction.reference)) {
+        _selectedRefs.remove(transaction.reference);
+      } else {
+        _selectedRefs.add(transaction.reference);
+      }
+    });
+  }
+
+  void _clearSelection() => setState(() => _selectedRefs.clear());
+
+  Future<void> _deleteSelected(TransactionProvider provider) async {
+    if (_selectedRefs.isEmpty) return;
+    final count = _selectedRefs.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete $count transaction${count > 1 ? 's' : ''}?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete', style: TextStyle(color: AppColors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await provider.deleteTransactionsByReferences(_selectedRefs.toList());
+      _clearSelection();
+    }
+  }
 
   @override
   void initState() {
@@ -102,10 +143,7 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             TextButton(
-                              onPressed: () => _openAllTodayTransactions(
-                                provider: provider,
-                                transactions: todaySorted,
-                              ),
+                              onPressed: _openAllTodayTransactions,
                               style: TextButton.styleFrom(
                                 padding: EdgeInsets.zero,
                                 foregroundColor: AppColors.primaryLight,
@@ -113,14 +151,22 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                               child: const Text('See all'),
                             ),
                             const SizedBox(width: 4),
-                            _QuickActionIconButton(
-                              icon: Icons.refresh,
+                            _RefreshButton(
+                              isLoading: provider.isLoading,
                               onTap: provider.loadData,
                             ),
                           ],
                         ),
                       ],
                     ),
+                    if (_isSelecting) ...[
+                      const SizedBox(height: 8),
+                      _SelectionBar(
+                        count: _selectedRefs.length,
+                        onDelete: () => _deleteSelected(provider),
+                        onClear: _clearSelection,
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     if (provider.isLoading)
                       const _LoadingTransactions()
@@ -142,6 +188,7 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                           transaction.amount,
                           isCredit: isCredit,
                         );
+                        final selected = _selectedRefs.contains(transaction.reference);
                         return _TransactionTile(
                           bank: bankLabel,
                           category: categoryLabel,
@@ -152,22 +199,16 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                               : AppColors.red,
                           name: _transactionCounterparty(transaction),
                           timestamp: _transactionTimeLabel(transaction),
-                          onTap: () => _openTransactionCategorySheet(
-                            provider: provider,
-                            transaction: transaction,
-                          ),
+                          selected: selected,
+                          onTap: _isSelecting
+                              ? () => _toggleSelection(transaction)
+                              : () => _openTransactionCategorySheet(
+                                    provider: provider,
+                                    transaction: transaction,
+                                  ),
+                          onLongPress: () => _toggleSelection(transaction),
                         );
                       }),
-                    if (todayList.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Tap a transaction to categorize it.',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: AppColors.slate500,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 16),
                     _IncomeExpenseCard(
                       trendSeries: trendSeries,
@@ -190,24 +231,12 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
     );
   }
 
-  void _openAllTodayTransactions({
-    required TransactionProvider provider,
-    required List<Transaction> transactions,
-  }) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return _AllTodayTransactionsSheet(
-          transactions: transactions,
-          provider: provider,
-          onTransactionTap: (transaction) => _openTransactionCategorySheet(
-            provider: provider,
-            transaction: transaction,
-          ),
-        );
-      },
+  void _openAllTodayTransactions() {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => const TodaysTransactionsPage(),
+      ),
     );
   }
 
@@ -446,12 +475,12 @@ class _TotalBalanceCard extends StatelessWidget {
   }
 }
 
-class _QuickActionIconButton extends StatelessWidget {
-  final IconData icon;
+class _RefreshButton extends StatelessWidget {
+  final bool isLoading;
   final VoidCallback onTap;
 
-  const _QuickActionIconButton({
-    required this.icon,
+  const _RefreshButton({
+    required this.isLoading,
     required this.onTap,
   });
 
@@ -461,16 +490,26 @@ class _QuickActionIconButton extends StatelessWidget {
       height: 40,
       width: 40,
       child: IconButton(
-        onPressed: onTap,
+        onPressed: isLoading ? null : onTap,
         style: IconButton.styleFrom(
           backgroundColor: AppColors.white,
           side: const BorderSide(color: AppColors.border),
           foregroundColor: AppColors.slate700,
+          disabledForegroundColor: AppColors.slate400,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
         ),
-        icon: Icon(icon, size: 18),
+        icon: isLoading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primaryLight,
+                ),
+              )
+            : const Icon(Icons.refresh, size: 18),
       ),
     );
   }
@@ -688,7 +727,9 @@ class _TransactionTile extends StatelessWidget {
   final Color amountColor;
   final String name;
   final String timestamp;
+  final bool selected;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   const _TransactionTile({
     required this.bank,
@@ -698,7 +739,9 @@ class _TransactionTile extends StatelessWidget {
     required this.amountColor,
     required this.name,
     required this.timestamp,
+    this.selected = false,
     this.onTap,
+    this.onLongPress,
   });
 
   @override
@@ -708,17 +751,30 @@ class _TransactionTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: selected
+            ? AppColors.primaryLight.withValues(alpha: 0.08)
+            : AppColors.white,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: selected ? AppColors.primaryLight : AppColors.border,
+        ),
       ),
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
+              if (selected) ...[
+                Icon(
+                  Icons.check_circle_rounded,
+                  size: 20,
+                  color: AppColors.primaryLight,
+                ),
+                const SizedBox(width: 10),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -808,6 +864,54 @@ class _CategoryChip extends StatelessWidget {
   }
 }
 
+class _SelectionBar extends StatelessWidget {
+  final int count;
+  final VoidCallback onDelete;
+  final VoidCallback onClear;
+
+  const _SelectionBar({
+    required this.count,
+    required this.onDelete,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.primaryLight.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.primaryLight.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Text(
+            '$count selected',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.primaryDark,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          GestureDetector(
+            onTap: onDelete,
+            child: Icon(Icons.delete_outline_rounded,
+                size: 20, color: AppColors.red),
+          ),
+          const SizedBox(width: 16),
+          GestureDetector(
+            onTap: onClear,
+            child: Icon(Icons.close_rounded,
+                size: 20, color: AppColors.slate600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LoadingTransactions extends StatelessWidget {
   const _LoadingTransactions();
 
@@ -848,19 +952,40 @@ class _EmptyTransactions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
       decoration: BoxDecoration(
         color: AppColors.white,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: const Text(
-        'No transactions today',
-        style: TextStyle(
-          color: AppColors.slate500,
-          fontSize: 12,
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.receipt_long_rounded,
+            size: 40,
+            color: AppColors.slate400,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'No transactions today',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: AppColors.slate700,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'New transactions will appear here as they come in.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.slate400,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1292,99 +1417,3 @@ class _BreakdownValueRow extends StatelessWidget {
   }
 }
 
-class _AllTodayTransactionsSheet extends StatelessWidget {
-  final List<Transaction> transactions;
-  final TransactionProvider provider;
-  final ValueChanged<Transaction> onTransactionTap;
-
-  const _AllTodayTransactionsSheet({
-    required this.transactions,
-    required this.provider,
-    required this.onTransactionTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
-      ),
-      decoration: const BoxDecoration(
-        color: AppColors.slate50,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 10),
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.slate400,
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(
-              children: [
-                Text(
-                  'Today (${transactions.length})',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.slate900,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: AppColors.border),
-          Expanded(
-            child: transactions.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: _EmptyTransactions(),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: transactions.length,
-                    itemBuilder: (context, index) {
-                      final transaction = transactions[index];
-                      final bankLabel = _bankLabel(transaction.bankId);
-                      final category =
-                          provider.getCategoryById(transaction.categoryId);
-                      final selfTransferLabel =
-                          provider.getSelfTransferLabel(transaction);
-                      final categoryLabel =
-                          selfTransferLabel ?? category?.name ?? 'Categorize';
-                      final isCategorize =
-                          selfTransferLabel == null && category == null;
-                      final isCredit = transaction.type == 'CREDIT';
-                      return _TransactionTile(
-                        bank: bankLabel,
-                        category: categoryLabel,
-                        categoryFilled: isCategorize,
-                        amount: _amountLabel(
-                          transaction.amount,
-                          isCredit: isCredit,
-                        ),
-                        amountColor:
-                            isCredit ? AppColors.incomeSuccess : AppColors.red,
-                        name: _transactionCounterparty(transaction),
-                        timestamp: _transactionTimeLabel(transaction),
-                        onTap: () => onTransactionTap(transaction),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}

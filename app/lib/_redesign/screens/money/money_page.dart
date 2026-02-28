@@ -16,7 +16,6 @@ import 'package:totals/repositories/user_account_repository.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/widgets/add_cash_transaction_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
-import 'package:totals/widgets/categorize_transaction_sheet.dart';
 
 class RedesignMoneyPage extends StatefulWidget {
   const RedesignMoneyPage({super.key});
@@ -71,6 +70,47 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
   int? _selectedBankId;
   String? _expandedAccountNumber;
   bool _showAccountBalances = true;
+  final Set<String> _selectedRefs = {};
+
+  bool get _isSelecting => _selectedRefs.isNotEmpty;
+
+  void _toggleSelection(Transaction transaction) {
+    setState(() {
+      if (_selectedRefs.contains(transaction.reference)) {
+        _selectedRefs.remove(transaction.reference);
+      } else {
+        _selectedRefs.add(transaction.reference);
+      }
+    });
+  }
+
+  void _clearSelection() => setState(() => _selectedRefs.clear());
+
+  Future<void> _deleteSelected(TransactionProvider provider) async {
+    if (_selectedRefs.isEmpty) return;
+    final count = _selectedRefs.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete $count transaction${count > 1 ? 's' : ''}?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete', style: TextStyle(color: AppColors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await provider.deleteTransactionsByReferences(_selectedRefs.toList());
+      _clearSelection();
+    }
+  }
 
   @override
   void dispose() {
@@ -158,6 +198,17 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
             ),
           ),
           if (_subTab == _SubTab.transactions) ...[
+            if (_isSelecting)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                  child: _SelectionBar(
+                    count: _selectedRefs.length,
+                    onDelete: () => _deleteSelected(provider),
+                    onClear: _clearSelection,
+                  ),
+                ),
+              ),
             if (provider.isLoading)
               const SliverToBoxAdapter(
                 child: Padding(
@@ -218,6 +269,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     final isCategorized = selfTransferLabel != null || category != null;
     final isCredit = transaction.type == 'CREDIT';
 
+    final selected = _selectedRefs.contains(transaction.reference);
     return _TransactionTile(
       bank: bankLabel,
       category: categoryLabel,
@@ -225,7 +277,11 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
       amount: _amountLabel(transaction.amount, isCredit: isCredit),
       amountColor: isCredit ? AppColors.incomeSuccess : AppColors.red,
       name: _transactionCounterparty(transaction),
-      onTap: () => _openTransactionCategorySheet(provider, transaction),
+      selected: selected,
+      onTap: _isSelecting
+          ? () => _toggleSelection(transaction)
+          : () => _openTransactionCategorySheet(provider, transaction),
+      onLongPress: () => _toggleSelection(transaction),
     );
   }
 
@@ -1278,6 +1334,55 @@ class _SearchFilterRow extends StatelessWidget {
   }
 }
 
+class _SelectionBar extends StatelessWidget {
+  final int count;
+  final VoidCallback onDelete;
+  final VoidCallback onClear;
+
+  const _SelectionBar({
+    required this.count,
+    required this.onDelete,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.primaryLight.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border:
+            Border.all(color: AppColors.primaryLight.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Text(
+            '$count selected',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.primaryDark,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          GestureDetector(
+            onTap: onDelete,
+            child: Icon(Icons.delete_outline_rounded,
+                size: 20, color: AppColors.red),
+          ),
+          const SizedBox(width: 16),
+          GestureDetector(
+            onTap: onClear,
+            child: Icon(Icons.close_rounded,
+                size: 20, color: AppColors.slate600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DateHeader extends StatelessWidget {
   final String label;
 
@@ -1306,7 +1411,9 @@ class _TransactionTile extends StatelessWidget {
   final String amount;
   final Color amountColor;
   final String name;
+  final bool selected;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   const _TransactionTile({
     required this.bank,
@@ -1315,7 +1422,9 @@ class _TransactionTile extends StatelessWidget {
     required this.amount,
     required this.amountColor,
     required this.name,
+    this.selected = false,
     this.onTap,
+    this.onLongPress,
   });
 
   @override
@@ -1325,17 +1434,30 @@ class _TransactionTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: selected
+            ? AppColors.primaryLight.withValues(alpha: 0.08)
+            : AppColors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: selected ? AppColors.primaryLight : AppColors.border,
+        ),
       ),
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(10),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           child: Row(
             children: [
+              if (selected) ...[
+                Icon(
+                  Icons.check_circle_rounded,
+                  size: 20,
+                  color: AppColors.primaryLight,
+                ),
+                const SizedBox(width: 10),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2115,57 +2237,6 @@ class _AccountCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                // Cash wallet actions
-                if (isCash) ...[
-                  const SizedBox(height: 14),
-                  Container(height: 1, color: AppColors.border),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _CashActionButton(
-                          label: 'Expense',
-                          icon: Icons.remove_circle_outline,
-                          color: AppColors.red,
-                          onTap: onCashExpense,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _CashActionButton(
-                          label: 'Income',
-                          icon: Icons.add_circle_outline,
-                          color: AppColors.incomeSuccess,
-                          onTap: onCashIncome,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _CashActionButton(
-                          label: 'Clear',
-                          icon: Icons.cleaning_services_outlined,
-                          color: AppColors.red,
-                          outlined: true,
-                          onTap: onClearCash,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _CashActionButton(
-                          label: 'Set amount',
-                          icon: Icons.tune,
-                          color: AppColors.primaryDark,
-                          outlined: true,
-                          onTap: onSetCashAmount,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
                 // Delete for non-cash accounts
                 if (onDelete != null) ...[
                   const SizedBox(height: 14),
@@ -2194,6 +2265,57 @@ class _AccountCard extends StatelessWidget {
                     ),
                   ),
                 ],
+              ],
+              // Cash wallet actions – always visible below the card
+              if (isCash) ...[
+                const SizedBox(height: 12),
+                Container(height: 1, color: AppColors.border),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _CashActionButton(
+                        label: 'Expense',
+                        icon: Icons.remove_circle_outline,
+                        color: AppColors.red,
+                        onTap: onCashExpense,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _CashActionButton(
+                        label: 'Income',
+                        icon: Icons.add_circle_outline,
+                        color: AppColors.incomeSuccess,
+                        onTap: onCashIncome,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _CashActionButton(
+                        label: 'Clear',
+                        icon: Icons.cleaning_services_outlined,
+                        color: AppColors.red,
+                        outlined: true,
+                        onTap: onClearCash,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _CashActionButton(
+                        label: 'Set amount',
+                        icon: Icons.tune,
+                        color: AppColors.primaryDark,
+                        outlined: true,
+                        onTap: onSetCashAmount,
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ],
           ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/data/consts.dart';
@@ -134,15 +135,45 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   Future<void> _setCategory(Category category) async {
     if (category.id == null) return;
     await _provider.setCategoryForTransaction(_tx, category);
-    if (mounted) {
-      setState(() => _categoryExpanded = false);
-    }
+    if (mounted) Navigator.pop(context);
   }
 
   Future<void> _clearCategory() async {
     await _provider.clearCategoryForTransaction(_tx);
-    if (mounted) {
-      setState(() => _categoryExpanded = false);
+    if (mounted) Navigator.pop(context);
+  }
+
+  void _copyReference() {
+    Clipboard.setData(ClipboardData(text: _tx.reference));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Reference copied')),
+    );
+  }
+
+  Future<void> _deleteTransaction() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete transaction?'),
+        content: const Text(
+          'This will permanently remove this transaction. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete', style: TextStyle(color: AppColors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      Navigator.pop(context);
+      await _provider
+          .deleteTransactionsByReferences([_tx.reference]);
     }
   }
 
@@ -221,14 +252,19 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
 
             const SizedBox(height: 20),
 
-            // Scrollable detail rows + category
+            // Scrollable detail rows + category + delete
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _DetailRow(label: 'Reference', value: _tx.reference),
+                    _DetailRow(
+                      label: 'Reference',
+                      value: _tx.reference,
+                      marquee: true,
+                      onTap: _copyReference,
+                    ),
                     _DetailRow(label: 'Bank', value: _bankShortName),
                     if (_tx.accountNumber != null &&
                         _tx.accountNumber!.isNotEmpty)
@@ -260,6 +296,28 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                     if (_categoryExpanded && !isSelfTransfer)
                       _buildCategoryPicker(category),
 
+                    const SizedBox(height: 20),
+
+                    // Delete button
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        onPressed: _deleteTransaction,
+                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                        label: const Text('Delete transaction'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.red,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: AppColors.red.withValues(alpha: 0.3),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
                     const SizedBox(height: 24),
                   ],
                 ),
@@ -281,10 +339,13 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
       ),
       child: Row(
         children: [
-          Text(
-            'Category',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: AppColors.slate500,
+          SizedBox(
+            width: _kLabelWidth,
+            child: Text(
+              'Category',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: AppColors.slate500,
+              ),
             ),
           ),
           const Spacer(),
@@ -294,13 +355,10 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (category != null) ...[
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: _categoryColor(category),
-                      shape: BoxShape.circle,
-                    ),
+                  Icon(
+                    iconForCategoryKey(category.iconKey),
+                    size: 16,
+                    color: _categoryColor(category),
                   ),
                   const SizedBox(width: 6),
                   Text(
@@ -348,6 +406,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
             return _CategoryPickerChip(
               label: c.name,
               color: _categoryColor(c),
+              icon: iconForCategoryKey(c.iconKey),
               isSelected: isSelected,
               onTap: () => _setCategory(c),
             );
@@ -356,6 +415,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
             _CategoryPickerChip(
               label: 'Remove',
               color: AppColors.red,
+              icon: Icons.close_rounded,
               isSelected: false,
               isRemove: true,
               onTap: _clearCategory,
@@ -371,22 +431,36 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
           ? AppColors.incomeSuccess
           : const Color(0xFF14B8A6);
     }
-    // expense
     return category.essential ? AppColors.blue : AppColors.amber;
   }
 }
+
+// ── Constants ───────────────────────────────────────────────────────────────
+
+const double _kLabelWidth = 110;
 
 // ── Detail row ──────────────────────────────────────────────────────────────
 
 class _DetailRow extends StatelessWidget {
   final String label;
   final String value;
+  final bool marquee;
+  final VoidCallback? onTap;
 
-  const _DetailRow({required this.label, required this.value});
+  const _DetailRow({
+    required this.label,
+    required this.value,
+    this.marquee = false,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final valueStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: AppColors.slate900,
+      fontWeight: FontWeight.w600,
+    );
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -395,24 +469,110 @@ class _DetailRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(
-            label,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: AppColors.slate500,
-            ),
-          ),
-          const Spacer(),
-          Flexible(
+          SizedBox(
+            width: _kLabelWidth,
             child: Text(
-              value,
-              textAlign: TextAlign.end,
+              label,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppColors.slate900,
-                fontWeight: FontWeight.w600,
+                color: AppColors.slate500,
               ),
             ),
           ),
+          const Spacer(),
+          if (marquee)
+            Flexible(
+              child: GestureDetector(
+                onTap: onTap,
+                child: _MarqueeText(text: value, style: valueStyle),
+              ),
+            )
+          else
+            Flexible(
+              child: Text(
+                value,
+                textAlign: TextAlign.end,
+                style: valueStyle,
+              ),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Marquee text (auto-scrolls if overflowing) ──────────────────────────────
+
+class _MarqueeText extends StatefulWidget {
+  final String text;
+  final TextStyle? style;
+
+  const _MarqueeText({required this.text, this.style});
+
+  @override
+  State<_MarqueeText> createState() => _MarqueeTextState();
+}
+
+class _MarqueeTextState extends State<_MarqueeText>
+    with SingleTickerProviderStateMixin {
+  late final ScrollController _scrollController;
+  late final AnimationController _animController;
+  bool _overflows = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
+  }
+
+  void _checkOverflow() {
+    if (!_scrollController.hasClients) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    if (maxScroll > 0) {
+      setState(() => _overflows = true);
+      _startScroll(maxScroll);
+    }
+  }
+
+  void _startScroll(double extent) {
+    _animController.addListener(() {
+      if (!_scrollController.hasClients) return;
+      _scrollController.jumpTo(_animController.value * extent);
+    });
+    _animController.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      shaderCallback: (bounds) {
+        if (!_overflows) {
+          return const LinearGradient(
+            colors: [Colors.white, Colors.white],
+          ).createShader(bounds);
+        }
+        return const LinearGradient(
+          colors: [Colors.transparent, Colors.white, Colors.white, Colors.transparent],
+          stops: [0.0, 0.05, 0.95, 1.0],
+        ).createShader(bounds);
+      },
+      blendMode: BlendMode.dstIn,
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        scrollDirection: Axis.horizontal,
+        physics: const NeverScrollableScrollPhysics(),
+        child: Text(widget.text, style: widget.style),
       ),
     );
   }
@@ -423,6 +583,7 @@ class _DetailRow extends StatelessWidget {
 class _CategoryPickerChip extends StatelessWidget {
   final String label;
   final Color color;
+  final IconData icon;
   final bool isSelected;
   final bool isRemove;
   final VoidCallback onTap;
@@ -430,6 +591,7 @@ class _CategoryPickerChip extends StatelessWidget {
   const _CategoryPickerChip({
     required this.label,
     required this.color,
+    required this.icon,
     required this.isSelected,
     this.isRemove = false,
     required this.onTap,
@@ -455,17 +617,8 @@ class _CategoryPickerChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (!isRemove) ...[
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 6),
-            ],
+            Icon(icon, size: 14, color: textColor),
+            const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
