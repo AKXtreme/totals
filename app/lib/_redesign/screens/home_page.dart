@@ -940,9 +940,7 @@ class _LoadingTransactions extends StatelessWidget {
                 child: Container(
                   height: 12,
                   decoration: BoxDecoration(
-                    color: AppColors.isDark(context)
-                        ? AppColors.slate700
-                        : AppColors.slate200,
+                    color: AppColors.mutedFill(context),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -1050,9 +1048,7 @@ class _IncomeExpenseCard extends StatelessWidget {
               painter: _IncomeExpenseChartPainter(
                 incomePoints: trendSeries.incomePoints,
                 expensePoints: trendSeries.expensePoints,
-                gridColor: AppColors.isDark(context)
-                    ? AppColors.slate700
-                    : AppColors.slate200,
+                gridColor: AppColors.mutedFill(context),
               ),
             ),
           ),
@@ -1107,9 +1103,7 @@ class _RangeToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final toggleBg = AppColors.isDark(context)
-        ? AppColors.slate700.withValues(alpha: 0.6)
-        : AppColors.slate200.withValues(alpha: 0.6);
+    final toggleBg = AppColors.mutedFill(context).withValues(alpha: 0.6);
 
     return Container(
       decoration: BoxDecoration(

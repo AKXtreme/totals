@@ -1194,7 +1194,7 @@ class _SubTabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: (AppColors.isDark(context) ? AppColors.slate700 : AppColors.slate200).withValues(alpha: 0.6),
+        color: AppColors.mutedFill(context).withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(10),
       ),
       padding: const EdgeInsets.all(3),
@@ -1606,7 +1606,7 @@ class _LoadingTransactions extends StatelessWidget {
                 child: Container(
                   height: 12,
                   decoration: BoxDecoration(
-                    color: AppColors.isDark(context) ? AppColors.slate700 : AppColors.slate200,
+                    color: AppColors.mutedFill(context),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -1970,7 +1970,7 @@ class _AddAccountCard extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.isDark(context) ? AppColors.slate700 : AppColors.slate200, width: 1.5),
+                    border: Border.all(color: AppColors.mutedFill(context), width: 1.5),
                   ),
                   child: Icon(
                     Icons.add,
@@ -2443,7 +2443,7 @@ class _BankLogoCircle extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: AppColors.isDark(context) ? AppColors.slate700 : AppColors.slate200,
+          color: AppColors.mutedFill(context),
           shape: BoxShape.circle,
         ),
         child: Icon(
@@ -2463,7 +2463,7 @@ class _BankLogoCircle extends StatelessWidget {
         imagePath,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => Container(
-          color: AppColors.isDark(context) ? AppColors.slate700 : AppColors.slate200,
+          color: AppColors.mutedFill(context),
           child: Icon(
             Icons.account_balance,
             size: size * 0.5,
@@ -3096,7 +3096,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                         backgroundColor: AppColors.primaryDark,
                         foregroundColor: AppColors.white,
                         elevation: 0,
-                        disabledBackgroundColor: AppColors.isDark(context) ? AppColors.slate700 : AppColors.slate200,
+                        disabledBackgroundColor: AppColors.mutedFill(context),
                         disabledForegroundColor: AppColors.textTertiary(context),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -3303,10 +3303,10 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
         return Theme(
           data: Theme.of(ctx).copyWith(
             colorScheme: dark
-                ? const ColorScheme.dark(
+                ? ColorScheme.dark(
                     primary: AppColors.primaryLight,
                     onPrimary: AppColors.white,
-                    surface: AppColors.slate800,
+                    surface: AppColors.darkCard,
                     onSurface: AppColors.white,
                   )
                 : const ColorScheme.light(

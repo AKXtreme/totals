@@ -220,9 +220,7 @@ class _BudgetLoadingShimmer extends StatelessWidget {
                 height: 14,
                 width: 120,
                 decoration: BoxDecoration(
-                  color: AppColors.isDark(context)
-                      ? AppColors.slate700
-                      : AppColors.slate200,
+                  color: AppColors.mutedFill(context),
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
@@ -230,9 +228,7 @@ class _BudgetLoadingShimmer extends StatelessWidget {
               Container(
                 height: 8,
                 decoration: BoxDecoration(
-                  color: AppColors.isDark(context)
-                      ? AppColors.slate700
-                      : AppColors.slate200,
+                  color: AppColors.mutedFill(context),
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
@@ -241,9 +237,7 @@ class _BudgetLoadingShimmer extends StatelessWidget {
                 height: 12,
                 width: 80,
                 decoration: BoxDecoration(
-                  color: AppColors.isDark(context)
-                      ? AppColors.slate700
-                      : AppColors.slate200,
+                  color: AppColors.mutedFill(context),
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
@@ -534,9 +528,7 @@ class _BudgetCard extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: AppColors.isDark(context)
-                                ? AppColors.slate700
-                                : AppColors.slate200,
+                            color: AppColors.mutedFill(context),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -576,9 +568,7 @@ class _BudgetCard extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: progress,
                   minHeight: 6,
-                  backgroundColor: AppColors.isDark(context)
-                      ? AppColors.slate700
-                      : AppColors.slate200,
+                  backgroundColor: AppColors.mutedFill(context),
                   valueColor: AlwaysStoppedAnimation(progressColor),
                 ),
               ),
@@ -708,9 +698,7 @@ class _BudgetDetailSheet extends StatelessWidget {
                         painter: _CircularProgressPainter(
                           progress: progress,
                           progressColor: progressColor,
-                          trackColor: AppColors.isDark(context)
-                              ? AppColors.slate700
-                              : AppColors.slate200,
+                          trackColor: AppColors.mutedFill(context),
                         ),
                         child: Center(
                           child: Text(
@@ -1372,9 +1360,7 @@ class _PeriodToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final toggleBg = AppColors.isDark(context)
-        ? AppColors.slate700.withValues(alpha: 0.6)
-        : AppColors.slate200.withValues(alpha: 0.6);
+    final toggleBg = AppColors.mutedFill(context).withValues(alpha: 0.6);
 
     return Container(
       decoration: BoxDecoration(
@@ -1438,9 +1424,7 @@ class _CategoryChipButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final bg = selected
         ? AppColors.primaryLight
-        : AppColors.isDark(context)
-            ? AppColors.slate700
-            : AppColors.slate200;
+        : AppColors.mutedFill(context);
     final fg = selected
         ? AppColors.white
         : AppColors.textSecondary(context);

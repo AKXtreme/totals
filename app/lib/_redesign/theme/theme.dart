@@ -65,51 +65,55 @@ class RedesignTheme {
   }
 
   static ThemeData dark() {
+    const darkBg = AppColors.darkBg;
+    const darkCard = AppColors.darkCard;
+    const darkBorder = AppColors.darkBorder;
+
     final colorScheme = ColorScheme.dark(
       primary: AppColors.primaryDark,
       secondary: AppColors.blue,
-      surface: AppColors.slate900,
-      background: AppColors.slate900,
+      surface: darkBg,
+      background: darkBg,
       error: AppColors.red,
       onPrimary: AppColors.white,
       onSecondary: AppColors.white,
       onSurface: AppColors.white,
       onBackground: AppColors.white,
       onError: AppColors.white,
-      surfaceVariant: AppColors.slate800,
+      surfaceVariant: darkCard,
       onSurfaceVariant: AppColors.slate400,
-      outline: AppColors.slate700,
+      outline: darkBorder,
     );
 
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: AppColors.slate900,
-      dividerColor: AppColors.slate700,
-      appBarTheme: const AppBarTheme(
+      scaffoldBackgroundColor: darkBg,
+      dividerColor: darkBorder,
+      appBarTheme: AppBarTheme(
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: AppColors.slate900,
+        backgroundColor: darkBg,
         foregroundColor: AppColors.white,
       ),
       cardTheme: CardThemeData(
-        color: AppColors.slate800,
+        color: darkCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: const BorderSide(color: AppColors.slate700),
+          side: BorderSide(color: darkBorder),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.slate800,
+        fillColor: darkCard,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.slate700),
+          borderSide: BorderSide(color: darkBorder),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.slate700),
+          borderSide: BorderSide(color: darkBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),

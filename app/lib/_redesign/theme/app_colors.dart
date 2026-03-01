@@ -14,25 +14,34 @@ class AppColors {
   static const Color surface = Color(0xFFF8FAFC);
   static const Color surfaceAlt = Color(0xFFF8FAFC);
   static const Color slate200 = Color(0xFFE2E8F0);
-  static const Color slate900 = Color(0xFF0F172A);
-  static const Color slate800 = Color(0xFF1E293B);
-  static const Color slate700 = Color(0xFF334155);
-  static const Color slate600 = Color(0xFF475569);
-  static const Color slate500 = Color(0xFF64748B);
-  static const Color slate400 = Color(0xFF94A3B8);
   static const Color slate50 = Color(0xFFF8FAFC);
   static const Color border = Color(0xFFE2E8F0);
   static const Color black = Color(0xFF000000);
+
+  // ── Light-mode slate scale ───────────────────────────────────────────────
+  static const Color slate400 = Color(0xFF94A3B8);
+  static const Color slate500 = Color(0xFF64748B);
+  static const Color slate600 = Color(0xFF475569);
+  static const Color slate700 = Color(0xFF334155);
+  static const Color slate800 = Color(0xFF1E293B);
+  static const Color slate900 = Color(0xFF0F172A);
+
+  // ── Dark-mode deep navy scale ────────────────────────────────────────────
+  static const Color darkBg = Color(0xFF080C19);
+  static const Color darkCard = Color(0xFF111827);
+  static const Color darkSurface = Color(0xFF0D1120);
+  static const Color darkBorder = Color(0xFF1C2640);
+  static const Color darkMuted = Color(0xFF283350);
 
   // ── Theme-aware helpers ──────────────────────────────────────────────────
   static bool isDark(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark;
 
   static Color background(BuildContext context) =>
-      isDark(context) ? slate900 : slate50;
+      isDark(context) ? darkBg : slate50;
 
   static Color cardColor(BuildContext context) =>
-      isDark(context) ? slate800 : white;
+      isDark(context) ? darkCard : white;
 
   static Color textPrimary(BuildContext context) =>
       isDark(context) ? white : slate900;
@@ -44,8 +53,12 @@ class AppColors {
       isDark(context) ? slate500 : slate400;
 
   static Color borderColor(BuildContext context) =>
-      isDark(context) ? slate700 : border;
+      isDark(context) ? darkBorder : border;
 
   static Color surfaceColor(BuildContext context) =>
-      isDark(context) ? slate900 : surface;
+      isDark(context) ? darkSurface : surface;
+
+  /// Subtle muted fill for shimmer, toggles, chips in dark mode.
+  static Color mutedFill(BuildContext context) =>
+      isDark(context) ? darkMuted : slate200;
 }
