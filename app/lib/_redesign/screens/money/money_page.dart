@@ -173,6 +173,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                     onTabChanged: (tab) => setState(() => _topTab = tab),
                   ),
                 ),
+                Divider(height: 1, thickness: 1, color: AppColors.borderColor(context)),
                 Expanded(
                   child: _topTab == _TopTab.activity
                       ? _buildActivityContent(provider)
