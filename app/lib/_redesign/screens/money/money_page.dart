@@ -383,12 +383,17 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
       }
     }
 
-    // Group by date (descending order preserved)
-    final Map<String, List<Transaction>> grouped = {};
+    // Build flat list: date headers (String) + transactions interleaved
+    final flatItems = <Object>[];
+    String? lastDateKey;
     for (final txn in filtered) {
       final dt = _parseTransactionTime(txn.time);
       final key = dt != null ? _formatDateHeader(dt) : 'Unknown Date';
-      grouped.putIfAbsent(key, () => []).add(txn);
+      if (key != lastDateKey) {
+        flatItems.add(key);
+        lastDateKey = key;
+      }
+      flatItems.add(_LedgerFlatItem(txn));
     }
 
     return [
@@ -428,7 +433,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
             child: _LoadingTransactions(),
           ),
         )
-      else if (grouped.isEmpty)
+      else if (flatItems.isEmpty)
         const SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
@@ -436,22 +441,72 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
           ),
         )
       else
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: grouped.entries.map((entry) {
-                return _LedgerDateGroup(
-                  dateLabel: entry.key,
-                  transactions: entry.value,
-                  showBalance: _showAccountBalances,
-                  onTransactionTap: (txn) =>
-                      _openTransactionCategorySheet(provider, txn),
-                );
-              }).toList(),
-            ),
-          ),
+        SliverList.builder(
+          itemCount: flatItems.length,
+          itemBuilder: (context, index) {
+            final item = flatItems[index];
+            if (item is String) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: const BoxDecoration(
+                        color: AppColors.primaryLight,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      item,
+                      style: TextStyle(
+                        color: AppColors.textPrimary(context),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+            final entry = item as _LedgerFlatItem;
+            // Only hide line after the very last transaction overall
+            final isLastOverall = index == flatItems.length - 1;
+            final lineColor = AppColors.borderColor(context);
+            return Padding(
+              padding: const EdgeInsets.only(left: 20, right: 20),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: 10,
+                      child: Center(
+                        child: Container(
+                          width: 1.5,
+                          color: isLastOverall ? Colors.transparent : lineColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => _openTransactionCategorySheet(
+                            provider, entry.transaction),
+                        behavior: HitTestBehavior.opaque,
+                        child: _LedgerTransactionEntry(
+                          transaction: entry.transaction,
+                          showBalance: _showAccountBalances,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
     ];
   }
@@ -1810,6 +1865,11 @@ class _EmptyTransactions extends StatelessWidget {
   }
 }
 
+class _LedgerFlatItem {
+  final Transaction transaction;
+  const _LedgerFlatItem(this.transaction);
+}
+
 // ─── Ledger Widgets ───────────────────────────────────────────────
 
 class _LedgerDatePickerRow extends StatelessWidget {
@@ -1920,93 +1980,6 @@ class _LedgerDateField extends StatelessWidget {
   }
 }
 
-class _LedgerDateGroup extends StatelessWidget {
-  final String dateLabel;
-  final List<Transaction> transactions;
-  final bool showBalance;
-  final ValueChanged<Transaction> onTransactionTap;
-
-  const _LedgerDateGroup({
-    required this.dateLabel,
-    required this.transactions,
-    required this.showBalance,
-    required this.onTransactionTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final lineColor = AppColors.borderColor(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 16),
-        // Date header with blue dot
-        Row(
-          children: [
-            Container(
-              width: 10,
-              height: 10,
-              decoration: const BoxDecoration(
-                color: AppColors.primaryLight,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              dateLabel,
-              style: TextStyle(
-                color: AppColors.textPrimary(context),
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        // Transaction entries with timeline line
-        ...transactions.asMap().entries.map((entry) {
-          final txn = entry.value;
-          final isLast = entry.key == transactions.length - 1;
-
-          return IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Timeline line column
-                SizedBox(
-                  width: 10,
-                  child: Center(
-                    child: Container(
-                      width: 1.5,
-                      decoration: BoxDecoration(
-                        color: isLast
-                            ? Colors.transparent
-                            : lineColor,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Transaction content
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => onTransactionTap(txn),
-                    behavior: HitTestBehavior.opaque,
-                    child: _LedgerTransactionEntry(
-                      transaction: txn,
-                      showBalance: showBalance,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }),
-      ],
-    );
-  }
-}
-
 class _LedgerTransactionEntry extends StatelessWidget {
   final Transaction transaction;
   final bool showBalance;
@@ -2021,7 +1994,7 @@ class _LedgerTransactionEntry extends StatelessWidget {
     final isCredit = transaction.type == 'CREDIT';
     final amountColor =
         isCredit ? AppColors.incomeSuccess : AppColors.red;
-    final arrow = isCredit ? '↑' : '↓';
+    final arrow = isCredit ? '↓' : '↑';
     final sign = isCredit ? '+' : '-';
 
     final amount = transaction.amount;
@@ -2029,6 +2002,7 @@ class _LedgerTransactionEntry extends StatelessWidget {
         formatNumberAbbreviated(amount).replaceAll('k', 'K');
 
     final name = _transactionCounterparty(transaction);
+    final bankName = _bankLabel(transaction.bankId);
 
     final dt = _parseTransactionTime(transaction.time);
     final timeStr = dt != null ? _formatLedgerTime(dt) : '';
@@ -2041,56 +2015,62 @@ class _LedgerTransactionEntry extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(top: 14, bottom: 6),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 64,
-                child: Text(
-                  timeStr,
+          SizedBox(
+            width: 64,
+            child: Text(
+              timeStr,
+              style: TextStyle(
+                color: AppColors.textSecondary(context),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.textPrimary(context),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$arrow  ${sign}ETB $amountStr',
+                  style: TextStyle(
+                    color: amountColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Balance: $balanceStr',
                   style: TextStyle(
                     color: AppColors.textSecondary(context),
                     fontSize: 12,
-                    fontWeight: FontWeight.w500,
                   ),
                 ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: TextStyle(
-                        color: AppColors.textPrimary(context),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '$arrow  ${sign}ETB $amountStr',
-                      style: TextStyle(
-                        color: amountColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Balance: $balanceStr',
-                      style: TextStyle(
-                        color: AppColors.textSecondary(context),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            bankName,
+            style: TextStyle(
+              color: AppColors.textTertiary(context),
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
