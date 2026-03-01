@@ -11,8 +11,10 @@ import 'package:totals/models/summary_models.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/repositories/account_repository.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:totals/services/account_registration_service.dart';
 import 'package:totals/services/account_sync_status_service.dart';
+import 'package:totals/services/bank_detection_service.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/widgets/add_cash_transaction_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
@@ -659,13 +661,13 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     }
   }
 
-  void _showAddAccountSheet() {
+  void _showAddAccountSheet({int? bankId}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _AddAccountSheet(
-        initialBankId: _selectedBankId,
+        initialBankId: bankId ?? _selectedBankId,
         onAccountAdded: () {
           Provider.of<TransactionProvider>(context, listen: false).loadData();
         },
@@ -1771,12 +1773,12 @@ class _AccountsBalanceCard extends StatelessWidget {
   }
 }
 
-class _BankGrid extends StatelessWidget {
+class _BankGrid extends StatefulWidget {
   final List<BankSummary> bankSummaries;
   final bool showBalance;
   final AccountSyncStatusService syncStatusService;
   final ValueChanged<int> onBankTap;
-  final VoidCallback onAddAccount;
+  final void Function({int? bankId}) onAddAccount;
 
   const _BankGrid({
     required this.bankSummaries,
@@ -1787,23 +1789,82 @@ class _BankGrid extends StatelessWidget {
   });
 
   @override
+  State<_BankGrid> createState() => _BankGridState();
+}
+
+class _BankGridState extends State<_BankGrid> with WidgetsBindingObserver {
+  final BankDetectionService _detectionService = BankDetectionService();
+  List<DetectedBank> _detectedBanks = [];
+  bool _awaitingPermission = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadDetectedBanks();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(_BankGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload when the registered bank list changes (account added/removed)
+    if (oldWidget.bankSummaries.length != widget.bankSummaries.length) {
+      _loadDetectedBanks(forceRefresh: true);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _awaitingPermission) {
+      _awaitingPermission = false;
+      _loadDetectedBanks();
+    }
+  }
+
+  Future<void> _loadDetectedBanks({bool forceRefresh = false}) async {
+    try {
+      final permissionStatus = await Permission.sms.status;
+      if (!permissionStatus.isGranted) return;
+
+      final banks = await _detectionService.detectUnregisteredBanks(
+        forceRefresh: forceRefresh,
+      );
+      banks.sort((a, b) =>
+          a.bank.shortName.toLowerCase().compareTo(b.bank.shortName.toLowerCase()));
+      if (mounted) setState(() => _detectedBanks = banks);
+    } catch (_) {
+      // Silently fail — detected banks are a nice-to-have
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cards = <Widget>[
-      ...bankSummaries.map((bank) {
+      ...widget.bankSummaries.map((bank) {
         final isCash = bank.bankId == CashConstants.bankId;
         return _BankGridCard(
           bankId: bank.bankId,
           isCash: isCash,
           accountCount: bank.accountCount,
           balance: bank.totalBalance,
-          showBalance: showBalance,
+          showBalance: widget.showBalance,
           syncProgress: isCash
               ? null
-              : syncStatusService.getSyncProgressForBank(bank.bankId),
-          onTap: () => onBankTap(bank.bankId),
+              : widget.syncStatusService.getSyncProgressForBank(bank.bankId),
+          onTap: () => widget.onBankTap(bank.bankId),
         );
       }),
-      _AddAccountCard(onTap: onAddAccount),
+      ..._detectedBanks.map((detected) => _DetectedBankCard(
+            detected: detected,
+            onTap: () => widget.onAddAccount(bankId: detected.bank.id),
+          )),
+      _AddAccountCard(onTap: () => widget.onAddAccount()),
     ];
 
     final rows = <Widget>[];
@@ -1865,7 +1926,9 @@ class _BankGridCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.cardColor(context),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.borderColor(context)),
+          border: Border.all(
+            color: AppColors.primaryLight.withValues(alpha: 0.3),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1996,6 +2059,90 @@ class _AddAccountCard extends StatelessWidget {
                 color: AppColors.textSecondary(context),
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DetectedBankCard extends StatelessWidget {
+  final DetectedBank detected;
+  final VoidCallback onTap;
+
+  const _DetectedBankCard({
+    required this.detected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bankImage = _getBankImage(detected.bank.id);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(context),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.borderColor(context)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    detected.bank.shortName,
+                    style: TextStyle(
+                      color: AppColors.textSecondary(context),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                _BankLogoCircle(imagePath: bankImage, size: 40),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${detected.messageCount} messages',
+              style: TextStyle(
+                color: AppColors.textSecondary(context),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.add_rounded,
+                    size: 12,
+                    color: AppColors.primaryLight,
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    'Tap to add',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primaryLight,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
