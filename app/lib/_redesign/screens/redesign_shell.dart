@@ -68,15 +68,7 @@ class RedesignShellState extends State<RedesignShell>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      setState(() {
-        _isAuthenticated = false;
-        _currentIndex = _homeIndex;
-      });
-    }
-    if (state == AppLifecycleState.resumed && !_isAuthenticated) {
-      _authenticateIfAvailable();
-    }
+    // Don't auto-lock on pause — only lock on startup or via manual lockApp().
   }
 
   bool _shouldBypassSecurity(PlatformException error) {

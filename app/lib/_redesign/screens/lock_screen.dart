@@ -53,8 +53,7 @@ class _RedesignLockScreenState extends State<RedesignLockScreen>
     for (final bs in bankSummaries) {
       if (bs.bankId == CashConstants.bankId) continue;
       try {
-        final bank =
-            AppConstants.banks.firstWhere((b) => b.id == bs.bankId);
+        final bank = AppConstants.banks.firstWhere((b) => b.id == bs.bankId);
         bankImages.add(bank.image);
       } catch (_) {}
     }
@@ -109,39 +108,39 @@ class _RedesignLockScreenState extends State<RedesignLockScreen>
               ),
 
               // Bank icons row
-              if (bankImages.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: bankImages.map((image) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: AppColors.cardColor(context),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                              color: AppColors.borderColor(context)),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(9),
-                          child: Image.asset(
-                            image,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Icon(
-                              Icons.account_balance_rounded,
-                              size: 18,
-                              color: AppColors.textTertiary(context),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
+              // if (bankImages.isNotEmpty) ...[
+              //   const SizedBox(height: 20),
+              //   Row(
+              //     mainAxisSize: MainAxisSize.min,
+              //     children: bankImages.map((image) {
+              //       return Padding(
+              //         padding: const EdgeInsets.symmetric(horizontal: 4),
+              //         child: Container(
+              //           width: 36,
+              //           height: 36,
+              //           decoration: BoxDecoration(
+              //             color: AppColors.cardColor(context),
+              //             borderRadius: BorderRadius.circular(10),
+              //             border: Border.all(
+              //                 color: AppColors.borderColor(context)),
+              //           ),
+              //           child: ClipRRect(
+              //             borderRadius: BorderRadius.circular(9),
+              //             child: Image.asset(
+              //               image,
+              //               fit: BoxFit.cover,
+              //               errorBuilder: (_, __, ___) => Icon(
+              //                 Icons.account_balance_rounded,
+              //                 size: 18,
+              //                 color: AppColors.textTertiary(context),
+              //               ),
+              //             ),
+              //           ),
+              //         ),
+              //       );
+              //     }).toList(),
+              //   ),
+              // ],
 
               const SizedBox(height: 60),
 
