@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/constants/cash_constants.dart';
@@ -573,67 +574,79 @@ class _MarqueeText extends StatefulWidget {
 
 class _MarqueeTextState extends State<_MarqueeText>
     with SingleTickerProviderStateMixin {
-  late final ScrollController _scrollController;
-  late final AnimationController _animController;
-  bool _overflows = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController = ScrollController();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    );
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
-  }
-
-  void _checkOverflow() {
-    if (!_scrollController.hasClients) return;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    if (maxScroll > 0) {
-      setState(() => _overflows = true);
-      _startScroll(maxScroll);
-    }
-  }
-
-  void _startScroll(double extent) {
-    _animController.addListener(() {
-      if (!_scrollController.hasClients) return;
-      _scrollController.jumpTo(_animController.value * extent);
-    });
-    _animController.repeat(reverse: true);
-  }
+  Ticker? _ticker;
+  final _px = ValueNotifier<double>(0.0);
+  double _scrollDistance = 0;
+  static const _gap = 20.0;
+  static const _pxPerSec = 30.0;
 
   @override
   void dispose() {
-    _animController.dispose();
-    _scrollController.dispose();
+    _ticker?.dispose();
+    _px.dispose();
     super.dispose();
+  }
+
+  void _ensureScroll(double distance) {
+    _scrollDistance = distance;
+    if (_ticker != null) return;
+    _ticker = createTicker((elapsed) {
+      _px.value =
+          (elapsed.inMicroseconds * _pxPerSec / 1000000.0) % _scrollDistance;
+    })..start();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ShaderMask(
-      shaderCallback: (bounds) {
-        if (!_overflows) {
-          return const LinearGradient(
-            colors: [Colors.white, Colors.white],
-          ).createShader(bounds);
-        }
-        return const LinearGradient(
-          colors: [Colors.transparent, Colors.white, Colors.white, Colors.transparent],
-          stops: [0.0, 0.05, 0.95, 1.0],
-        ).createShader(bounds);
-      },
-      blendMode: BlendMode.dstIn,
-      child: SingleChildScrollView(
-        controller: _scrollController,
-        scrollDirection: Axis.horizontal,
-        physics: const NeverScrollableScrollPhysics(),
-        child: Text(widget.text, style: widget.style),
-      ),
-    );
+    return LayoutBuilder(builder: (context, constraints) {
+      final tp = TextPainter(
+        text: TextSpan(text: widget.text, style: widget.style),
+        maxLines: 1,
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      if (tp.width <= constraints.maxWidth) {
+        return Text(widget.text, style: widget.style, maxLines: 1);
+      }
+
+      _ensureScroll(tp.width + _gap);
+
+      return SizedBox(
+        width: constraints.maxWidth,
+        height: tp.height,
+        child: ClipRect(
+          child: ShaderMask(
+            shaderCallback: (bounds) => const LinearGradient(
+              colors: [
+                Colors.transparent, Colors.white,
+                Colors.white, Colors.transparent,
+              ],
+              stops: [0.0, 0.06, 0.94, 1.0],
+            ).createShader(bounds),
+            blendMode: BlendMode.dstIn,
+            child: OverflowBox(
+              maxWidth: double.infinity,
+              alignment: Alignment.centerLeft,
+              child: ValueListenableBuilder<double>(
+                valueListenable: _px,
+                builder: (context, px, child) => Transform.translate(
+                  offset: Offset(-px, 0),
+                  child: child,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(widget.text, style: widget.style),
+                    const SizedBox(width: _gap),
+                    Text(widget.text, style: widget.style),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    });
   }
 }
 

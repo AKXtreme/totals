@@ -1,12 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/data/all_banks_from_assets.dart';
 import 'package:totals/data/consts.dart';
 import 'package:totals/models/bank.dart' as bank_model;
+import 'package:totals/models/category.dart' show Category;
 import 'package:totals/models/summary_models.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
@@ -36,14 +38,14 @@ final List<bank_model.Bank> _assetBanks = AllBanksFromAssets.getAllBanks();
 class _TransactionFilter {
   final String? type; // null = All, 'DEBIT' = Expense, 'CREDIT' = Income
   final int? bankId; // null = All Banks
-  final String? accountNumber; // null = All Accounts
+  final int? categoryId; // null = All Categories
   final DateTime? startDate;
   final DateTime? endDate;
 
   const _TransactionFilter({
     this.type,
     this.bankId,
-    this.accountNumber,
+    this.categoryId,
     this.startDate,
     this.endDate,
   });
@@ -51,7 +53,7 @@ class _TransactionFilter {
   bool get isActive =>
       type != null ||
       bankId != null ||
-      accountNumber != null ||
+      categoryId != null ||
       startDate != null ||
       endDate != null;
 
@@ -59,7 +61,7 @@ class _TransactionFilter {
     int count = 0;
     if (type != null) count++;
     if (bankId != null) count++;
-    if (accountNumber != null) count++;
+    if (categoryId != null) count++;
     if (startDate != null || endDate != null) count++;
     return count;
   }
@@ -721,16 +723,21 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
   }
 
   Future<void> _openFilterSheet(TransactionProvider provider) async {
-    // Derive unique bank IDs and account numbers from transactions.
-    final allTxns = provider.transactions;
+    // Derive unique bank IDs and account numbers from ALL transactions.
+    final allTxns = provider.allTransactions;
     final bankIds = <int>{};
-    final accountNumbers = <String>{};
+    final categoryIds = <int>{};
     for (final t in allTxns) {
       if (t.bankId != null) bankIds.add(t.bankId!);
-      if (t.accountNumber != null && t.accountNumber!.isNotEmpty) {
-        accountNumbers.add(t.accountNumber!);
-      }
+      if (t.categoryId != null) categoryIds.add(t.categoryId!);
     }
+
+    // Build category list from IDs found in transactions.
+    final categories = categoryIds
+        .map((id) => provider.getCategoryById(id))
+        .whereType<Category>()
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
 
     final result = await showModalBottomSheet<_TransactionFilter>(
       context: context,
@@ -739,7 +746,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
       builder: (_) => _FilterTransactionsSheet(
         currentFilter: _filter,
         bankIds: bankIds.toList()..sort(),
-        accountNumbers: accountNumbers.toList()..sort(),
+        categories: categories,
       ),
     );
     if (result != null) {
@@ -763,11 +770,10 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
       result = result.where((t) => t.bankId == _filter.bankId).toList();
     }
 
-    // Account filter
-    if (_filter.accountNumber != null) {
-      result = result
-          .where((t) => t.accountNumber == _filter.accountNumber)
-          .toList();
+    // Category filter
+    if (_filter.categoryId != null) {
+      result =
+          result.where((t) => t.categoryId == _filter.categoryId).toList();
     }
 
     // Date range filter
@@ -1847,63 +1853,79 @@ class _TileMarqueeText extends StatefulWidget {
 
 class _TileMarqueeTextState extends State<_TileMarqueeText>
     with SingleTickerProviderStateMixin {
-  late final ScrollController _sc;
-  late final AnimationController _ac;
-  bool _overflows = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _sc = ScrollController();
-    _ac = AnimationController(
-        vsync: this, duration: const Duration(seconds: 4));
-    WidgetsBinding.instance.addPostFrameCallback((_) => _check());
-  }
-
-  void _check() {
-    if (!_sc.hasClients) return;
-    final max = _sc.position.maxScrollExtent;
-    if (max > 0) {
-      setState(() => _overflows = true);
-      _ac.addListener(() {
-        if (_sc.hasClients) _sc.jumpTo(_ac.value * max);
-      });
-      _ac.repeat(reverse: true);
-    }
-  }
+  Ticker? _ticker;
+  final _px = ValueNotifier<double>(0.0);
+  double _scrollDistance = 0;
+  static const _gap = 20.0;
+  static const _pxPerSec = 30.0;
 
   @override
   void dispose() {
-    _ac.dispose();
-    _sc.dispose();
+    _ticker?.dispose();
+    _px.dispose();
     super.dispose();
+  }
+
+  void _ensureScroll(double distance) {
+    _scrollDistance = distance;
+    if (_ticker != null) return;
+    _ticker = createTicker((elapsed) {
+      _px.value =
+          (elapsed.inMicroseconds * _pxPerSec / 1000000.0) % _scrollDistance;
+    })..start();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ShaderMask(
-      shaderCallback: (bounds) {
-        if (!_overflows) {
-          return const LinearGradient(
-            colors: [Colors.white, Colors.white],
-          ).createShader(bounds);
-        }
-        return const LinearGradient(
-          colors: [
-            Colors.transparent, Colors.white,
-            Colors.white, Colors.transparent,
-          ],
-          stops: [0.0, 0.05, 0.95, 1.0],
-        ).createShader(bounds);
-      },
-      blendMode: BlendMode.dstIn,
-      child: SingleChildScrollView(
-        controller: _sc,
-        scrollDirection: Axis.horizontal,
-        physics: const NeverScrollableScrollPhysics(),
-        child: Text(widget.text, style: widget.style),
-      ),
-    );
+    return LayoutBuilder(builder: (context, constraints) {
+      final tp = TextPainter(
+        text: TextSpan(text: widget.text, style: widget.style),
+        maxLines: 1,
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      if (tp.width <= constraints.maxWidth) {
+        return Text(widget.text, style: widget.style, maxLines: 1);
+      }
+
+      _ensureScroll(tp.width + _gap);
+
+      return SizedBox(
+        width: constraints.maxWidth,
+        height: tp.height,
+        child: ClipRect(
+          child: ShaderMask(
+            shaderCallback: (bounds) => const LinearGradient(
+              colors: [
+                Colors.transparent, Colors.white,
+                Colors.white, Colors.transparent,
+              ],
+              stops: [0.0, 0.06, 0.94, 1.0],
+            ).createShader(bounds),
+            blendMode: BlendMode.dstIn,
+            child: OverflowBox(
+              maxWidth: double.infinity,
+              alignment: Alignment.centerLeft,
+              child: ValueListenableBuilder<double>(
+                valueListenable: _px,
+                builder: (context, px, child) => Transform.translate(
+                  offset: Offset(-px, 0),
+                  child: child,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(widget.text, style: widget.style),
+                    const SizedBox(width: _gap),
+                    Text(widget.text, style: widget.style),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    });
   }
 }
 
@@ -3967,12 +3989,12 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
 class _FilterTransactionsSheet extends StatefulWidget {
   final _TransactionFilter currentFilter;
   final List<int> bankIds;
-  final List<String> accountNumbers;
+  final List<Category> categories;
 
   const _FilterTransactionsSheet({
     required this.currentFilter,
     required this.bankIds,
-    required this.accountNumbers,
+    required this.categories,
   });
 
   @override
@@ -3983,7 +4005,7 @@ class _FilterTransactionsSheet extends StatefulWidget {
 class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
   late String? _selectedType;
   late int? _selectedBankId;
-  late String? _selectedAccountNumber;
+  late int? _selectedCategoryId;
   DateTime? _startDate;
   DateTime? _endDate;
 
@@ -3992,7 +4014,7 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
     super.initState();
     _selectedType = widget.currentFilter.type;
     _selectedBankId = widget.currentFilter.bankId;
-    _selectedAccountNumber = widget.currentFilter.accountNumber;
+    _selectedCategoryId = widget.currentFilter.categoryId;
     _startDate = widget.currentFilter.startDate;
     _endDate = widget.currentFilter.endDate;
   }
@@ -4001,7 +4023,7 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
     setState(() {
       _selectedType = null;
       _selectedBankId = null;
-      _selectedAccountNumber = null;
+      _selectedCategoryId = null;
       _startDate = null;
       _endDate = null;
     });
@@ -4012,7 +4034,7 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
       _TransactionFilter(
         type: _selectedType,
         bankId: _selectedBankId,
-        accountNumber: _selectedAccountNumber,
+        categoryId: _selectedCategoryId,
         startDate: _startDate,
         endDate: _endDate,
       ),
@@ -4057,15 +4079,6 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
         }
       });
     }
-  }
-
-  String _maskAccount(String accountNumber) {
-    if (accountNumber.length <= 6) return accountNumber;
-    final visible = accountNumber.length > 10 ? 4 : 3;
-    final prefix = accountNumber.substring(0, visible);
-    final suffix = accountNumber.substring(accountNumber.length - visible);
-    final masked = '*' * (accountNumber.length - visible * 2);
-    return '$prefix$masked$suffix';
   }
 
   String _formatDate(DateTime date) {
@@ -4177,30 +4190,46 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
                     ],
                   ),
 
-                  const SizedBox(height: 20),
+                  if (widget.categories.isNotEmpty) ...[
+                    const SizedBox(height: 20),
 
-                  // ── ACCOUNT ──
-                  _sectionLabel('ACCOUNT'),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _FilterChip(
-                        label: 'All Accounts',
-                        selected: _selectedAccountNumber == null,
-                        onTap: () =>
-                            setState(() => _selectedAccountNumber = null),
-                      ),
-                      for (final account in widget.accountNumbers)
-                        _FilterChip(
-                          label: _maskAccount(account),
-                          selected: _selectedAccountNumber == account,
-                          onTap: () =>
-                              setState(() => _selectedAccountNumber = account),
+                    // ── CATEGORY ──
+                    _sectionLabel('CATEGORY'),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      // Break out of parent horizontal padding so the
+                      // scroll starts and ends edge-to-edge.
+                      width: MediaQuery.of(context).size.width,
+                      child: Transform.translate(
+                        offset: const Offset(-20, 0),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Row(
+                            children: [
+                              _FilterChip(
+                                label: 'All',
+                                selected: _selectedCategoryId == null,
+                                onTap: () =>
+                                    setState(() => _selectedCategoryId = null),
+                              ),
+                              for (final cat in widget.categories)
+                                if (cat.id != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 8),
+                                    child: _FilterChip(
+                                      label: cat.name,
+                                      selected: _selectedCategoryId == cat.id,
+                                      onTap: () => setState(
+                                          () => _selectedCategoryId = cat.id),
+                                    ),
+                                  ),
+                            ],
+                          ),
                         ),
-                    ],
-                  ),
+                      ),
+                    ),
+                  ],
 
                   const SizedBox(height: 20),
 

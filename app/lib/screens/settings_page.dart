@@ -689,6 +689,181 @@ class _SettingsPageState extends State<SettingsPage>
     }
   }
 
+  String _scaleLabel(double scale) {
+    final formatted = scale
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+    return '${formatted}x';
+  }
+
+  int _closestScaleIndex(double value, List<double> options) {
+    int bestIndex = 0;
+    double bestDelta = (value - options.first).abs();
+    for (int i = 1; i < options.length; i++) {
+      final delta = (value - options[i]).abs();
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        bestIndex = i;
+      }
+    }
+    return bestIndex;
+  }
+
+  Future<void> _showFontSizeSheet(ThemeProvider themeProvider) async {
+    final theme = Theme.of(context);
+    final initialScale = themeProvider.uiScale;
+    final options = themeProvider.availableUiScales;
+    int selectedIndex = _closestScaleIndex(initialScale, options);
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final selectedScale = options[selectedIndex];
+
+          Future<void> updateScale(int index) async {
+            if (index == selectedIndex) return;
+            setSheetState(() => selectedIndex = index);
+            await themeProvider.setUiScale(options[index]);
+          }
+
+          return Container(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              0,
+              20,
+              20 + MediaQuery.of(sheetContext).viewInsets.bottom,
+            ),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 16),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.onSurface.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Text(
+                  'Display Size',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Preview and adjust interface scale.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withOpacity(0.65),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: theme.colorScheme.outline.withOpacity(0.18),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Preview',
+                        style: TextStyle(
+                          fontSize: 16 * selectedScale,
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Your settings and transaction labels adapt here.',
+                        style: TextStyle(
+                          fontSize: 13 * selectedScale,
+                          color: theme.colorScheme.onSurface.withOpacity(0.8),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Current size: ${_scaleLabel(selectedScale)}',
+                        style: TextStyle(
+                          fontSize: 12 * selectedScale,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Slider(
+                  value: selectedIndex.toDouble(),
+                  min: 0,
+                  max: (options.length - 1).toDouble(),
+                  divisions: options.length - 1,
+                  label: _scaleLabel(selectedScale),
+                  onChanged: (value) => updateScale(value.round()),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (int i = 0; i < options.length; i++)
+                      ChoiceChip(
+                        label: Text(_scaleLabel(options[i])),
+                        selected: i == selectedIndex,
+                        onSelected: (_) => updateScale(i),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(true),
+                        child: const Text('Apply'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+
+    if (confirmed != true && mounted) {
+      await themeProvider.setUiScale(initialScale);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -755,7 +930,37 @@ class _SettingsPageState extends State<SettingsPage>
                                       themeProvider.toggleTheme();
                                     },
                                   ),
-                                  onTap: null,
+                                    onTap: null,
+                                  );
+                              },
+                            ),
+                            _buildDivider(context),
+                            Consumer<ThemeProvider>(
+                              builder: (context, themeProvider, child) {
+                                return _buildSettingTile(
+                                  icon: Icons.zoom_out_map_rounded,
+                                  title: 'Display size',
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        themeProvider.uiScaleLabel,
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: theme.colorScheme.onSurface
+                                              .withOpacity(0.65),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        Icons.chevron_right,
+                                        size: 18,
+                                        color: theme.colorScheme.onSurface
+                                            .withOpacity(0.3),
+                                      ),
+                                    ],
+                                  ),
+                                  onTap: () => _showFontSizeSheet(themeProvider),
                                 );
                               },
                             ),

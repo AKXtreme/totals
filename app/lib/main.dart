@@ -19,6 +19,37 @@ import 'package:totals/_redesign/screens/redesign_shell.dart';
 import 'package:totals/_redesign/theme/theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+Widget _buildUiScaledApp({
+  required BuildContext context,
+  required Widget child,
+  required double scale,
+}) {
+  if ((scale - 1.0).abs() < 0.001) return child;
+
+  final mq = MediaQuery.of(context);
+  final scaledWidth = mq.size.width / scale;
+  final scaledHeight = mq.size.height / scale;
+
+  return ClipRect(
+    child: OverflowBox(
+      alignment: Alignment.topLeft,
+      minWidth: scaledWidth,
+      maxWidth: scaledWidth,
+      minHeight: scaledHeight,
+      maxHeight: scaledHeight,
+      child: Transform.scale(
+        scale: scale,
+        alignment: Alignment.topLeft,
+        child: SizedBox(
+          width: scaledWidth,
+          height: scaledHeight,
+          child: child,
+        ),
+      ),
+    ),
+  );
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -116,6 +147,14 @@ class MyApp extends StatelessWidget {
                     useMaterial3: true,
                   ),
             themeMode: themeProvider.themeMode,
+            builder: (context, child) {
+              if (child == null) return const SizedBox.shrink();
+              return _buildUiScaledApp(
+                context: context,
+                child: child,
+                scale: themeProvider.uiScale,
+              );
+            },
             home: useRedesign ? const RedesignShell() : const HomePage(),
           );
         },
