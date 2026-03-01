@@ -1249,19 +1249,16 @@ class _TopTabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(
-          child: _TopTabItem(
-            label: 'Activity',
-            selected: selectedTab == _TopTab.activity,
-            onTap: () => onTabChanged(_TopTab.activity),
-          ),
+        _TopTabItem(
+          label: 'Activity',
+          selected: selectedTab == _TopTab.activity,
+          onTap: () => onTabChanged(_TopTab.activity),
         ),
-        Expanded(
-          child: _TopTabItem(
-            label: 'Accounts',
-            selected: selectedTab == _TopTab.accounts,
-            onTap: () => onTabChanged(_TopTab.accounts),
-          ),
+        const SizedBox(width: 20),
+        _TopTabItem(
+          label: 'Accounts',
+          selected: selectedTab == _TopTab.accounts,
+          onTap: () => onTabChanged(_TopTab.accounts),
         ),
       ],
     );
@@ -1286,14 +1283,16 @@ class _TopTabItem extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: selected ? AppColors.primaryLight : AppColors.borderColor(context),
-              width: selected ? 2.5 : 1,
-            ),
-          ),
-        ),
+        decoration: selected
+            ? const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: AppColors.primaryLight,
+                    width: 2.5,
+                  ),
+                ),
+              )
+            : null,
         child: Text(
           label,
           style: TextStyle(
