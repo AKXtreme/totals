@@ -26,9 +26,12 @@ Widget _buildUiScaledApp({
 }) {
   if ((scale - 1.0).abs() < 0.001) return child;
 
-  final mq = MediaQuery.of(context);
-  final scaledWidth = mq.size.width / scale;
-  final scaledHeight = mq.size.height / scale;
+  // Use sizeOf instead of MediaQuery.of to only depend on size changes,
+  // not every MediaQuery field (avoids unnecessary rebuilds during theme changes
+  // that can crash overlay elements like bottom sheets).
+  final size = MediaQuery.sizeOf(context);
+  final scaledWidth = size.width / scale;
+  final scaledHeight = size.height / scale;
 
   return ClipRect(
     child: OverflowBox(

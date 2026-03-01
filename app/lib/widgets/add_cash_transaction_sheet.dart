@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/models/account.dart';
+import 'package:totals/models/category.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/repositories/account_repository.dart';
+import 'package:totals/utils/category_icons.dart';
 
 Future<void> showAddCashTransactionSheet({
   required BuildContext context,
@@ -47,6 +49,7 @@ class _AddCashTransactionContentState
   late final TextEditingController _amountController;
   late final TextEditingController _noteController;
   late bool _isDebit;
+  int? _selectedCategoryId;
   bool _isLoading = false;
 
   @override
@@ -55,6 +58,13 @@ class _AddCashTransactionContentState
     _amountController = TextEditingController();
     _noteController = TextEditingController();
     _isDebit = widget.initialIsDebit;
+  }
+
+  List<Category> get _filteredCategories {
+    final flow = _isDebit ? 'expense' : 'income';
+    return widget.provider.categories
+        .where((c) => c.flow == flow && !c.uncategorized)
+        .toList();
   }
 
   @override
@@ -119,6 +129,7 @@ class _AddCashTransactionContentState
         accountNumber: widget.accountNumber.isNotEmpty
             ? widget.accountNumber
             : CashConstants.defaultAccountNumber,
+        categoryId: _selectedCategoryId,
       );
 
       await widget.provider.addTransaction(transaction);
@@ -199,7 +210,10 @@ class _AddCashTransactionContentState
                     icon: Icons.arrow_upward,
                     isSelected: _isDebit,
                     color: Colors.red,
-                    onTap: () => setState(() => _isDebit = true),
+                    onTap: () => setState(() {
+                      _isDebit = true;
+                      _selectedCategoryId = null;
+                    }),
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -209,7 +223,10 @@ class _AddCashTransactionContentState
                     icon: Icons.arrow_downward,
                     isSelected: !_isDebit,
                     color: Colors.green,
-                    onTap: () => setState(() => _isDebit = false),
+                    onTap: () => setState(() {
+                      _isDebit = false;
+                      _selectedCategoryId = null;
+                    }),
                   ),
                 ),
               ],
@@ -285,6 +302,46 @@ class _AddCashTransactionContentState
               ),
               filled: true,
               fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Category
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Category',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 36,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                _CashCategoryChip(
+                  label: 'None',
+                  icon: null,
+                  selected: _selectedCategoryId == null,
+                  accentColor: _isDebit ? Colors.red : Colors.green,
+                  onTap: () =>
+                      setState(() => _selectedCategoryId = null),
+                ),
+                ..._filteredCategories.map((cat) {
+                  return _CashCategoryChip(
+                    label: cat.name,
+                    icon: iconForCategoryKey(cat.iconKey),
+                    selected: _selectedCategoryId == cat.id,
+                    accentColor: _isDebit ? Colors.red : Colors.green,
+                    onTap: () =>
+                        setState(() => _selectedCategoryId = cat.id),
+                  );
+                }),
+              ],
             ),
           ),
           const SizedBox(height: 24),
@@ -390,6 +447,63 @@ class _TypeButton extends StatelessWidget {
                   color: isSelected
                       ? Colors.white
                       : colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CashCategoryChip extends StatelessWidget {
+  final String label;
+  final IconData? icon;
+  final bool selected;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  const _CashCategoryChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final bg = selected
+        ? accentColor
+        : colorScheme.surfaceContainerHighest.withOpacity(0.5);
+    final fg = selected ? Colors.white : colorScheme.onSurfaceVariant;
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 14, color: fg),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: fg,
                 ),
               ),
             ],
