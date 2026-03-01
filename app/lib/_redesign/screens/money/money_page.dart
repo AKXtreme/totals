@@ -9,10 +9,10 @@ import 'package:totals/data/consts.dart';
 import 'package:totals/models/bank.dart' as bank_model;
 import 'package:totals/models/summary_models.dart';
 import 'package:totals/models/transaction.dart';
-import 'package:totals/models/user_account.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/repositories/account_repository.dart';
-import 'package:totals/repositories/user_account_repository.dart';
+import 'package:totals/services/account_registration_service.dart';
+import 'package:totals/services/account_sync_status_service.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/widgets/add_cash_transaction_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
@@ -27,6 +27,8 @@ class RedesignMoneyPage extends StatefulWidget {
 enum _TopTab { activity, accounts }
 
 enum _SubTab { transactions, analytics, ledger }
+
+final List<bank_model.Bank> _assetBanks = AllBanksFromAssets.getAllBanks();
 
 /// Filter state passed from the filter bottom sheet.
 class _TransactionFilter {
@@ -300,6 +302,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     final summary = provider.summary;
     final bankSummaries = provider.bankSummaries;
     final accountSummaries = provider.accountSummaries;
+    final syncStatusService = context.watch<AccountSyncStatusService>();
     final isOverview = _selectedBankId == null;
 
     // Overview data
@@ -382,6 +385,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
               _BankGrid(
                 bankSummaries: bankSummaries,
                 showBalance: _showAccountBalances,
+                syncStatusService: syncStatusService,
                 onBankTap: (bankId) =>
                     setState(() => _selectedBankId = bankId),
                 onAddAccount: _showAddAccountSheet,
@@ -399,6 +403,18 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                       _expandedAccountNumber == account.accountNumber,
                   showBalance: _showAccountBalances,
                   transactionCount: acctTxnCount,
+                  syncStatus: isCash
+                      ? null
+                      : syncStatusService.getSyncStatus(
+                          account.accountNumber,
+                          account.bankId,
+                        ),
+                  syncProgress: isCash
+                      ? null
+                      : syncStatusService.getSyncProgress(
+                          account.accountNumber,
+                          account.bankId,
+                        ),
                   onToggleExpand: () => setState(() {
                     _expandedAccountNumber =
                         _expandedAccountNumber == account.accountNumber
@@ -649,6 +665,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _AddAccountSheet(
+        initialBankId: _selectedBankId,
         onAccountAdded: () {
           Provider.of<TransactionProvider>(context, listen: false).loadData();
         },
@@ -836,10 +853,15 @@ String _bankLabel(int? bankId) {
   if (bankId == null) return 'Bank';
   if (bankId == CashConstants.bankId) return CashConstants.bankShortName;
   try {
-    final bank = AppConstants.banks.firstWhere((b) => b.id == bankId);
+    final bank = _assetBanks.firstWhere((b) => b.id == bankId);
     return bank.shortName;
   } catch (_) {
-    return 'Bank $bankId';
+    try {
+      final bank = AppConstants.banks.firstWhere((b) => b.id == bankId);
+      return bank.shortName;
+    } catch (_) {
+      return 'Bank $bankId';
+    }
   }
 }
 
@@ -868,18 +890,26 @@ String _formatEtbAbbrev(double value) {
 String _getBankImage(int bankId) {
   if (bankId == CashConstants.bankId) return 'assets/images/eth_birr.png';
   try {
-    return AppConstants.banks.firstWhere((b) => b.id == bankId).image;
+    return _assetBanks.firstWhere((b) => b.id == bankId).image;
   } catch (_) {
-    return '';
+    try {
+      return AppConstants.banks.firstWhere((b) => b.id == bankId).image;
+    } catch (_) {
+      return '';
+    }
   }
 }
 
 String _getBankName(int bankId) {
   if (bankId == CashConstants.bankId) return CashConstants.bankShortName;
   try {
-    return AppConstants.banks.firstWhere((b) => b.id == bankId).shortName;
+    return _assetBanks.firstWhere((b) => b.id == bankId).shortName;
   } catch (_) {
-    return 'Bank $bankId';
+    try {
+      return AppConstants.banks.firstWhere((b) => b.id == bankId).shortName;
+    } catch (_) {
+      return 'Bank $bankId';
+    }
   }
 }
 
@@ -1744,12 +1774,14 @@ class _AccountsBalanceCard extends StatelessWidget {
 class _BankGrid extends StatelessWidget {
   final List<BankSummary> bankSummaries;
   final bool showBalance;
+  final AccountSyncStatusService syncStatusService;
   final ValueChanged<int> onBankTap;
   final VoidCallback onAddAccount;
 
   const _BankGrid({
     required this.bankSummaries,
     required this.showBalance,
+    required this.syncStatusService,
     required this.onBankTap,
     required this.onAddAccount,
   });
@@ -1765,6 +1797,9 @@ class _BankGrid extends StatelessWidget {
           accountCount: bank.accountCount,
           balance: bank.totalBalance,
           showBalance: showBalance,
+          syncProgress: isCash
+              ? null
+              : syncStatusService.getSyncProgressForBank(bank.bankId),
           onTap: () => onBankTap(bank.bankId),
         );
       }),
@@ -1798,6 +1833,7 @@ class _BankGridCard extends StatelessWidget {
   final int accountCount;
   final double balance;
   final bool showBalance;
+  final double? syncProgress;
   final VoidCallback onTap;
 
   const _BankGridCard({
@@ -1806,6 +1842,7 @@ class _BankGridCard extends StatelessWidget {
     required this.accountCount,
     required this.balance,
     required this.showBalance,
+    this.syncProgress,
     required this.onTap,
   });
 
@@ -1818,11 +1855,13 @@ class _BankGridCard extends StatelessWidget {
     final subtitleLabel = isCash
         ? 'On-hand cash'
         : '$accountCount Account${accountCount == 1 ? '' : 's'}';
+    final isSyncing = syncProgress != null;
+    final normalizedProgress = syncProgress?.clamp(0.0, 1.0).toDouble();
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(14),
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: AppColors.cardColor(context),
           borderRadius: BorderRadius.circular(12),
@@ -1831,42 +1870,62 @@ class _BankGridCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    bankName,
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          bankName,
+                          style: TextStyle(
+                            color: AppColors.textPrimary(context),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      _BankLogoCircle(imagePath: bankImage, size: 40),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    subtitleLabel,
                     style: TextStyle(
-                      color: AppColors.textPrimary(context),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSecondary(context),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                ),
-                _BankLogoCircle(imagePath: bankImage, size: 40),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              subtitleLabel,
-              style: TextStyle(
-                color: AppColors.textSecondary(context),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+                  const SizedBox(height: 6),
+                  Text(
+                    isSyncing
+                        ? 'Syncing ${(normalizedProgress! * 100).round()}%'
+                        : balanceLabel,
+                    style: TextStyle(
+                      color: isSyncing
+                          ? AppColors.primaryLight
+                          : showBalance
+                              ? (AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700)
+                              : AppColors.textSecondary(context),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: (isSyncing || showBalance) ? 0 : 2,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              balanceLabel,
-              style: TextStyle(
-                color:
-                    showBalance ? (AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700) : AppColors.textSecondary(context),
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                letterSpacing: showBalance ? 0 : 2,
+            if (isSyncing)
+              LinearProgressIndicator(
+                value: normalizedProgress,
+                minHeight: 3,
+                backgroundColor: Colors.transparent,
+                valueColor: AlwaysStoppedAnimation(AppColors.primaryLight),
               ),
-            ),
           ],
         ),
       ),
@@ -2042,6 +2101,8 @@ class _AccountCard extends StatelessWidget {
   final bool isExpanded;
   final bool showBalance;
   final int transactionCount;
+  final String? syncStatus;
+  final double? syncProgress;
   final VoidCallback onToggleExpand;
   final VoidCallback? onDelete;
   final VoidCallback? onCashExpense;
@@ -2056,6 +2117,8 @@ class _AccountCard extends StatelessWidget {
     required this.isExpanded,
     required this.showBalance,
     required this.transactionCount,
+    required this.syncStatus,
+    required this.syncProgress,
     required this.onToggleExpand,
     this.onDelete,
     this.onCashExpense,
@@ -2074,6 +2137,14 @@ class _AccountCard extends StatelessWidget {
         showBalance ? '+ETB ${_formatEtbAbbrev(account.totalCredit)}' : '***';
     final debitLabel =
         showBalance ? '-ETB ${_formatEtbAbbrev(account.totalDebit)}' : '***';
+    final normalizedProgress = syncProgress == null
+        ? null
+        : syncProgress!.clamp(0.0, 1.0).toDouble();
+    final syncPercentLabel = normalizedProgress == null
+        ? null
+        : '${(normalizedProgress * 100).round()}%';
+    final primaryValueLabel =
+        syncStatus != null ? (syncPercentLabel ?? '0%') : balanceLabel;
 
     final accountLabel =
         isCash ? 'On-hand cash' : account.accountNumber;
@@ -2082,6 +2153,7 @@ class _AccountCard extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: AppColors.cardColor(context),
         borderRadius: BorderRadius.circular(12),
@@ -2090,10 +2162,12 @@ class _AccountCard extends StatelessWidget {
       child: InkWell(
         onTap: onToggleExpand,
         borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
               Row(
                 children: [
                   _BankLogoCircle(imagePath: bankImage, size: 44),
@@ -2120,12 +2194,27 @@ class _AccountCard extends StatelessWidget {
                             letterSpacing: 0.3,
                           ),
                         ),
+                        if (syncStatus != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            syncStatus!,
+                            style: TextStyle(
+                              color: AppColors.primaryLight,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                         if (isExpanded) ...[
                           const SizedBox(height: 4),
                           Text(
-                            balanceLabel,
+                            primaryValueLabel,
                             style: TextStyle(
-                              color: AppColors.textPrimary(context),
+                              color: syncStatus != null
+                                  ? AppColors.primaryLight
+                                  : AppColors.textPrimary(context),
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
                             ),
@@ -2149,14 +2238,17 @@ class _AccountCard extends StatelessWidget {
                   children: [
                     const SizedBox(width: 56),
                     Text(
-                      balanceLabel,
+                      primaryValueLabel,
                       style: TextStyle(
-                        color: showBalance
-                            ? (AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700)
+                        color: syncStatus != null
+                            ? AppColors.primaryLight
+                            : showBalance
+                                ? (AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700)
                             : AppColors.textSecondary(context),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        letterSpacing: showBalance ? 0 : 2,
+                        letterSpacing:
+                            (syncPercentLabel != null || showBalance) ? 0 : 2,
                       ),
                     ),
                   ],
@@ -2319,6 +2411,16 @@ class _AccountCard extends StatelessWidget {
               ],
             ],
           ),
+            ),
+            // Sync progress bar — sits at the bottom edge of the card
+            if (syncStatus != null)
+              LinearProgressIndicator(
+                value: normalizedProgress,
+                minHeight: 3,
+                backgroundColor: Colors.transparent,
+                valueColor: AlwaysStoppedAnimation(AppColors.primaryLight),
+              ),
+          ],
         ),
       ),
     );
@@ -2592,9 +2694,13 @@ class _SetCashAmountSheetState extends State<_SetCashAmountSheet> {
 // ─── Add Account Sheet ───────────────────────────────────────────
 
 class _AddAccountSheet extends StatefulWidget {
+  final int? initialBankId;
   final VoidCallback onAccountAdded;
 
-  const _AddAccountSheet({required this.onAccountAdded});
+  const _AddAccountSheet({
+    this.initialBankId,
+    required this.onAccountAdded,
+  });
 
   @override
   State<_AddAccountSheet> createState() => _AddAccountSheetState();
@@ -2608,6 +2714,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   int? _selectedBankId;
   bool _isFormValid = false;
   bool _isSubmitting = false;
+  bool _syncPreviousSms = true;
 
   @override
   void initState() {
@@ -2629,7 +2736,13 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     if (mounted) {
       setState(() {
         _banks = banks;
-        if (banks.isNotEmpty) _selectedBankId = banks.first.id;
+        if (banks.isEmpty) {
+          _selectedBankId = null;
+          return;
+        }
+        final hasInitialBank = widget.initialBankId != null &&
+            banks.any((bank) => bank.id == widget.initialBankId);
+        _selectedBankId = hasInitialBank ? widget.initialBankId : banks.first.id;
       });
     }
   }
@@ -2643,57 +2756,61 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate() || _selectedBankId == null) return;
+    final accountNumber = _accountNumberController.text.trim();
+    final accountHolderName = _holderNameController.text.trim();
+    final bankId = _selectedBankId!;
+    final messenger = ScaffoldMessenger.of(context);
+    final provider = Provider.of<TransactionProvider>(context, listen: false);
 
     setState(() => _isSubmitting = true);
 
     try {
-      final accountRepo = UserAccountRepository();
-      final exists = await accountRepo.userAccountExists(
-        _accountNumberController.text.trim(),
-        _selectedBankId!,
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      widget.onAccountAdded();
+
+      final service = AccountRegistrationService();
+      final account = await service.registerAccount(
+        accountNumber: accountNumber,
+        accountHolderName: accountHolderName,
+        bankId: bankId,
+        syncPreviousSms: _syncPreviousSms,
+        onSyncComplete: () {
+          provider.loadData();
+        },
       );
 
-      if (exists) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('This account already exists'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-          setState(() => _isSubmitting = false);
-        }
+      if (account == null) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('This account already exists'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
         return;
       }
 
-      final account = UserAccount(
-        accountNumber: _accountNumberController.text.trim(),
-        bankId: _selectedBankId!,
-        accountHolderName: _holderNameController.text.trim(),
-        createdAt: DateTime.now().toIso8601String(),
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            _syncPreviousSms
+                ? "Adding your account. You can leave the app, we'll notify you when it's done."
+                : 'Account added successfully',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
-
-      await accountRepo.saveUserAccount(account);
-
-      if (mounted) {
-        Navigator.of(context).pop();
-        widget.onAccountAdded();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Account added successfully'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      provider.loadData();
     } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Error adding account: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error adding account: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
         setState(() => _isSubmitting = false);
       }
     }
@@ -2893,6 +3010,56 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                 ),
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Required' : null,
+              ),
+              const SizedBox(height: 20),
+
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceColor(context),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.borderColor(context)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.sms_outlined,
+                      color: AppColors.textSecondary(context),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Sync SMS History',
+                            style: TextStyle(
+                              color: AppColors.textPrimary(context),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            'Import past transactions for this account',
+                            style: TextStyle(
+                              color: AppColors.textSecondary(context),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch.adaptive(
+                      value: _syncPreviousSms,
+                      onChanged: (value) {
+                        setState(() => _syncPreviousSms = value);
+                      },
+                      activeColor: AppColors.primaryDark,
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 28),
 

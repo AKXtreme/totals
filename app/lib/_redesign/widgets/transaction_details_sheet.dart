@@ -48,6 +48,14 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
 
   bool get _isCredit => _tx.type == 'CREDIT';
 
+  String get _counterparty {
+    final receiver = _tx.receiver?.trim();
+    final creditor = _tx.creditor?.trim();
+    if (receiver != null && receiver.isNotEmpty) return receiver;
+    if (creditor != null && creditor.isNotEmpty) return creditor;
+    return _bankFullName;
+  }
+
   String get _bankFullName {
     final id = _tx.bankId;
     if (id == null) return 'Unknown';
@@ -71,9 +79,9 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   }
 
   String get _formattedAmount {
-    final formatted = formatNumberAbbreviated(_tx.amount);
+    final formatted = formatNumberWithComma(_tx.amount);
     final prefix = _isCredit ? '+ ' : '- ';
-    return '${prefix}ETB ${formatted.replaceAll('k', 'K')}';
+    return '${prefix}ETB $formatted';
   }
 
   String? get _formattedDate {
@@ -148,6 +156,41 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Reference copied')),
     );
+  }
+
+  Future<void> _showNewCategoryDialog() async {
+    final nameController = TextEditingController();
+    final flow = _isCredit ? 'income' : 'expense';
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New category'),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Category name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    if (created == true && nameController.text.trim().isNotEmpty) {
+      await _provider.createCategory(
+        name: nameController.text.trim(),
+        essential: false,
+        flow: flow,
+      );
+      if (mounted) setState(() {});
+    }
+    nameController.dispose();
   }
 
   Future<void> _deleteTransaction() async {
@@ -242,9 +285,9 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
               ),
             ),
 
-            // Bank name subtitle
+            // Counterparty name
             Text(
-              _bankFullName,
+              _counterparty,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: AppColors.textSecondary(context),
               ),
@@ -357,10 +400,13 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (category != null) ...[
-                  Icon(
-                    iconForCategoryKey(category.iconKey),
-                    size: 16,
-                    color: _categoryColor(category),
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: _categoryColor(category),
+                      shape: BoxShape.circle,
+                    ),
                   ),
                   const SizedBox(width: 6),
                   Text(
@@ -422,6 +468,13 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
               isRemove: true,
               onTap: _clearCategory,
             ),
+          _CategoryPickerChip(
+            label: '+ New',
+            color: AppColors.textSecondary(context),
+            icon: Icons.add,
+            isSelected: false,
+            onTap: () => _showNewCategoryDialog(),
+          ),
         ],
       ),
     );
@@ -608,7 +661,9 @@ class _CategoryPickerChip extends StatelessWidget {
         : Colors.transparent;
     final border =
         isSelected ? color : AppColors.borderColor(context);
-    final textColor = isRemove ? AppColors.red : color;
+    final textColor = isRemove
+        ? AppColors.red
+        : AppColors.textPrimary(context);
 
     return GestureDetector(
       onTap: onTap,
@@ -622,8 +677,17 @@ class _CategoryPickerChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: textColor),
-            const SizedBox(width: 6),
+            if (!isRemove) ...[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
             Text(
               label,
               style: TextStyle(

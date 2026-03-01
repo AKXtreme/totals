@@ -7,6 +7,7 @@ import 'package:local_auth/local_auth.dart';
 import 'package:totals/_redesign/screens/home_page.dart';
 import 'package:totals/_redesign/screens/lock_screen.dart';
 import 'package:totals/_redesign/screens/money/money_page.dart';
+import 'package:totals/_redesign/screens/budget_page.dart';
 import 'package:totals/_redesign/screens/placeholder_page.dart';
 import 'package:totals/_redesign/screens/tools_page.dart';
 import 'package:totals/_redesign/widgets/redesign_bottom_nav.dart';
@@ -160,7 +161,7 @@ class RedesignShellState extends State<RedesignShell>
         children: const [
           RedesignHomePage(),
           RedesignMoneyPage(),
-          RedesignPlaceholderPage(title: 'Budget'),
+          RedesignBudgetPage(),
           RedesignToolsPage(),
           RedesignPlaceholderPage(title: 'You', showRedesignToggle: true),
         ],

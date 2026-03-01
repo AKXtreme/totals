@@ -76,25 +76,32 @@ class AccountRegistrationService {
       orElse: () => throw Exception("Bank with id $bankId not found"),
     );
 
-    Future<void> reportProgress(String stage, double progress) async {
-      _syncStatusService.setSyncStatus(accountNumber, bankId, stage);
-      onProgress?.call(stage, progress);
+    Future<void> reportProgress(String stage, {double? progress}) async {
+      final safeProgress = progress?.clamp(0.0, 1.0).toDouble();
+      final notificationProgress = safeProgress ?? 0.0;
+      _syncStatusService.setSyncStatus(
+        accountNumber,
+        bankId,
+        stage,
+        progress: safeProgress,
+      );
+      onProgress?.call(stage, notificationProgress);
       await _notificationService.showAccountSyncProgress(
         accountNumber: accountNumber,
         bankId: bankId,
         bankLabel: bank.shortName,
         stage: stage,
-        progress: progress,
+        progress: notificationProgress,
       );
     }
 
-    await reportProgress("Starting sync...", 0.05);
-    await reportProgress("Finding bank messages...", 0.3);
+    await reportProgress("Starting sync...");
+    await reportProgress("Finding bank messages...");
 
     final bankCodes = bank.codes;
     print("debug: Syncing SMS for bank ${bank.name} with codes: $bankCodes");
 
-    await reportProgress("Fetching SMS messages...", 0.4);
+    await reportProgress("Fetching SMS messages...");
 
     // Get all messages from the bank
     final Telephony telephony = Telephony.instance;
@@ -152,7 +159,7 @@ class AccountRegistrationService {
       return;
     }
 
-    await reportProgress("Loading parsing patterns...", 0.5);
+    await reportProgress("Loading parsing patterns...");
 
     // Load patterns for this bank
     final configService = SmsConfigService();
@@ -172,7 +179,7 @@ class AccountRegistrationService {
       return;
     }
 
-    await reportProgress("Parsing messages...", 0.6);
+    await reportProgress("Parsing messages...", progress: 0.0);
 
     // Process messages in batches for better performance
     int processedCount = 0;
@@ -193,12 +200,10 @@ class AccountRegistrationService {
           : messages.length;
       final batch = messages.sublist(batchStart, batchEnd);
 
-      // Update progress
-      final baseProgress = 0.6;
-      final batchProgress = batchEnd / totalMessages;
-      final currentProgress = baseProgress + (batchProgress * 0.35);
-      final status = "Processing ${batchEnd}/$totalMessages messages...";
-      await reportProgress(status, currentProgress);
+      // True parsing progress based on processed message count.
+      final parsingProgress = batchEnd / totalMessages;
+      final status = "Parsing $batchEnd/$totalMessages messages...";
+      await reportProgress(status, progress: parsingProgress);
 
       // Process batch concurrently
       final results = await Future.wait(
@@ -264,7 +269,7 @@ class AccountRegistrationService {
 
     // Update account balance from the latest message
     if (latestBalanceDetails != null) {
-      await reportProgress("Updating account balance...", 0.95);
+      await reportProgress("Updating account balance...", progress: 1.0);
       await _updateAccountBalanceFromLatestMessage(
         bankId,
         latestBalanceDetails,
