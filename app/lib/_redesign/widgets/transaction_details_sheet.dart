@@ -97,7 +97,9 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     final minute = dt.minute.toString().padLeft(2, '0');
     final amPm = hour >= 12 ? 'PM' : 'AM';
     final h12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
-    return '$month $day, ${dt.year} $h12:$minute $amPm';
+    final now = DateTime.now();
+    final yearSuffix = dt.year != now.year ? ', ${dt.year}' : '';
+    return '$month $day$yearSuffix · $h12:$minute $amPm';
   }
 
   String? get _formattedBalance {

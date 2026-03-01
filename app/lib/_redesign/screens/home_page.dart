@@ -258,6 +258,8 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
     required TransactionTotals monthTotals,
     required TransactionTotals thirtyDayTotals,
   }) {
+    final provider =
+        Provider.of<TransactionProvider>(context, listen: false);
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -269,6 +271,8 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
           selfTransferCount: selfTransferCount,
           monthTotals: monthTotals,
           thirtyDayTotals: thirtyDayTotals,
+          allTransactions: provider.allTransactions,
+          provider: provider,
         );
       },
     );
@@ -1237,12 +1241,14 @@ class _IncomeExpenseChartPainter extends CustomPainter {
   }
 }
 
-class _BalanceBreakdownSheet extends StatelessWidget {
+class _BalanceBreakdownSheet extends StatefulWidget {
   final double totalBalance;
   final int monthTransactions;
   final int selfTransferCount;
   final TransactionTotals monthTotals;
   final TransactionTotals thirtyDayTotals;
+  final List<Transaction> allTransactions;
+  final TransactionProvider provider;
 
   const _BalanceBreakdownSheet({
     required this.totalBalance,
@@ -1250,13 +1256,116 @@ class _BalanceBreakdownSheet extends StatelessWidget {
     required this.selfTransferCount,
     required this.monthTotals,
     required this.thirtyDayTotals,
+    required this.allTransactions,
+    required this.provider,
   });
+
+  @override
+  State<_BalanceBreakdownSheet> createState() =>
+      _BalanceBreakdownSheetState();
+}
+
+class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
+  bool _showWeek = true; // true = this week, false = this month
+
+  // Precomputed flat list caches
+  late List<Object> _weekItems;
+  late List<Object> _monthItems;
+  late double? _weekStartingBalance;
+  late DateTime? _weekStartingDate;
+  late double? _monthStartingBalance;
+  late DateTime? _monthStartingDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _precompute();
+  }
+
+  void _precompute() {
+    final now = DateTime.now();
+    final weekStart = now.subtract(Duration(days: now.weekday % 7));
+    final weekStartDay =
+        DateTime(weekStart.year, weekStart.month, weekStart.day);
+    final monthStartDay = DateTime(now.year, now.month, 1);
+
+    // Sort descending (newest first)
+    final sorted = List<Transaction>.from(widget.allTransactions)
+      ..sort((a, b) {
+        final aT = _parseTransactionTime(a.time);
+        final bT = _parseTransactionTime(b.time);
+        if (aT == null && bT == null) return 0;
+        if (aT == null) return 1;
+        if (bT == null) return -1;
+        return bT.compareTo(aT);
+      });
+
+    _weekItems = _buildFlatItems(sorted, weekStartDay);
+    _monthItems = _buildFlatItems(sorted, monthStartDay);
+
+    _weekStartingBalance = _computeStartingBalance(sorted, weekStartDay);
+    _weekStartingDate = weekStartDay;
+    _monthStartingBalance = _computeStartingBalance(sorted, monthStartDay);
+    _monthStartingDate = monthStartDay;
+  }
+
+  List<Object> _buildFlatItems(
+      List<Transaction> sorted, DateTime startDay) {
+    final items = <Object>[];
+    String? lastKey;
+    for (final txn in sorted) {
+      final dt = _parseTransactionTime(txn.time);
+      if (dt == null || dt.isBefore(startDay)) continue;
+      final key = _formatDateKey(dt);
+      if (key != lastKey) {
+        items.add(key);
+        lastKey = key;
+      }
+      items.add(txn);
+    }
+    return items;
+  }
+
+  double? _computeStartingBalance(
+      List<Transaction> sorted, DateTime startDay) {
+    // sorted is descending; walk backwards (ascending) to find
+    // the last transaction before startDay
+    for (int i = sorted.length - 1; i >= 0; i--) {
+      final dt = _parseTransactionTime(sorted[i].time);
+      if (dt != null && dt.isBefore(startDay)) {
+        return double.tryParse(sorted[i].currentBalance ?? '');
+      }
+    }
+    return null;
+  }
+
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  String _formatDateKey(DateTime dt) =>
+      '${_months[dt.month - 1]} ${dt.day}, ${dt.year}';
+
+  String _formatTime(DateTime dt) {
+    final h = dt.hour;
+    final m = dt.minute.toString().padLeft(2, '0');
+    final p = h >= 12 ? 'PM' : 'AM';
+    final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
+    return '$h12:$m $p';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final monthNet = monthTotals.income - monthTotals.expense;
-    final last30Net = thirtyDayTotals.income - thirtyDayTotals.expense;
+    final monthNet = widget.monthTotals.income - widget.monthTotals.expense;
+    final last30Net =
+        widget.thirtyDayTotals.income - widget.thirtyDayTotals.expense;
+    final flatItems = _showWeek ? _weekItems : _monthItems;
+    final startBal =
+        _showWeek ? _weekStartingBalance : _monthStartingBalance;
+    final startDate =
+        _showWeek ? _weekStartingDate : _monthStartingDate;
 
     return Container(
       constraints: BoxConstraints(
@@ -1264,7 +1373,8 @@ class _BalanceBreakdownSheet extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: AppColors.background(context),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius:
+            const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: SafeArea(
         top: false,
@@ -1285,7 +1395,7 @@ class _BalanceBreakdownSheet extends StatelessWidget {
               child: Row(
                 children: [
                   Text(
-                    'Balance breakdown',
+                    'How did I get here?',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                       color: AppColors.textPrimary(context),
@@ -1299,95 +1409,279 @@ class _BalanceBreakdownSheet extends StatelessWidget {
                 ],
               ),
             ),
+            // Summary row
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  _MiniStat(
+                    label: 'Month',
+                    value: _formatSignedEtb(monthNet),
+                    color: monthNet >= 0
+                        ? AppColors.incomeSuccess
+                        : AppColors.red,
+                  ),
+                  const SizedBox(width: 16),
+                  _MiniStat(
+                    label: '30d',
+                    value: _formatSignedEtb(last30Net),
+                    color: last30Net >= 0
+                        ? AppColors.incomeSuccess
+                        : AppColors.red,
+                  ),
+                ],
+              ),
+            ),
+            // Week / Month toggle
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  _PeriodChip(
+                    label: 'This week',
+                    selected: _showWeek,
+                    onTap: () => setState(() => _showWeek = true),
+                  ),
+                  const SizedBox(width: 8),
+                  _PeriodChip(
+                    label: 'This month',
+                    selected: !_showWeek,
+                    onTap: () => setState(() => _showWeek = false),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${flatItems.where((e) => e is Transaction).length} txns',
+                    style: TextStyle(
+                      color: AppColors.textTertiary(context),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             Divider(height: 1, color: AppColors.borderColor(context)),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _BreakdownValueRow(
-                      label: 'Current balance',
-                      value: 'ETB ${_formatEtbValue(totalBalance)}',
-                      valueColor: AppColors.textPrimary(context),
-                      emphasize: true,
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      'This month',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: AppColors.isDark(context)
-                            ? AppColors.slate400
-                            : AppColors.slate700,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _BreakdownValueRow(
-                      label: 'Income',
-                      value: '+ ETB ${_formatEtbValue(monthTotals.income)}',
-                      valueColor: AppColors.incomeSuccess,
-                    ),
-                    _BreakdownValueRow(
-                      label: 'Expense',
-                      value: '- ETB ${_formatEtbValue(monthTotals.expense)}',
-                      valueColor: AppColors.red,
-                    ),
-                    _BreakdownValueRow(
-                      label: 'Net',
-                      value: _formatSignedEtb(monthNet),
-                      valueColor: monthNet >= 0
-                          ? AppColors.incomeSuccess
-                          : AppColors.red,
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      'Last 30 days',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: AppColors.isDark(context)
-                            ? AppColors.slate400
-                            : AppColors.slate700,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _BreakdownValueRow(
-                      label: 'Income',
-                      value: '+ ETB ${_formatEtbValue(thirtyDayTotals.income)}',
-                      valueColor: AppColors.incomeSuccess,
-                    ),
-                    _BreakdownValueRow(
-                      label: 'Expense',
-                      value:
-                          '- ETB ${_formatEtbValue(thirtyDayTotals.expense)}',
-                      valueColor: AppColors.red,
-                    ),
-                    _BreakdownValueRow(
-                      label: 'Net',
-                      value: _formatSignedEtb(last30Net),
-                      valueColor: last30Net >= 0
-                          ? AppColors.incomeSuccess
-                          : AppColors.red,
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      '$monthTransactions transactions counted this month.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: AppColors.textSecondary(context),
-                      ),
-                    ),
-                    if (selfTransferCount > 0) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        '$selfTransferCount self transfers are excluded from income and expense totals.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppColors.textSecondary(context),
-                        ),
-                      ),
-                    ],
-                  ],
+            // Starting balance
+            if (startBal != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Text(
+                  '${startDate != null ? _formatDateKey(startDate) : ''} Starting Balance: ETB ${formatNumberWithComma(startBal)}',
+                  style: TextStyle(
+                    color: AppColors.textSecondary(context),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
+            // Ledger timeline
+            Expanded(
+              child: flatItems.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No transactions this ${_showWeek ? 'week' : 'month'}',
+                        style: TextStyle(
+                          color: AppColors.textSecondary(context),
+                          fontSize: 14,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      itemCount: flatItems.length,
+                      itemBuilder: (context, index) {
+                        final item = flatItems[index];
+
+                        // Date header
+                        if (item is String) {
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                                16, 14, 16, 0),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primaryLight,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  item,
+                                  style: TextStyle(
+                                    color:
+                                        AppColors.textPrimary(context),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        // Transaction entry
+                        final txn = item as Transaction;
+                        final isLastOverall =
+                            index == flatItems.length - 1;
+                        final lineColor =
+                            AppColors.borderColor(context);
+                        final isCredit = txn.type == 'CREDIT';
+                        final arrow = isCredit ? '↓' : '↑';
+                        final sign = isCredit ? '+' : '-';
+                        final amountStr =
+                            formatNumberAbbreviated(txn.amount)
+                                .replaceAll('k', 'K');
+                        final amountColor = isCredit
+                            ? AppColors.incomeSuccess
+                            : AppColors.red;
+                        final name =
+                            _transactionCounterparty(txn);
+                        final bank = _bankLabel(txn.bankId);
+                        final dt =
+                            _parseTransactionTime(txn.time);
+                        final timeStr =
+                            dt != null ? _formatTime(dt) : '';
+                        final bal = double.tryParse(
+                            txn.currentBalance ?? '');
+                        final balStr = bal != null
+                            ? formatNumberAbbreviated(bal)
+                                .replaceAll('k', 'K')
+                            : '*****';
+
+                        return Padding(
+                          padding: const EdgeInsets.only(
+                              left: 16, right: 16),
+                          child: IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.stretch,
+                              children: [
+                                SizedBox(
+                                  width: 10,
+                                  child: Center(
+                                    child: Container(
+                                      width: 1.5,
+                                      color: isLastOverall
+                                          ? Colors.transparent
+                                          : lineColor,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: GestureDetector(
+                                    behavior:
+                                        HitTestBehavior.opaque,
+                                    onTap: () {
+                                      Navigator.of(context).pop();
+                                      showTransactionDetailsSheet(
+                                        context: context,
+                                        transaction: txn,
+                                        provider:
+                                            widget.provider,
+                                      );
+                                    },
+                                    child: Padding(
+                                      padding:
+                                          const EdgeInsets.only(
+                                              top: 12,
+                                              bottom: 6),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment
+                                                .start,
+                                        children: [
+                                          SizedBox(
+                                            width: 58,
+                                            child: Text(
+                                              timeStr,
+                                              style: TextStyle(
+                                                color: AppColors
+                                                    .textSecondary(
+                                                        context),
+                                                fontSize: 11,
+                                                fontWeight:
+                                                    FontWeight
+                                                        .w500,
+                                              ),
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment
+                                                      .start,
+                                              children: [
+                                                Text(
+                                                  name,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow
+                                                          .ellipsis,
+                                                  style:
+                                                      TextStyle(
+                                                    color: AppColors
+                                                        .textPrimary(
+                                                            context),
+                                                    fontSize: 13,
+                                                    fontWeight:
+                                                        FontWeight
+                                                            .w700,
+                                                  ),
+                                                ),
+                                                const SizedBox(
+                                                    height: 3),
+                                                Text(
+                                                  '$arrow ${sign}ETB $amountStr',
+                                                  style:
+                                                      TextStyle(
+                                                    color:
+                                                        amountColor,
+                                                    fontSize: 12,
+                                                    fontWeight:
+                                                        FontWeight
+                                                            .w600,
+                                                  ),
+                                                ),
+                                                const SizedBox(
+                                                    height: 2),
+                                                Text(
+                                                  'Bal: $balStr',
+                                                  style:
+                                                      TextStyle(
+                                                    color: AppColors
+                                                        .textSecondary(
+                                                            context),
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Text(
+                                            bank,
+                                            style: TextStyle(
+                                              color: AppColors
+                                                  .textTertiary(
+                                                      context),
+                                              fontSize: 10,
+                                              fontWeight:
+                                                  FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
@@ -1396,42 +1690,80 @@ class _BalanceBreakdownSheet extends StatelessWidget {
   }
 }
 
-class _BreakdownValueRow extends StatelessWidget {
+class _MiniStat extends StatelessWidget {
   final String label;
   final String value;
-  final Color valueColor;
-  final bool emphasize;
+  final Color color;
 
-  const _BreakdownValueRow({
+  const _MiniStat({
     required this.label,
     required this.value,
-    required this.valueColor,
-    this.emphasize = false,
+    required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppColors.textSecondary(context),
-              ),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: AppColors.textTertiary(context),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
           ),
-          Text(
-            value,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: valueColor,
-              fontWeight: emphasize ? FontWeight.w800 : FontWeight.w700,
-            ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
           ),
-        ],
+        ),
+      ],
+    );
+  }
+}
+
+class _PeriodChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _PeriodChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primaryDark : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected
+                ? AppColors.primaryDark
+                : AppColors.borderColor(context),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected
+                ? AppColors.white
+                : AppColors.textSecondary(context),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }

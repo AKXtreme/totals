@@ -77,6 +77,8 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
   final Set<String> _selectedRefs = {};
   DateTime? _ledgerStartDate;
   DateTime? _ledgerEndDate;
+  final ScrollController _activityScrollController = ScrollController();
+  int _transactionDisplayLimit = 80;
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
 
@@ -98,12 +100,22 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Delete $count transaction${count > 1 ? 's' : ''}?'),
-        content: const Text('This cannot be undone.'),
+        backgroundColor: AppColors.cardColor(ctx),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Delete $count transaction${count > 1 ? 's' : ''}?',
+          style: TextStyle(color: AppColors.textPrimary(ctx)),
+        ),
+        content: Text(
+          'This cannot be undone.',
+          style: TextStyle(color: AppColors.textSecondary(ctx)),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary(ctx))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -112,15 +124,34 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
         ],
       ),
     );
-    if (confirmed == true) {
-      await provider.deleteTransactionsByReferences(_selectedRefs.toList());
-      _clearSelection();
+    if (!mounted || confirmed != true) return;
+    final refs = _selectedRefs.toList();
+    _clearSelection();
+    try {
+      await provider.deleteTransactionsByReferences(refs);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Deleted $count transaction${count > 1 ? 's' : ''}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to delete: $e'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.red,
+        ),
+      );
     }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _activityScrollController.dispose();
     super.dispose();
   }
 
@@ -159,21 +190,26 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
         _computeHealthScore(monthTotals.income, monthTotals.expense);
     final monthAbbrev = _currentMonthAbbrev();
 
-    final transactions = provider.transactions;
+    final transactions = provider.allTransactions;
     final filtered = _filterTransactions(transactions);
     final grouped = _groupByDate(filtered);
 
     // Build flat list: date headers + transactions interleaved
-    final flatItems = <Object>[];
+    final allFlatItems = <Object>[];
     for (final entry in grouped.entries) {
-      flatItems.add(entry.key);
-      flatItems.addAll(entry.value);
+      allFlatItems.add(entry.key);
+      allFlatItems.addAll(entry.value);
     }
+    final hasMore = allFlatItems.length > _transactionDisplayLimit;
+    final flatItems = hasMore
+        ? allFlatItems.sublist(0, _transactionDisplayLimit)
+        : allFlatItems;
 
     return RefreshIndicator(
       color: AppColors.primaryLight,
       onRefresh: provider.loadData,
       child: CustomScrollView(
+        controller: _activityScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverToBoxAdapter(
@@ -197,7 +233,10 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                     _SearchFilterRow(
                       controller: _searchController,
                       onChanged: (value) =>
-                          setState(() => _searchQuery = value),
+                          setState(() {
+                            _searchQuery = value;
+                            _transactionDisplayLimit = 80;
+                          }),
                       onFilterTap: () => _openFilterSheet(provider),
                       activeFilterCount: _filter.activeCount,
                     ),
@@ -232,7 +271,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                   child: _EmptyTransactions(),
                 ),
               )
-            else
+            else ...[
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
                 sliver: SliverList.builder(
@@ -247,6 +286,36 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                   },
                 ),
               ),
+              if (hasMore)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                    child: GestureDetector(
+                      onTap: () => setState(() =>
+                          _transactionDisplayLimit += 80),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color: AppColors.cardColor(context),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: AppColors.borderColor(context)),
+                        ),
+                        child: Center(
+                          child: Text(
+                            'Load more (${allFlatItems.length - _transactionDisplayLimit} remaining)',
+                            style: TextStyle(
+                              color: AppColors.primaryLight,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ] else if (_subTab == _SubTab.ledger) ...[
             ..._buildLedgerSlivers(provider),
           ] else
@@ -426,7 +495,9 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
           ),
         ),
       // Timeline content
-      if (provider.isLoading)
+      // Keep rendering existing ledger rows during provider reloads so
+      // category updates do not collapse scroll extent and jump to top.
+      if (flatItems.isEmpty && provider.isLoading)
         const SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
@@ -672,7 +743,10 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
       ),
     );
     if (result != null) {
-      setState(() => _filter = result);
+      setState(() {
+        _filter = result;
+        _transactionDisplayLimit = 80;
+      });
     }
   }
 
@@ -1729,30 +1803,105 @@ class _TransactionTile extends StatelessWidget {
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    amount,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: amountColor,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 160),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      amount,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: amountColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    name,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.textSecondary(context),
-                      letterSpacing: 0.4,
+                    const SizedBox(height: 4),
+                    _TileMarqueeText(
+                      text: name,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: AppColors.textSecondary(context),
+                        letterSpacing: 0.4,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _TileMarqueeText extends StatefulWidget {
+  final String text;
+  final TextStyle? style;
+
+  const _TileMarqueeText({required this.text, this.style});
+
+  @override
+  State<_TileMarqueeText> createState() => _TileMarqueeTextState();
+}
+
+class _TileMarqueeTextState extends State<_TileMarqueeText>
+    with SingleTickerProviderStateMixin {
+  late final ScrollController _sc;
+  late final AnimationController _ac;
+  bool _overflows = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _sc = ScrollController();
+    _ac = AnimationController(
+        vsync: this, duration: const Duration(seconds: 4));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _check());
+  }
+
+  void _check() {
+    if (!_sc.hasClients) return;
+    final max = _sc.position.maxScrollExtent;
+    if (max > 0) {
+      setState(() => _overflows = true);
+      _ac.addListener(() {
+        if (_sc.hasClients) _sc.jumpTo(_ac.value * max);
+      });
+      _ac.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ac.dispose();
+    _sc.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      shaderCallback: (bounds) {
+        if (!_overflows) {
+          return const LinearGradient(
+            colors: [Colors.white, Colors.white],
+          ).createShader(bounds);
+        }
+        return const LinearGradient(
+          colors: [
+            Colors.transparent, Colors.white,
+            Colors.white, Colors.transparent,
+          ],
+          stops: [0.0, 0.05, 0.95, 1.0],
+        ).createShader(bounds);
+      },
+      blendMode: BlendMode.dstIn,
+      child: SingleChildScrollView(
+        controller: _sc,
+        scrollDirection: Axis.horizontal,
+        physics: const NeverScrollableScrollPhysics(),
+        child: Text(widget.text, style: widget.style),
       ),
     );
   }
