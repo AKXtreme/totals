@@ -75,6 +75,8 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
   String? _expandedAccountNumber;
   bool _showAccountBalances = true;
   final Set<String> _selectedRefs = {};
+  DateTime? _ledgerStartDate;
+  DateTime? _ledgerEndDate;
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
 
@@ -190,13 +192,16 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                     selectedTab: _subTab,
                     onTabChanged: (tab) => setState(() => _subTab = tab),
                   ),
-                  const SizedBox(height: 12),
-                  _SearchFilterRow(
-                    controller: _searchController,
-                    onChanged: (value) => setState(() => _searchQuery = value),
-                    onFilterTap: () => _openFilterSheet(provider),
-                    activeFilterCount: _filter.activeCount,
-                  ),
+                  if (_subTab != _SubTab.ledger) ...[
+                    const SizedBox(height: 12),
+                    _SearchFilterRow(
+                      controller: _searchController,
+                      onChanged: (value) =>
+                          setState(() => _searchQuery = value),
+                      onFilterTap: () => _openFilterSheet(provider),
+                      activeFilterCount: _filter.activeCount,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -242,12 +247,14 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                   },
                 ),
               ),
+          ] else if (_subTab == _SubTab.ledger) ...[
+            ..._buildLedgerSlivers(provider),
           ] else
             SliverFillRemaining(
               hasScrollBody: false,
               child: Center(
                 child: Text(
-                  _subTab == _SubTab.analytics ? 'Analytics' : 'Ledger',
+                  'Analytics',
                   style: TextStyle(
                     color: AppColors.textSecondary(context),
                     fontSize: 16,
@@ -298,6 +305,155 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
       transaction: transaction,
       provider: provider,
     );
+  }
+
+  List<Widget> _buildLedgerSlivers(TransactionProvider provider) {
+    // Sort all transactions by time ascending for ledger view
+    final allTxns = List<Transaction>.from(provider.allTransactions)
+      ..sort((a, b) {
+        final aTime = _parseTransactionTime(a.time);
+        final bTime = _parseTransactionTime(b.time);
+        if (aTime == null && bTime == null) return 0;
+        if (aTime == null) return 1;
+        if (bTime == null) return -1;
+        return bTime.compareTo(aTime);
+      });
+
+    // Apply date range filter and find starting balance in one pass
+    double? startingBalance;
+    DateTime? startingBalanceDate;
+    final filtered = <Transaction>[];
+
+    for (int i = 0; i < allTxns.length; i++) {
+      final txn = allTxns[i];
+      final dt = _parseTransactionTime(txn.time);
+
+      bool inRange = true;
+      if (_ledgerStartDate != null && dt != null) {
+        final start = DateTime(
+          _ledgerStartDate!.year,
+          _ledgerStartDate!.month,
+          _ledgerStartDate!.day,
+        );
+        if (dt.isBefore(start)) inRange = false;
+      }
+      if (_ledgerEndDate != null && dt != null) {
+        final endOfDay = DateTime(
+          _ledgerEndDate!.year,
+          _ledgerEndDate!.month,
+          _ledgerEndDate!.day,
+          23,
+          59,
+          59,
+        );
+        if (dt.isAfter(endOfDay)) inRange = false;
+      }
+
+      if (inRange) {
+        filtered.add(txn);
+      }
+    }
+
+    // Compute starting balance from the oldest transaction in the range
+    if (filtered.isNotEmpty) {
+      final oldest = filtered.last; // descending → last is oldest
+      final oldestIdx = allTxns.indexOf(oldest);
+      startingBalanceDate = _parseTransactionTime(oldest.time);
+
+      // Find the chronologically previous transaction (next index in desc list)
+      for (int j = oldestIdx + 1; j < allTxns.length; j++) {
+        final prevBal =
+            double.tryParse(allTxns[j].currentBalance ?? '');
+        if (prevBal != null) {
+          startingBalance = prevBal;
+          break;
+        }
+      }
+      // Fallback: derive from oldest transaction
+      if (startingBalance == null) {
+        final oldestBal =
+            double.tryParse(oldest.currentBalance ?? '');
+        if (oldestBal != null) {
+          if (oldest.type == 'DEBIT') {
+            startingBalance = oldestBal + oldest.amount;
+          } else {
+            startingBalance = oldestBal - oldest.amount;
+          }
+        }
+      }
+    }
+
+    // Group by date (descending order preserved)
+    final Map<String, List<Transaction>> grouped = {};
+    for (final txn in filtered) {
+      final dt = _parseTransactionTime(txn.time);
+      final key = dt != null ? _formatDateHeader(dt) : 'Unknown Date';
+      grouped.putIfAbsent(key, () => []).add(txn);
+    }
+
+    return [
+      // Date pickers
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          child: _LedgerDatePickerRow(
+            startDate: _ledgerStartDate,
+            endDate: _ledgerEndDate,
+            onStartDateChanged: (d) =>
+                setState(() => _ledgerStartDate = d),
+            onEndDateChanged: (d) => setState(() => _ledgerEndDate = d),
+          ),
+        ),
+      ),
+      // Starting balance
+      if (startingBalance != null)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            child: Text(
+              '${startingBalanceDate != null ? _formatDateHeader(startingBalanceDate) : ''} Starting Balance: ${_showAccountBalances ? 'ETB ${formatNumberWithComma(startingBalance)}' : '*****'}',
+              style: TextStyle(
+                color: AppColors.textSecondary(context),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      // Timeline content
+      if (provider.isLoading)
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
+            child: _LoadingTransactions(),
+          ),
+        )
+      else if (grouped.isEmpty)
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
+            child: _EmptyTransactions(),
+          ),
+        )
+      else
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: grouped.entries.map((entry) {
+                return _LedgerDateGroup(
+                  dateLabel: entry.key,
+                  transactions: entry.value,
+                  showBalance: _showAccountBalances,
+                  onTransactionTap: (txn) =>
+                      _openTransactionCategorySheet(provider, txn),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+    ];
   }
 
   Widget _buildAccountsContent(TransactionProvider provider) {
@@ -887,6 +1043,14 @@ String _formatCount(int count) {
 
 String _formatEtbAbbrev(double value) {
   return formatNumberAbbreviated(value).replaceAll('k', 'K');
+}
+
+String _formatLedgerTime(DateTime dt) {
+  final hour = dt.hour;
+  final minute = dt.minute;
+  final period = hour >= 12 ? 'PM' : 'AM';
+  final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+  return '$displayHour:${minute.toString().padLeft(2, '0')} $period';
 }
 
 String _getBankImage(int bankId) {
@@ -1641,6 +1805,294 @@ class _EmptyTransactions extends StatelessWidget {
             fontSize: 14,
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Ledger Widgets ───────────────────────────────────────────────
+
+class _LedgerDatePickerRow extends StatelessWidget {
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final ValueChanged<DateTime?> onStartDateChanged;
+  final ValueChanged<DateTime?> onEndDateChanged;
+
+  const _LedgerDatePickerRow({
+    required this.startDate,
+    required this.endDate,
+    required this.onStartDateChanged,
+    required this.onEndDateChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _LedgerDateField(
+            label: 'START DATE:',
+            date: startDate,
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: startDate ?? DateTime.now(),
+                firstDate: DateTime(2020),
+                lastDate: DateTime.now(),
+              );
+              if (picked != null) onStartDateChanged(picked);
+            },
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: _LedgerDateField(
+            label: 'END DATE:',
+            date: endDate,
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: endDate ?? DateTime.now(),
+                firstDate: DateTime(2020),
+                lastDate: DateTime.now(),
+              );
+              if (picked != null) onEndDateChanged(picked);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LedgerDateField extends StatelessWidget {
+  final String label;
+  final DateTime? date;
+  final VoidCallback onTap;
+
+  const _LedgerDateField({
+    required this.label,
+    required this.date,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dateText =
+        date != null ? _formatDateHeader(date!) : 'Select date';
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: AppColors.textSecondary(context),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.cardColor(context),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.borderColor(context)),
+            ),
+            child: Text(
+              dateText,
+              style: TextStyle(
+                color: AppColors.textPrimary(context),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LedgerDateGroup extends StatelessWidget {
+  final String dateLabel;
+  final List<Transaction> transactions;
+  final bool showBalance;
+  final ValueChanged<Transaction> onTransactionTap;
+
+  const _LedgerDateGroup({
+    required this.dateLabel,
+    required this.transactions,
+    required this.showBalance,
+    required this.onTransactionTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final lineColor = AppColors.borderColor(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        // Date header with blue dot
+        Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: const BoxDecoration(
+                color: AppColors.primaryLight,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              dateLabel,
+              style: TextStyle(
+                color: AppColors.textPrimary(context),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        // Transaction entries with timeline line
+        ...transactions.asMap().entries.map((entry) {
+          final txn = entry.value;
+          final isLast = entry.key == transactions.length - 1;
+
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Timeline line column
+                SizedBox(
+                  width: 10,
+                  child: Center(
+                    child: Container(
+                      width: 1.5,
+                      decoration: BoxDecoration(
+                        color: isLast
+                            ? Colors.transparent
+                            : lineColor,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Transaction content
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => onTransactionTap(txn),
+                    behavior: HitTestBehavior.opaque,
+                    child: _LedgerTransactionEntry(
+                      transaction: txn,
+                      showBalance: showBalance,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class _LedgerTransactionEntry extends StatelessWidget {
+  final Transaction transaction;
+  final bool showBalance;
+
+  const _LedgerTransactionEntry({
+    required this.transaction,
+    required this.showBalance,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isCredit = transaction.type == 'CREDIT';
+    final amountColor =
+        isCredit ? AppColors.incomeSuccess : AppColors.red;
+    final arrow = isCredit ? '↑' : '↓';
+    final sign = isCredit ? '+' : '-';
+
+    final amount = transaction.amount;
+    final amountStr =
+        formatNumberAbbreviated(amount).replaceAll('k', 'K');
+
+    final name = _transactionCounterparty(transaction);
+
+    final dt = _parseTransactionTime(transaction.time);
+    final timeStr = dt != null ? _formatLedgerTime(dt) : '';
+
+    final parsedBalance =
+        double.tryParse(transaction.currentBalance ?? '');
+    final balanceStr = showBalance && parsedBalance != null
+        ? formatNumberAbbreviated(parsedBalance).replaceAll('k', 'K')
+        : '*****';
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 14, bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 64,
+                child: Text(
+                  timeStr,
+                  style: TextStyle(
+                    color: AppColors.textSecondary(context),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: TextStyle(
+                        color: AppColors.textPrimary(context),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$arrow  ${sign}ETB $amountStr',
+                      style: TextStyle(
+                        color: amountColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Balance: $balanceStr',
+                      style: TextStyle(
+                        color: AppColors.textSecondary(context),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
