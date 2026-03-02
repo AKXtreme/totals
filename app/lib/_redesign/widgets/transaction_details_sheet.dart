@@ -89,8 +89,18 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     final dt = _parseTime(_tx.time);
     if (dt == null) return null;
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     final month = months[dt.month - 1];
     final day = dt.day.toString().padLeft(2, '0');
@@ -132,8 +142,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     }
   }
 
-  Category? get _currentCategory =>
-      _provider.getCategoryById(_tx.categoryId);
+  Category? get _currentCategory => _provider.getCategoryById(_tx.categoryId);
 
   List<Category> get _availableCategories {
     final desiredFlow = _isCredit ? 'income' : 'expense';
@@ -162,38 +171,48 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   }
 
   Future<void> _showNewCategoryDialog() async {
-    final nameController = TextEditingController();
+    String draftName = '';
     final flow = _isCredit ? 'income' : 'expense';
-    final created = await showDialog<bool>(
+    final createdName = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('New category'),
         content: TextField(
-          controller: nameController,
           autofocus: true,
           decoration: const InputDecoration(hintText: 'Category name'),
+          onChanged: (value) => draftName = value,
+          onSubmitted: (value) {
+            final trimmed = value.trim();
+            if (trimmed.isNotEmpty) {
+              Navigator.pop(ctx, trimmed);
+            }
+          },
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () {
+              final trimmed = draftName.trim();
+              if (trimmed.isNotEmpty) {
+                Navigator.pop(ctx, trimmed);
+              }
+            },
             child: const Text('Create'),
           ),
         ],
       ),
     );
-    if (created == true && nameController.text.trim().isNotEmpty) {
+    if (createdName != null && createdName.trim().isNotEmpty) {
       await _provider.createCategory(
-        name: nameController.text.trim(),
+        name: createdName.trim(),
         essential: false,
         flow: flow,
       );
       if (mounted) setState(() {});
     }
-    nameController.dispose();
   }
 
   Future<void> _deleteTransaction() async {
@@ -218,8 +237,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     );
     if (confirmed == true && mounted) {
       Navigator.pop(context);
-      await _provider
-          .deleteTransactionsByReferences([_tx.reference]);
+      await _provider.deleteTransactionsByReferences([_tx.reference]);
     }
   }
 
@@ -312,13 +330,11 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                       onTap: _copyReference,
                     ),
                     _DetailRow(label: 'Bank', value: _bankShortName),
-                    if (_tx.accountNumber != null &&
-                        _tx.accountNumber!.isNotEmpty)
-                      _DetailRow(
-                          label: 'Account', value: _tx.accountNumber!),
+                    // if (_tx.accountNumber != null &&
+                    //     _tx.accountNumber!.isNotEmpty)
+                    //   _DetailRow(label: 'Account', value: _tx.accountNumber!),
                     if (_formattedDate != null)
-                      _DetailRow(
-                          label: 'Date & Time', value: _formattedDate!),
+                      _DetailRow(label: 'Date & Time', value: _formattedDate!),
                     if (_formattedBalance != null)
                       _DetailRow(
                           label: 'Balance After', value: _formattedBalance!),
@@ -349,7 +365,6 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                       width: double.infinity,
                       child: TextButton.icon(
                         onPressed: _deleteTransaction,
-                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
                         label: const Text('Delete transaction'),
                         style: TextButton.styleFrom(
                           foregroundColor: AppColors.red,
@@ -382,8 +397,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
       padding: const EdgeInsets.symmetric(vertical: 14),
       decoration: BoxDecoration(
         border: Border(
-            bottom: BorderSide(
-                color: AppColors.borderColor(context), width: 1)),
+            bottom:
+                BorderSide(color: AppColors.borderColor(context), width: 1)),
       ),
       child: Row(
         children: [
@@ -524,8 +539,8 @@ class _DetailRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 14),
       decoration: BoxDecoration(
         border: Border(
-            bottom: BorderSide(
-                color: AppColors.borderColor(context), width: 1)),
+            bottom:
+                BorderSide(color: AppColors.borderColor(context), width: 1)),
       ),
       child: Row(
         children: [
@@ -593,7 +608,8 @@ class _MarqueeTextState extends State<_MarqueeText>
     _ticker = createTicker((elapsed) {
       _px.value =
           (elapsed.inMicroseconds * _pxPerSec / 1000000.0) % _scrollDistance;
-    })..start();
+    })
+      ..start();
   }
 
   @override
@@ -618,8 +634,10 @@ class _MarqueeTextState extends State<_MarqueeText>
           child: ShaderMask(
             shaderCallback: (bounds) => const LinearGradient(
               colors: [
-                Colors.transparent, Colors.white,
-                Colors.white, Colors.transparent,
+                Colors.transparent,
+                Colors.white,
+                Colors.white,
+                Colors.transparent,
               ],
               stops: [0.0, 0.06, 0.94, 1.0],
             ).createShader(bounds),
@@ -671,14 +689,9 @@ class _CategoryPickerChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = isSelected
-        ? color.withValues(alpha: 0.15)
-        : Colors.transparent;
-    final border =
-        isSelected ? color : AppColors.borderColor(context);
-    final textColor = isRemove
-        ? AppColors.red
-        : AppColors.textPrimary(context);
+    final bg = isSelected ? color.withValues(alpha: 0.15) : Colors.transparent;
+    final border = isSelected ? color : AppColors.borderColor(context);
+    final textColor = isRemove ? AppColors.red : AppColors.textPrimary(context);
 
     return GestureDetector(
       onTap: onTap,

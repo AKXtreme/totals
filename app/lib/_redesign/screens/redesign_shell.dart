@@ -8,7 +8,7 @@ import 'package:totals/_redesign/screens/home_page.dart';
 import 'package:totals/_redesign/screens/lock_screen.dart';
 import 'package:totals/_redesign/screens/money/money_page.dart';
 import 'package:totals/_redesign/screens/budget_page.dart';
-import 'package:totals/_redesign/screens/placeholder_page.dart';
+import 'package:totals/_redesign/screens/settings_page.dart';
 import 'package:totals/_redesign/screens/tools_page.dart';
 import 'package:totals/_redesign/widgets/redesign_bottom_nav.dart';
 import 'package:totals/services/widget_launch_intent_service.dart';
@@ -155,7 +155,7 @@ class RedesignShellState extends State<RedesignShell>
           RedesignMoneyPage(),
           RedesignBudgetPage(),
           RedesignToolsPage(),
-          RedesignPlaceholderPage(title: 'You', showRedesignToggle: true),
+          RedesignSettingsPage(),
         ],
       ),
       bottomNavigationBar: RedesignBottomNav(

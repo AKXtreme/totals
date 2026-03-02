@@ -7,6 +7,7 @@ import 'package:totals/data/consts.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/utils/text_utils.dart';
+import 'package:totals/_redesign/widgets/transaction_tile.dart';
 
 class TodaysTransactionsPage extends StatefulWidget {
   const TodaysTransactionsPage({super.key});
@@ -32,6 +33,15 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
   }
 
   void _clearSelection() => setState(() => _selectedRefs.clear());
+
+  Future<void> _openDetails(
+      TransactionProvider provider, Transaction tx) async {
+    await showTransactionDetailsSheet(
+      context: context,
+      transaction: tx,
+      provider: provider,
+    );
+  }
 
   Future<void> _deleteSelected(TransactionProvider provider) async {
     if (_selectedRefs.isEmpty) return;
@@ -130,20 +140,26 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
                     final bankLabel = _bankLabel(tx.bankId);
                     final category =
                         provider.getCategoryById(tx.categoryId);
-                    final selfTransferLabel =
-                        provider.getSelfTransferLabel(tx);
-                    final categoryLabel =
-                        selfTransferLabel ?? category?.name ?? 'Categorize';
+                    final isSelfTransfer =
+                        provider.isSelfTransfer(tx);
+                    final isMisc =
+                        category?.uncategorized == true;
+                    final categoryLabel = isSelfTransfer
+                        ? 'Self'
+                        : (category?.name ?? 'Categorize');
                     final isCategorized =
-                        selfTransferLabel != null || category != null;
+                        isSelfTransfer || category != null;
                     final isCredit = tx.type == 'CREDIT';
                     final selected =
                         _selectedRefs.contains(tx.reference);
 
-                    return _TransactionTile(
+                    return TransactionTile(
                       bank: bankLabel,
                       category: categoryLabel,
                       isCategorized: isCategorized,
+                      isDebit: !isCredit,
+                      isSelfTransfer: isSelfTransfer,
+                      isMisc: isMisc,
                       amount: _amountLabel(tx.amount, isCredit: isCredit),
                       amountColor: isCredit
                           ? AppColors.incomeSuccess
@@ -153,11 +169,7 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
                       selected: selected,
                       onTap: _isSelecting
                           ? () => _toggle(tx)
-                          : () => showTransactionDetailsSheet(
-                                context: context,
-                                transaction: tx,
-                                provider: provider,
-                              ),
+                          : () => _openDetails(provider, tx),
                       onLongPress: () => _toggle(tx),
                     );
                   },
@@ -206,150 +218,3 @@ String _timeLabel(Transaction tx) {
   }
 }
 
-// ── Tile ────────────────────────────────────────────────────────────────────
-
-class _TransactionTile extends StatelessWidget {
-  final String bank;
-  final String category;
-  final bool isCategorized;
-  final String amount;
-  final Color amountColor;
-  final String name;
-  final String timestamp;
-  final bool selected;
-  final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
-
-  const _TransactionTile({
-    required this.bank,
-    required this.category,
-    required this.isCategorized,
-    required this.amount,
-    required this.amountColor,
-    required this.name,
-    required this.timestamp,
-    this.selected = false,
-    this.onTap,
-    this.onLongPress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: selected
-            ? AppColors.primaryLight.withValues(alpha: 0.08)
-            : AppColors.cardColor(context),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: selected
-              ? AppColors.primaryLight
-              : AppColors.borderColor(context),
-        ),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              if (selected) ...[
-                Icon(
-                  Icons.check_circle_rounded,
-                  size: 20,
-                  color: AppColors.primaryLight,
-                ),
-                const SizedBox(width: 10),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      bank,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary(context),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    _CategoryChip(
-                      label: category,
-                      filled: isCategorized,
-                    ),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    amount,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: amountColor,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    name,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.textSecondary(context),
-                      letterSpacing: 0.4,
-                    ),
-                  ),
-                  if (timestamp.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      timestamp,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: AppColors.textTertiary(context),
-                        fontSize: 10,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CategoryChip extends StatelessWidget {
-  final String label;
-  final bool filled;
-
-  const _CategoryChip({required this.label, required this.filled});
-
-  @override
-  Widget build(BuildContext context) {
-    final background = filled
-        ? AppColors.primaryLight
-        : AppColors.primaryLight.withValues(alpha: 0.12);
-    final foreground = filled ? AppColors.white : AppColors.primaryDark;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: foreground,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}

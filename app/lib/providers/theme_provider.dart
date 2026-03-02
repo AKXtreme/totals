@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ThemeProvider extends ChangeNotifier {
@@ -43,7 +44,12 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<void> setThemeMode(ThemeMode mode) async {
     _themeMode = mode;
-    notifyListeners();
+    // Defer notification to the next frame so any in-progress build/animation
+    // (e.g. overlay entries from bottom sheets) finishes first. This prevents
+    // InheritedElement ancestor-chain assertions during heavy tree rebuilds.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_themeKey, mode.toString());
   }

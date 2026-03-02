@@ -8,6 +8,7 @@ import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/_redesign/screens/todays_transactions_page.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
+import 'package:totals/_redesign/widgets/transaction_tile.dart';
 
 class RedesignHomePage extends StatefulWidget {
   const RedesignHomePage({super.key});
@@ -19,7 +20,7 @@ class RedesignHomePage extends StatefulWidget {
 enum _ChartRange { week, month }
 
 class _RedesignHomePageState extends State<RedesignHomePage> {
-  bool _showBalance = true;
+  bool _showBalance = false;
   _ChartRange _chartRange = _ChartRange.week;
   final Set<String> _selectedRefs = {};
 
@@ -168,7 +169,9 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                       ),
                     ],
                     const SizedBox(height: 8),
-                    if (provider.isLoading)
+                    // Keep existing rows visible during background reloads
+                    // so returning to Home does not flash back to loading state.
+                    if (provider.isLoading && todayList.isEmpty)
                       const _LoadingTransactions()
                     else if (todayList.isEmpty)
                       const _EmptyTransactions()
@@ -177,22 +180,29 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                         final bankLabel = _bankLabel(transaction.bankId);
                         final category =
                             provider.getCategoryById(transaction.categoryId);
-                        final selfTransferLabel =
-                            provider.getSelfTransferLabel(transaction);
-                        final categoryLabel =
-                            selfTransferLabel ?? category?.name ?? 'Categorize';
+                        final isSelfTransfer =
+                            provider.isSelfTransfer(transaction);
+                        final isMisc =
+                            category?.uncategorized == true;
+                        final categoryLabel = isSelfTransfer
+                            ? 'Self'
+                            : (category?.name ?? 'Categorize');
                         final isCategorize =
-                            selfTransferLabel == null && category == null;
+                            isSelfTransfer || category != null;
                         final isCredit = transaction.type == 'CREDIT';
                         final amountLabel = _amountLabel(
                           transaction.amount,
                           isCredit: isCredit,
                         );
-                        final selected = _selectedRefs.contains(transaction.reference);
-                        return _TransactionTile(
+                        final selected =
+                            _selectedRefs.contains(transaction.reference);
+                        return TransactionTile(
                           bank: bankLabel,
                           category: categoryLabel,
-                          categoryFilled: isCategorize,
+                          isCategorized: isCategorize,
+                          isDebit: !isCredit,
+                          isSelfTransfer: isSelfTransfer,
+                          isMisc: isMisc,
                           amount: amountLabel,
                           amountColor: isCredit
                               ? AppColors.incomeSuccess
@@ -258,8 +268,7 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
     required TransactionTotals monthTotals,
     required TransactionTotals thirtyDayTotals,
   }) {
-    final provider =
-        Provider.of<TransactionProvider>(context, listen: false);
+    final provider = Provider.of<TransactionProvider>(context, listen: false);
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -727,153 +736,6 @@ class _InsightCard extends StatelessWidget {
   }
 }
 
-class _TransactionTile extends StatelessWidget {
-  final String bank;
-  final String category;
-  final bool categoryFilled;
-  final String amount;
-  final Color amountColor;
-  final String name;
-  final String timestamp;
-  final bool selected;
-  final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
-
-  const _TransactionTile({
-    required this.bank,
-    required this.category,
-    required this.categoryFilled,
-    required this.amount,
-    required this.amountColor,
-    required this.name,
-    required this.timestamp,
-    this.selected = false,
-    this.onTap,
-    this.onLongPress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: selected
-            ? AppColors.primaryLight.withValues(alpha: 0.08)
-            : AppColors.cardColor(context),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: selected
-              ? AppColors.primaryLight
-              : AppColors.borderColor(context),
-        ),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              if (selected) ...[
-                Icon(
-                  Icons.check_circle_rounded,
-                  size: 20,
-                  color: AppColors.primaryLight,
-                ),
-                const SizedBox(width: 10),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      bank,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary(context),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    _CategoryChip(
-                      label: category,
-                      filled: categoryFilled,
-                    ),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    amount,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: amountColor,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    name,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.textSecondary(context),
-                      letterSpacing: 0.4,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    timestamp,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.textTertiary(context),
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CategoryChip extends StatelessWidget {
-  final String label;
-  final bool filled;
-
-  const _CategoryChip({
-    required this.label,
-    required this.filled,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final background = filled
-        ? AppColors.primaryLight
-        : AppColors.primaryLight.withValues(alpha: 0.12);
-    final foreground = filled ? AppColors.white : AppColors.primaryDark;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: foreground,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
 class _SelectionBar extends StatelessWidget {
   final int count;
   final VoidCallback onDelete;
@@ -893,7 +755,8 @@ class _SelectionBar extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.primaryLight.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.primaryLight.withValues(alpha: 0.3)),
+        border:
+            Border.all(color: AppColors.primaryLight.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
@@ -1261,8 +1124,7 @@ class _BalanceBreakdownSheet extends StatefulWidget {
   });
 
   @override
-  State<_BalanceBreakdownSheet> createState() =>
-      _BalanceBreakdownSheetState();
+  State<_BalanceBreakdownSheet> createState() => _BalanceBreakdownSheetState();
 }
 
 class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
@@ -1284,9 +1146,9 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
 
   void _precompute() {
     final now = DateTime.now();
-    final weekStart = now.subtract(Duration(days: now.weekday % 7));
-    final weekStartDay =
-        DateTime(weekStart.year, weekStart.month, weekStart.day);
+    // Rolling 7-day window (today + previous 6 days), not calendar week.
+    final today = DateTime(now.year, now.month, now.day);
+    final weekStartDay = today.subtract(const Duration(days: 6));
     final monthStartDay = DateTime(now.year, now.month, 1);
 
     // Sort descending (newest first)
@@ -1309,8 +1171,7 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
     _monthStartingDate = monthStartDay;
   }
 
-  List<Object> _buildFlatItems(
-      List<Transaction> sorted, DateTime startDay) {
+  List<Object> _buildFlatItems(List<Transaction> sorted, DateTime startDay) {
     final items = <Object>[];
     String? lastKey;
     for (final txn in sorted) {
@@ -1326,8 +1187,7 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
     return items;
   }
 
-  double? _computeStartingBalance(
-      List<Transaction> sorted, DateTime startDay) {
+  double? _computeStartingBalance(List<Transaction> sorted, DateTime startDay) {
     // sorted is descending; walk backwards (ascending) to find
     // the last transaction before startDay
     for (int i = sorted.length - 1; i >= 0; i--) {
@@ -1340,8 +1200,18 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
   }
 
   static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
   String _formatDateKey(DateTime dt) =>
@@ -1358,14 +1228,9 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final monthNet = widget.monthTotals.income - widget.monthTotals.expense;
-    final last30Net =
-        widget.thirtyDayTotals.income - widget.thirtyDayTotals.expense;
     final flatItems = _showWeek ? _weekItems : _monthItems;
-    final startBal =
-        _showWeek ? _weekStartingBalance : _monthStartingBalance;
-    final startDate =
-        _showWeek ? _weekStartingDate : _monthStartingDate;
+    final startBal = _showWeek ? _weekStartingBalance : _monthStartingBalance;
+    final startDate = _showWeek ? _weekStartingDate : _monthStartingDate;
 
     return Container(
       constraints: BoxConstraints(
@@ -1373,8 +1238,7 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
       ),
       decoration: BoxDecoration(
         color: AppColors.background(context),
-        borderRadius:
-            const BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: SafeArea(
         top: false,
@@ -1409,36 +1273,13 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
                 ],
               ),
             ),
-            // Summary row
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Row(
-                children: [
-                  _MiniStat(
-                    label: 'Month',
-                    value: _formatSignedEtb(monthNet),
-                    color: monthNet >= 0
-                        ? AppColors.incomeSuccess
-                        : AppColors.red,
-                  ),
-                  const SizedBox(width: 16),
-                  _MiniStat(
-                    label: '30d',
-                    value: _formatSignedEtb(last30Net),
-                    color: last30Net >= 0
-                        ? AppColors.incomeSuccess
-                        : AppColors.red,
-                  ),
-                ],
-              ),
-            ),
             // Week / Month toggle
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Row(
                 children: [
                   _PeriodChip(
-                    label: 'This week',
+                    label: 'Last 7 days',
                     selected: _showWeek,
                     onTap: () => setState(() => _showWeek = true),
                   ),
@@ -1478,7 +1319,7 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
               child: flatItems.isEmpty
                   ? Center(
                       child: Text(
-                        'No transactions this ${_showWeek ? 'week' : 'month'}',
+                        'No transactions this ${_showWeek ? 'last 7 days' : 'month'}',
                         style: TextStyle(
                           color: AppColors.textSecondary(context),
                           fontSize: 14,
@@ -1494,8 +1335,7 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
                         // Date header
                         if (item is String) {
                           return Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                                16, 14, 16, 0),
+                            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                             child: Row(
                               children: [
                                 Container(
@@ -1510,8 +1350,7 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
                                 Text(
                                   item,
                                   style: TextStyle(
-                                    color:
-                                        AppColors.textPrimary(context),
+                                    color: AppColors.textPrimary(context),
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -1523,40 +1362,29 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
 
                         // Transaction entry
                         final txn = item as Transaction;
-                        final isLastOverall =
-                            index == flatItems.length - 1;
-                        final lineColor =
-                            AppColors.borderColor(context);
+                        final isLastOverall = index == flatItems.length - 1;
+                        final lineColor = AppColors.borderColor(context);
                         final isCredit = txn.type == 'CREDIT';
                         final arrow = isCredit ? '↓' : '↑';
                         final sign = isCredit ? '+' : '-';
-                        final amountStr =
-                            formatNumberAbbreviated(txn.amount)
-                                .replaceAll('k', 'K');
-                        final amountColor = isCredit
-                            ? AppColors.incomeSuccess
-                            : AppColors.red;
-                        final name =
-                            _transactionCounterparty(txn);
+                        final amountStr = formatNumberAbbreviated(txn.amount)
+                            .replaceAll('k', 'K');
+                        final amountColor =
+                            isCredit ? AppColors.incomeSuccess : AppColors.red;
+                        final name = _transactionCounterparty(txn);
                         final bank = _bankLabel(txn.bankId);
-                        final dt =
-                            _parseTransactionTime(txn.time);
-                        final timeStr =
-                            dt != null ? _formatTime(dt) : '';
-                        final bal = double.tryParse(
-                            txn.currentBalance ?? '');
+                        final dt = _parseTransactionTime(txn.time);
+                        final timeStr = dt != null ? _formatTime(dt) : '';
+                        final bal = double.tryParse(txn.currentBalance ?? '');
                         final balStr = bal != null
-                            ? formatNumberAbbreviated(bal)
-                                .replaceAll('k', 'K')
-                            : '*****';
+                            ? formatNumberAbbreviated(bal).replaceAll('k', 'K')
+                            : '-';
 
                         return Padding(
-                          padding: const EdgeInsets.only(
-                              left: 16, right: 16),
+                          padding: const EdgeInsets.only(left: 16, right: 16),
                           child: IntrinsicHeight(
                             child: Row(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.stretch,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 SizedBox(
                                   width: 10,
@@ -1572,87 +1400,67 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: GestureDetector(
-                                    behavior:
-                                        HitTestBehavior.opaque,
+                                    behavior: HitTestBehavior.opaque,
                                     onTap: () {
                                       Navigator.of(context).pop();
                                       showTransactionDetailsSheet(
                                         context: context,
                                         transaction: txn,
-                                        provider:
-                                            widget.provider,
+                                        provider: widget.provider,
                                       );
                                     },
                                     child: Padding(
-                                      padding:
-                                          const EdgeInsets.only(
-                                              top: 12,
-                                              bottom: 6),
+                                      padding: const EdgeInsets.only(
+                                          top: 12, bottom: 6),
                                       child: Row(
                                         crossAxisAlignment:
-                                            CrossAxisAlignment
-                                                .start,
+                                            CrossAxisAlignment.start,
                                         children: [
                                           SizedBox(
                                             width: 58,
                                             child: Text(
                                               timeStr,
                                               style: TextStyle(
-                                                color: AppColors
-                                                    .textSecondary(
-                                                        context),
+                                                color: AppColors.textSecondary(
+                                                    context),
                                                 fontSize: 11,
-                                                fontWeight:
-                                                    FontWeight
-                                                        .w500,
+                                                fontWeight: FontWeight.w500,
                                               ),
                                             ),
                                           ),
                                           Expanded(
                                             child: Column(
                                               crossAxisAlignment:
-                                                  CrossAxisAlignment
-                                                      .start,
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Text(
                                                   name,
                                                   maxLines: 1,
                                                   overflow:
-                                                      TextOverflow
-                                                          .ellipsis,
-                                                  style:
-                                                      TextStyle(
-                                                    color: AppColors
-                                                        .textPrimary(
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color:
+                                                        AppColors.textPrimary(
                                                             context),
                                                     fontSize: 13,
-                                                    fontWeight:
-                                                        FontWeight
-                                                            .w700,
+                                                    fontWeight: FontWeight.w700,
                                                   ),
                                                 ),
-                                                const SizedBox(
-                                                    height: 3),
+                                                const SizedBox(height: 3),
                                                 Text(
                                                   '$arrow ${sign}ETB $amountStr',
-                                                  style:
-                                                      TextStyle(
-                                                    color:
-                                                        amountColor,
+                                                  style: TextStyle(
+                                                    color: amountColor,
                                                     fontSize: 12,
-                                                    fontWeight:
-                                                        FontWeight
-                                                            .w600,
+                                                    fontWeight: FontWeight.w600,
                                                   ),
                                                 ),
-                                                const SizedBox(
-                                                    height: 2),
+                                                const SizedBox(height: 2),
                                                 Text(
                                                   'Bal: $balStr',
-                                                  style:
-                                                      TextStyle(
-                                                    color: AppColors
-                                                        .textSecondary(
+                                                  style: TextStyle(
+                                                    color:
+                                                        AppColors.textSecondary(
                                                             context),
                                                     fontSize: 11,
                                                   ),
@@ -1663,12 +1471,10 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
                                           Text(
                                             bank,
                                             style: TextStyle(
-                                              color: AppColors
-                                                  .textTertiary(
-                                                      context),
+                                              color: AppColors.textTertiary(
+                                                  context),
                                               fontSize: 10,
-                                              fontWeight:
-                                                  FontWeight.w500,
+                                              fontWeight: FontWeight.w500,
                                             ),
                                           ),
                                         ],
@@ -1686,44 +1492,6 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _MiniStat extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-
-  const _MiniStat({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: AppColors.textTertiary(context),
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(
-            color: color,
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -1757,9 +1525,8 @@ class _PeriodChip extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            color: selected
-                ? AppColors.white
-                : AppColors.textSecondary(context),
+            color:
+                selected ? AppColors.white : AppColors.textSecondary(context),
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),

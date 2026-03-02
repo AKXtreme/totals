@@ -110,7 +110,12 @@ class _AccountShareQrPageState extends State<AccountShareQrPage> {
       for (final account in _accounts) {
         if (_selectedKeys.contains(_accountKey(account)) &&
             account.accountHolderName.trim().isNotEmpty) {
-          _displayNameController.text = account.accountHolderName.trim();
+          final inferredName = account.accountHolderName.trim();
+          _displayNameController.text = inferredName;
+          _saveDisplayName(inferredName);
+          if (mounted) {
+            setState(() {});
+          }
           return;
         }
       }
@@ -182,8 +187,15 @@ class _AccountShareQrPageState extends State<AccountShareQrPage> {
 
   Future<void> _shareQrCode() async {
     try {
-      final RenderRepaintBoundary boundary =
-          _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+
+      final qrContext = _qrKey.currentContext;
+      if (qrContext == null) return;
+      final renderObject = qrContext.findRenderObject();
+      if (renderObject is! RenderRepaintBoundary) return;
+
+      final RenderRepaintBoundary boundary = renderObject;
       final ui.Image image = await boundary.toImage(pixelRatio: 3.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       final buffer = byteData!.buffer.asUint8List();
@@ -524,6 +536,7 @@ class _QrPreviewCard extends StatelessWidget {
                       Widget qrView;
                       try {
                         qrView = PrettyQrView.data(
+                          key: ValueKey<String>(data!),
                           data: data!,
                           decoration: PrettyQrDecoration(
                             background: Colors.white,

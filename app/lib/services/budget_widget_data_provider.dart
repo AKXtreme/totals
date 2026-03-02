@@ -49,7 +49,7 @@ class BudgetWidgetSnapshot {
 }
 
 class BudgetWidgetDataProvider {
-  static const List<String> supportedPeriods = ['daily', 'monthly', 'yearly'];
+  static const List<String> supportedPeriods = ['monthly'];
 
   static const List<String> _rankColors = [
     '#5AC8FA',
@@ -100,8 +100,12 @@ class BudgetWidgetDataProvider {
         .where((status) => _matchesPeriod(status.budget, period))
         .toList();
 
-    final hasAnyBudgets =
-        periodStatuses.isNotEmpty || matchingCategoryStatuses.isNotEmpty;
+    final combinedStatuses = <BudgetStatus>[
+      ...periodStatuses,
+      ...matchingCategoryStatuses,
+    ];
+
+    final hasAnyBudgets = combinedStatuses.isNotEmpty;
 
     final aggregateStatuses =
         periodStatuses.isNotEmpty ? periodStatuses : matchingCategoryStatuses;
@@ -119,8 +123,8 @@ class BudgetWidgetDataProvider {
         ? ((spentRaw / budgetRaw) * 100).clamp(0.0, 999.0).toDouble()
         : 0.0;
 
-    final categories = _buildCategorySlices(
-      statuses: matchingCategoryStatuses,
+    final categories = _buildTopBudgetSlices(
+      statuses: combinedStatuses,
       categoryById: categoryById,
     );
 
@@ -139,19 +143,34 @@ class BudgetWidgetDataProvider {
     );
   }
 
-  List<BudgetWidgetCategorySlice> _buildCategorySlices({
+  List<BudgetWidgetCategorySlice> _buildTopBudgetSlices({
     required List<BudgetStatus> statuses,
     required Map<int, Category> categoryById,
   }) {
-    final sortedStatuses = List<BudgetStatus>.from(statuses)
+    final filteredStatuses =
+        statuses.where((status) => status.spent > 0).toList(growable: false);
+
+    if (filteredStatuses.isEmpty) {
+      return const [
+        BudgetWidgetCategorySlice(
+          name: 'No categories',
+          spentRaw: 0,
+          limitRaw: 0,
+          spentLabel: '',
+          colorHex: '#5AC8FA',
+        ),
+      ];
+    }
+
+    final sortedStatuses = List<BudgetStatus>.from(filteredStatuses)
       ..sort((a, b) => b.spent.compareTo(a.spent));
 
     return sortedStatuses.take(3).toList().asMap().entries.map((entry) {
       final rank = entry.key;
       final status = entry.value;
-      final categoryName = _resolveCategoryName(status, categoryById);
+      final budgetName = _resolveBudgetName(status, categoryById);
       return BudgetWidgetCategorySlice(
-        name: categoryName,
+        name: _truncateLabel(budgetName),
         spentRaw: status.spent,
         limitRaw: status.budget.amount,
         spentLabel: formatAmountForWidget(status.spent),
@@ -160,10 +179,22 @@ class BudgetWidgetDataProvider {
     }).toList(growable: false);
   }
 
-  String _resolveCategoryName(
+  String _resolveBudgetName(
     BudgetStatus status,
     Map<int, Category> categoryById,
   ) {
+    final budgetName = status.budget.name.trim();
+    if (budgetName.isNotEmpty) {
+      final withoutPeriodPrefix = budgetName.replaceFirst(
+        RegExp(r'^\s*monthly\s+', caseSensitive: false),
+        '',
+      );
+      return withoutPeriodPrefix.replaceFirst(
+        RegExp(r'\s+budget$', caseSensitive: false),
+        '',
+      );
+    }
+
     final categoryId = status.budget.categoryId;
     if (categoryId != null) {
       final category = categoryById[categoryId];
@@ -171,10 +202,13 @@ class BudgetWidgetDataProvider {
         return category.name.trim();
       }
     }
+    return 'Budget';
+  }
 
-    final name = status.budget.name.trim();
-    if (name.isEmpty) return 'Category';
-    return name.replaceFirst(RegExp(r'\s+budget$', caseSensitive: false), '');
+  String _truncateLabel(String value, {int maxLength = 18}) {
+    final trimmed = value.trim();
+    if (trimmed.length <= maxLength) return trimmed;
+    return '${trimmed.substring(0, maxLength - 3)}...';
   }
 
   bool _matchesPeriod(Budget budget, String period) {

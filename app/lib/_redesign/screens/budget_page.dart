@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
+import 'package:totals/_redesign/widgets/transaction_tile.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/data/all_banks_from_assets.dart';
 import 'package:totals/data/consts.dart';
@@ -276,6 +277,15 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
             _UnbudgetedSpendingCard(
               amount: unbudgetedAmount,
               transactionCount: unbudgetedTxns.length,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => _UnbudgetedTransactionsPage(
+                    transactions: unbudgetedTxns,
+                    transactionProvider: tp,
+                  ),
+                ),
+              ),
             ),
           ],
         ],
@@ -382,14 +392,26 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
             final items = entry.value;
             return [
               _DateGroupHeader(label: label, count: items.length),
-              ...items.map((t) => _DetailTransactionRow(
-                    transaction: t,
-                    category: cat,
-                    color: color,
-                    onTap: () => showTransactionDetailsSheet(
-                      context: context,
-                      transaction: t,
-                      provider: tp,
+              ...items.map((t) => Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: TransactionTile(
+                      bank: _bankLabel(t.bankId),
+                      category: cat?.name ?? 'Uncategorized',
+                      isCategorized: cat != null,
+                      isDebit: t.type?.toUpperCase() == 'DEBIT',
+                      amount: formatNumberWithComma(t.amount),
+                      amountColor: t.type?.toUpperCase() == 'DEBIT'
+                          ? AppColors.red
+                          : AppColors.incomeSuccess,
+                      name: (t.receiver?.trim().isNotEmpty == true
+                              ? t.receiver!
+                              : t.creditor?.trim() ?? '')
+                          .trim(),
+                      onTap: () => showTransactionDetailsSheet(
+                        context: context,
+                        transaction: t,
+                        provider: tp,
+                      ),
                     ),
                   )),
             ];
@@ -698,78 +720,87 @@ class _BudgetItemRow extends StatelessWidget {
     final color = _colorForCategory(budget.categoryId);
     final availableColor = available >= 0 ? AppColors.incomeSuccess : AppColors.red;
 
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Name row with dot
-            Row(
-              children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    budget.name,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary(context),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.cardColor(context),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.borderColor(context)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Name row with dot
+              Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            // Progress bar
-            ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 5,
-                backgroundColor: AppColors.mutedFill(context),
-                valueColor: AlwaysStoppedAnimation(color),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      budget.name,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary(context),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 6),
-            // Spent + available
-            Row(
-              children: [
-                Text(
-                  'Spent ETB ${_compactAmount(spent)}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary(context),
-                  ),
+              const SizedBox(height: 10),
+              // Progress bar
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 5,
+                  backgroundColor: AppColors.mutedFill(context),
+                  valueColor: AlwaysStoppedAnimation(color),
                 ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: availableColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    'ETB ${_compactAmount(available)}',
+              ),
+              const SizedBox(height: 10),
+              // Spent + available
+              Row(
+                children: [
+                  Text(
+                    'Spent ETB ${_compactAmount(spent)}',
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: availableColor,
+                      color: AppColors.textSecondary(context),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: availableColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'ETB ${_compactAmount(available)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: availableColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -822,44 +853,154 @@ class _AddBudgetButton extends StatelessWidget {
 class _UnbudgetedSpendingCard extends StatelessWidget {
   final double amount;
   final int transactionCount;
+  final VoidCallback onTap;
 
   const _UnbudgetedSpendingCard({
     required this.amount,
     required this.transactionCount,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cardColor(context),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.borderColor(context)),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(context),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.borderColor(context)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'SPENDING WITHOUT A BUDGET',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.8,
+                      color: AppColors.textSecondary(context),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'ETB ${_compactAmount(amount)} from $transactionCount transactions',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textPrimary(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: AppColors.textTertiary(context),
+            ),
+          ],
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'SPENDING WITHOUT A BUDGET',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.8,
-              color: AppColors.textSecondary(context),
-            ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// _UnbudgetedTransactionsPage
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _UnbudgetedTransactionsPage extends StatelessWidget {
+  final List<Transaction> transactions;
+  final TransactionProvider transactionProvider;
+
+  const _UnbudgetedTransactionsPage({
+    required this.transactions,
+    required this.transactionProvider,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tp = transactionProvider;
+
+    return Scaffold(
+      backgroundColor: AppColors.background(context),
+      appBar: AppBar(
+        backgroundColor: AppColors.background(context),
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+        title: Text(
+          'Unbudgeted Spending',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary(context),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'ETB ${_compactAmount(amount)} from $transactionCount transactions',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textPrimary(context),
-            ),
-          ),
-        ],
+        ),
+      ),
+      body: Consumer<TransactionProvider>(
+        builder: (context, provider, _) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+            children: [
+              // Hint text
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                  'These transactions aren\'t tracked by any budget. '
+                  'Categorize them to include in your budgets.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary(context),
+                  ),
+                ),
+              ),
+
+              // Transaction list
+              ...transactions.map((t) {
+                final cat = provider.getCategoryById(t.categoryId);
+                final isSelfTransfer = provider.isSelfTransfer(t);
+                final isMisc = cat?.uncategorized == true;
+                final categoryLabel = isSelfTransfer
+                    ? 'Self'
+                    : (cat?.name ?? 'Categorize');
+                final isCategorized = isSelfTransfer || cat != null;
+                final isCredit = t.type == 'CREDIT';
+
+                return TransactionTile(
+                  bank: _bankLabel(t.bankId),
+                  category: categoryLabel,
+                  isCategorized: isCategorized,
+                  isDebit: !isCredit,
+                  isSelfTransfer: isSelfTransfer,
+                  isMisc: isMisc,
+                  amount: formatNumberWithComma(t.amount),
+                  amountColor:
+                      isCredit ? AppColors.incomeSuccess : AppColors.red,
+                  name: (t.receiver?.trim().isNotEmpty == true
+                          ? t.receiver!
+                          : t.creditor?.trim() ?? '')
+                      .trim(),
+                  onTap: () => showTransactionDetailsSheet(
+                    context: context,
+                    transaction: t,
+                    provider: provider,
+                  ),
+                );
+              }),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1033,124 +1174,6 @@ class _DateGroupHeader extends StatelessWidget {
           fontSize: 13,
           fontWeight: FontWeight.w600,
           color: AppColors.textSecondary(context),
-        ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// _DetailTransactionRow
-// ═══════════════════════════════════════════════════════════════════════════
-
-class _DetailTransactionRow extends StatelessWidget {
-  final Transaction transaction;
-  final Category? category;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _DetailTransactionRow({
-    required this.transaction,
-    required this.category,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bankName = _bankLabel(transaction.bankId);
-    final receiver = transaction.receiver?.trim();
-    final creditor = transaction.creditor?.trim();
-    final counterparty = (receiver != null && receiver.isNotEmpty)
-        ? receiver
-        : (creditor != null && creditor.isNotEmpty ? creditor : '');
-
-    // Mask amount like screenshot shows stars
-    final amountStr = formatNumberWithComma(transaction.amount);
-
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.cardColor(context),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.borderColor(context)),
-        ),
-        child: Row(
-          children: [
-            // Left column: bank name + category chip
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    bankName,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary(context),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  if (category != null)
-                    Row(
-                      children: [
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          category!.name,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: color,
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-            // Right column: amount + receiver
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  amountStr,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.red,
-                  ),
-                ),
-                if (counterparty.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: SizedBox(
-                      width: 140,
-                      child: Text(
-                        counterparty,
-                        textAlign: TextAlign.end,
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary(context),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ],
         ),
       ),
     );
@@ -1540,7 +1563,7 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   }
 
   Future<void> _showCreateCategoryDialog(BuildContext context) async {
-    final nameCtrl = TextEditingController();
+    String draftName = '';
     final isEssential = _selectedGroup == 'needs';
 
     final created = await showDialog<String>(
@@ -1565,7 +1588,6 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: nameCtrl,
                 autofocus: true,
                 decoration: InputDecoration(
                   hintText: 'Category name',
@@ -1580,6 +1602,13 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 ),
                 style: TextStyle(color: AppColors.textPrimary(ctx)),
+                onChanged: (value) => draftName = value,
+                onSubmitted: (value) {
+                  final name = value.trim();
+                  if (name.isNotEmpty) {
+                    Navigator.pop(ctx, name);
+                  }
+                },
               ),
             ],
           ),
@@ -1593,7 +1622,7 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
             ),
             TextButton(
               onPressed: () {
-                final name = nameCtrl.text.trim();
+                final name = draftName.trim();
                 if (name.isNotEmpty) {
                   Navigator.pop(ctx, name);
                 }
@@ -1604,11 +1633,6 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
         );
       },
     );
-
-    // Dialog is closed — dispose controller after the exit animation settles
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      nameCtrl.dispose();
-    });
 
     if (created != null && created.isNotEmpty) {
       await widget.transactionProvider.createCategory(

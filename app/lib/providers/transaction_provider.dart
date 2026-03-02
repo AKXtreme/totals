@@ -256,14 +256,16 @@ class TransactionProvider with ChangeNotifier {
 
       for (var t in bankTransactions) {
         double amount = t.amount;
+        final skip = _isSelfTransfer(t) ||
+            _categoryById[t.categoryId]?.uncategorized == true;
         if (t.type == "DEBIT") {
           cashBalance -= amount;
-          if (!_isSelfTransfer(t)) {
+          if (!skip) {
             totalDebit += amount;
           }
         } else if (t.type == "CREDIT") {
           cashBalance += amount;
-          if (!_isSelfTransfer(t)) {
+          if (!skip) {
             totalCredit += amount;
           }
         }
@@ -348,15 +350,17 @@ class TransactionProvider with ChangeNotifier {
       double cashBalance = 0.0;
       for (var t in accountTransactions) {
         double amount = t.amount;
+        final skip = _isSelfTransfer(t) ||
+            _categoryById[t.categoryId]?.uncategorized == true;
         if (t.type == "DEBIT") {
           cashBalance -= amount;
-          if (!_isSelfTransfer(t)) {
+          if (!skip) {
             totalDebit += amount;
           }
         }
         if (t.type == "CREDIT") {
           cashBalance += amount;
-          if (!_isSelfTransfer(t)) {
+          if (!skip) {
             totalCredit += amount;
           }
         }
@@ -544,7 +548,9 @@ class TransactionProvider with ChangeNotifier {
         monthHasTransactions[monthOffset] = true;
       }
 
-      if (isSelfTransfer) continue;
+      final isMisc = _categoryById[transaction.categoryId]?.uncategorized == true;
+
+      if (isSelfTransfer || isMisc) continue;
 
       final isCredit = transaction.type == 'CREDIT';
       final isDebit = transaction.type == 'DEBIT';

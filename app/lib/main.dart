@@ -69,7 +69,7 @@ void main() async {
 
   // Read redesign flag from SharedPreferences (persists across restarts)
   final prefs = await SharedPreferences.getInstance();
-  final useRedesign = prefs.getBool('use_redesign') ?? false;
+  final useRedesign = prefs.getBool('use_redesign') ?? true;
 
   if (!kIsWeb) {
     try {

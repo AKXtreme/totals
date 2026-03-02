@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/constants/cash_constants.dart';
@@ -20,6 +19,7 @@ import 'package:totals/services/bank_detection_service.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/widgets/add_cash_transaction_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
+import 'package:totals/_redesign/widgets/transaction_tile.dart';
 
 class RedesignMoneyPage extends StatefulWidget {
   const RedesignMoneyPage({super.key});
@@ -80,7 +80,8 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
   DateTime? _ledgerStartDate;
   DateTime? _ledgerEndDate;
   final ScrollController _activityScrollController = ScrollController();
-  int _transactionDisplayLimit = 80;
+  int _currentPage = 0;
+  static const int _pageSize = 50;
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
 
@@ -103,8 +104,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardColor(ctx),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Delete $count transaction${count > 1 ? 's' : ''}?',
           style: TextStyle(color: AppColors.textPrimary(ctx)),
@@ -173,7 +173,10 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                     onTabChanged: (tab) => setState(() => _topTab = tab),
                   ),
                 ),
-                Divider(height: 1, thickness: 1, color: AppColors.borderColor(context)),
+                Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: AppColors.borderColor(context)),
                 Expanded(
                   child: _topTab == _TopTab.activity
                       ? _buildActivityContent(provider)
@@ -195,18 +198,31 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
 
     final transactions = provider.allTransactions;
     final filtered = _filterTransactions(transactions);
-    final grouped = _groupByDate(filtered);
 
-    // Build flat list: date headers + transactions interleaved
-    final allFlatItems = <Object>[];
+    // Sort filtered transactions by time descending for pagination
+    final sorted = List<Transaction>.from(filtered)
+      ..sort((a, b) {
+        final aTime = _parseTransactionTime(a.time);
+        final bTime = _parseTransactionTime(b.time);
+        if (aTime == null && bTime == null) return 0;
+        if (aTime == null) return 1;
+        if (bTime == null) return -1;
+        return bTime.compareTo(aTime);
+      });
+
+    final totalPages = (sorted.length / _pageSize).ceil().clamp(1, 999999);
+    final safePage = _currentPage.clamp(0, totalPages - 1);
+    final startIndex = safePage * _pageSize;
+    final endIndex = (startIndex + _pageSize).clamp(0, sorted.length);
+    final pageTransactions = sorted.sublist(startIndex, endIndex);
+
+    // Group this page's transactions by date
+    final grouped = _groupByDate(pageTransactions);
+    final flatItems = <Object>[];
     for (final entry in grouped.entries) {
-      allFlatItems.add(entry.key);
-      allFlatItems.addAll(entry.value);
+      flatItems.add(entry.key);
+      flatItems.addAll(entry.value);
     }
-    final hasMore = allFlatItems.length > _transactionDisplayLimit;
-    final flatItems = hasMore
-        ? allFlatItems.sublist(0, _transactionDisplayLimit)
-        : allFlatItems;
 
     return RefreshIndicator(
       color: AppColors.primaryLight,
@@ -235,11 +251,10 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                     const SizedBox(height: 12),
                     _SearchFilterRow(
                       controller: _searchController,
-                      onChanged: (value) =>
-                          setState(() {
-                            _searchQuery = value;
-                            _transactionDisplayLimit = 80;
-                          }),
+                      onChanged: (value) => setState(() {
+                        _searchQuery = value;
+                        _currentPage = 0;
+                      }),
                       onFilterTap: () => _openFilterSheet(provider),
                       activeFilterCount: _filter.activeCount,
                     ),
@@ -260,7 +275,9 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                   ),
                 ),
               ),
-            if (provider.isLoading)
+            // Keep rendering existing rows during provider reloads so
+            // category updates do not collapse scroll extent and jump to top.
+            if (flatItems.isEmpty && provider.isLoading)
               const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
@@ -289,32 +306,21 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                   },
                 ),
               ),
-              if (hasMore)
+              if (totalPages > 1)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                    child: GestureDetector(
-                      onTap: () => setState(() =>
-                          _transactionDisplayLimit += 80),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: AppColors.cardColor(context),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                              color: AppColors.borderColor(context)),
-                        ),
-                        child: Center(
-                          child: Text(
-                            'Load more (${allFlatItems.length - _transactionDisplayLimit} remaining)',
-                            style: TextStyle(
-                              color: AppColors.primaryLight,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    child: _PaginationBar(
+                      currentPage: safePage,
+                      totalPages: totalPages,
+                      onPageChanged: (page) {
+                        setState(() => _currentPage = page);
+                        _activityScrollController.animateTo(
+                          0,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOut,
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -347,16 +353,22 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
   ) {
     final bankLabel = _bankLabel(transaction.bankId);
     final category = provider.getCategoryById(transaction.categoryId);
-    final selfTransferLabel = provider.getSelfTransferLabel(transaction);
-    final categoryLabel = selfTransferLabel ?? category?.name ?? 'Categorize';
-    final isCategorized = selfTransferLabel != null || category != null;
+    final isSelfTransfer = provider.isSelfTransfer(transaction);
+    final isMisc = category?.uncategorized == true;
+    final categoryLabel = isSelfTransfer
+        ? 'Self'
+        : (category?.name ?? 'Categorize');
+    final isCategorized = isSelfTransfer || category != null;
     final isCredit = transaction.type == 'CREDIT';
 
     final selected = _selectedRefs.contains(transaction.reference);
-    return _TransactionTile(
+    return TransactionTile(
       bank: bankLabel,
       category: categoryLabel,
       isCategorized: isCategorized,
+      isDebit: !isCredit,
+      isSelfTransfer: isSelfTransfer,
+      isMisc: isMisc,
       amount: _amountLabel(transaction.amount, isCredit: isCredit),
       amountColor: isCredit ? AppColors.incomeSuccess : AppColors.red,
       name: _transactionCounterparty(transaction),
@@ -434,8 +446,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
 
       // Find the chronologically previous transaction (next index in desc list)
       for (int j = oldestIdx + 1; j < allTxns.length; j++) {
-        final prevBal =
-            double.tryParse(allTxns[j].currentBalance ?? '');
+        final prevBal = double.tryParse(allTxns[j].currentBalance ?? '');
         if (prevBal != null) {
           startingBalance = prevBal;
           break;
@@ -443,8 +454,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
       }
       // Fallback: derive from oldest transaction
       if (startingBalance == null) {
-        final oldestBal =
-            double.tryParse(oldest.currentBalance ?? '');
+        final oldestBal = double.tryParse(oldest.currentBalance ?? '');
         if (oldestBal != null) {
           if (oldest.type == 'DEBIT') {
             startingBalance = oldestBal + oldest.amount;
@@ -476,8 +486,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
           child: _LedgerDatePickerRow(
             startDate: _ledgerStartDate,
             endDate: _ledgerEndDate,
-            onStartDateChanged: (d) =>
-                setState(() => _ledgerStartDate = d),
+            onStartDateChanged: (d) => setState(() => _ledgerStartDate = d),
             onEndDateChanged: (d) => setState(() => _ledgerEndDate = d),
           ),
         ),
@@ -619,9 +628,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
 
     final accounts = isOverview
         ? <AccountSummary>[]
-        : accountSummaries
-            .where((a) => a.bankId == _selectedBankId)
-            .toList();
+        : accountSummaries.where((a) => a.bankId == _selectedBankId).toList();
     final bankTxnCount = isOverview
         ? 0
         : provider.allTransactions
@@ -658,8 +665,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                   ? '$bankCount Banks | $accountCount Accounts'
                   : '${bankSummary!.accountCount} Account${bankSummary!.accountCount == 1 ? '' : 's'}',
               transactionCount: isOverview ? totalTxnCount : bankTxnCount,
-              totalCredit:
-                  isOverview ? totalCredit : bankSummary!.totalCredit,
+              totalCredit: isOverview ? totalCredit : bankSummary!.totalCredit,
               totalDebit: isOverview ? totalDebit : bankSummary!.totalDebit,
               showBalance: _showAccountBalances,
               onToggleBalance: () =>
@@ -673,21 +679,18 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                 bankSummaries: bankSummaries,
                 showBalance: _showAccountBalances,
                 syncStatusService: syncStatusService,
-                onBankTap: (bankId) =>
-                    setState(() => _selectedBankId = bankId),
+                onBankTap: (bankId) => setState(() => _selectedBankId = bankId),
                 onAddAccount: _showAddAccountSheet,
               )
             else
               ...accounts.map((account) {
-                final isCash =
-                    account.bankId == CashConstants.bankId;
+                final isCash = account.bankId == CashConstants.bankId;
                 final acctTxnCount = account.totalTransactions.toInt();
                 return _AccountCard(
                   account: account,
                   bankId: _selectedBankId!,
                   isCash: isCash,
-                  isExpanded:
-                      _expandedAccountNumber == account.accountNumber,
+                  isExpanded: _expandedAccountNumber == account.accountNumber,
                   showBalance: _showAccountBalances,
                   transactionCount: acctTxnCount,
                   syncStatus: isCash
@@ -708,9 +711,8 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                             ? null
                             : account.accountNumber;
                   }),
-                  onDelete: isCash
-                      ? null
-                      : () => _showDeleteConfirmation(account),
+                  onDelete:
+                      isCash ? null : () => _showDeleteConfirmation(account),
                   onCashExpense: isCash ? _showCashExpenseSheet : null,
                   onCashIncome: isCash ? _showCashIncomeSheet : null,
                   onSetCashAmount: isCash ? _showSetCashAmountSheet : null,
@@ -753,7 +755,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     if (result != null) {
       setState(() {
         _filter = result;
-        _transactionDisplayLimit = 80;
+        _currentPage = 0;
       });
     }
   }
@@ -773,8 +775,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
 
     // Category filter
     if (_filter.categoryId != null) {
-      result =
-          result.where((t) => t.categoryId == _filter.categoryId).toList();
+      result = result.where((t) => t.categoryId == _filter.categoryId).toList();
     }
 
     // Date range filter
@@ -814,8 +815,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
   bool _isAdjustingCash = false;
 
   String _cashAccountNumber() {
-    final provider =
-        Provider.of<TransactionProvider>(context, listen: false);
+    final provider = Provider.of<TransactionProvider>(context, listen: false);
     final cashAccounts = provider.accountSummaries
         .where((a) => a.bankId == CashConstants.bankId)
         .toList();
@@ -825,8 +825,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
   }
 
   void _showCashExpenseSheet() {
-    final provider =
-        Provider.of<TransactionProvider>(context, listen: false);
+    final provider = Provider.of<TransactionProvider>(context, listen: false);
     showAddCashTransactionSheet(
       context: context,
       provider: provider,
@@ -836,8 +835,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
   }
 
   void _showCashIncomeSheet() {
-    final provider =
-        Provider.of<TransactionProvider>(context, listen: false);
+    final provider = Provider.of<TransactionProvider>(context, listen: false);
     showAddCashTransactionSheet(
       context: context,
       provider: provider,
@@ -847,8 +845,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
   }
 
   void _showSetCashAmountSheet() async {
-    final provider =
-        Provider.of<TransactionProvider>(context, listen: false);
+    final provider = Provider.of<TransactionProvider>(context, listen: false);
     final cashSummaries = provider.accountSummaries
         .where((a) => a.bankId == CashConstants.bankId)
         .toList();
@@ -872,8 +869,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.cardColor(dialogContext),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Clear Cash Wallet',
           style: TextStyle(
@@ -884,13 +880,15 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
         ),
         content: Text(
           'This will set your cash wallet balance to zero.',
-          style: TextStyle(fontSize: 14, color: AppColors.textSecondary(dialogContext)),
+          style: TextStyle(
+              fontSize: 14, color: AppColors.textSecondary(dialogContext)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
             child: Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary(dialogContext))),
+                style:
+                    TextStyle(color: AppColors.textSecondary(dialogContext))),
           ),
           TextButton(
             onPressed: () {
@@ -911,8 +909,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     setState(() => _isAdjustingCash = true);
 
     try {
-      final provider =
-          Provider.of<TransactionProvider>(context, listen: false);
+      final provider = Provider.of<TransactionProvider>(context, listen: false);
       final delta = await provider.setCashWalletBalance(
         targetBalance: targetBalance,
         accountNumber: _cashAccountNumber(),
@@ -989,7 +986,9 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
             children: [
               Text(
                 'Are you sure you want to delete this account?',
-                style: TextStyle(fontSize: 14, color: AppColors.textSecondary(dialogContext)),
+                style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSecondary(dialogContext)),
               ),
               const SizedBox(height: 12),
               Container(
@@ -1297,7 +1296,9 @@ class _TopTabItem extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? AppColors.primaryLight : AppColors.textSecondary(context),
+            color: selected
+                ? AppColors.primaryLight
+                : AppColors.textSecondary(context),
             fontSize: 20,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           ),
@@ -1553,7 +1554,8 @@ class _SubTabButton extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? AppColors.white : AppColors.textSecondary(context),
+            color:
+                selected ? AppColors.white : AppColors.textSecondary(context),
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -1592,7 +1594,8 @@ class _SearchFilterRow extends StatelessWidget {
             child: TextField(
               controller: controller,
               onChanged: onChanged,
-              style: TextStyle(fontSize: 14, color: AppColors.textPrimary(context)),
+              style: TextStyle(
+                  fontSize: 14, color: AppColors.textPrimary(context)),
               decoration: InputDecoration(
                 hintText: 'Search Transactions',
                 hintStyle: TextStyle(
@@ -1623,14 +1626,16 @@ class _SearchFilterRow extends StatelessWidget {
                       : AppColors.cardColor(context),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color:
-                        hasFilters ? AppColors.primaryDark : AppColors.borderColor(context),
+                    color: hasFilters
+                        ? AppColors.primaryDark
+                        : AppColors.borderColor(context),
                   ),
                 ),
                 child: Icon(
                   Icons.filter_list,
-                  color:
-                      hasFilters ? AppColors.primaryDark : AppColors.textSecondary(context),
+                  color: hasFilters
+                      ? AppColors.primaryDark
+                      : AppColors.textSecondary(context),
                   size: 22,
                 ),
               ),
@@ -1705,8 +1710,8 @@ class _SelectionBar extends StatelessWidget {
           const SizedBox(width: 16),
           GestureDetector(
             onTap: onClear,
-            child: Icon(Icons.close_rounded,
-                size: 20, color: AppColors.slate600),
+            child:
+                Icon(Icons.close_rounded, size: 20, color: AppColors.slate600),
           ),
         ],
       ),
@@ -1726,7 +1731,9 @@ class _DateHeader extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-          color: AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700,
+          color: AppColors.isDark(context)
+              ? AppColors.slate400
+              : AppColors.slate700,
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
@@ -1735,105 +1742,173 @@ class _DateHeader extends StatelessWidget {
   }
 }
 
-class _TransactionTile extends StatelessWidget {
-  final String bank;
-  final String category;
-  final bool isCategorized;
-  final String amount;
-  final Color amountColor;
-  final String name;
-  final bool selected;
-  final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
+class _PaginationBar extends StatelessWidget {
+  final int currentPage;
+  final int totalPages;
+  final ValueChanged<int> onPageChanged;
 
-  const _TransactionTile({
-    required this.bank,
-    required this.category,
-    required this.isCategorized,
-    required this.amount,
-    required this.amountColor,
-    required this.name,
-    this.selected = false,
-    this.onTap,
-    this.onLongPress,
+  const _PaginationBar({
+    required this.currentPage,
+    required this.totalPages,
+    required this.onPageChanged,
   });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
       decoration: BoxDecoration(
-        color: selected
-            ? AppColors.primaryLight.withValues(alpha: 0.08)
-            : AppColors.cardColor(context),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: selected ? AppColors.primaryLight : AppColors.borderColor(context),
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Previous arrow
+          _ArrowButton(
+            icon: Icons.chevron_left_rounded,
+            enabled: currentPage > 0,
+            onTap: () => onPageChanged(currentPage - 1),
+          ),
+          const SizedBox(width: 4),
+          // Page numbers
+          ..._buildPageButtons(context),
+          const SizedBox(width: 4),
+          // Next arrow
+          _ArrowButton(
+            icon: Icons.chevron_right_rounded,
+            enabled: currentPage < totalPages - 1,
+            onTap: () => onPageChanged(currentPage + 1),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildPageButtons(BuildContext context) {
+    final pages = <Widget>[];
+
+    // For small page counts, show all pages
+    if (totalPages <= 7) {
+      for (int i = 0; i < totalPages; i++) {
+        pages.add(_PageButton(
+          page: i,
+          isCurrent: i == currentPage,
+          onTap: () => onPageChanged(i),
+        ));
+      }
+      return pages;
+    }
+
+    // For larger counts: 1 ... [current-1] [current] [current+1] ... last
+    // Always show first page
+    pages.add(_PageButton(
+      page: 0,
+      isCurrent: 0 == currentPage,
+      onTap: () => onPageChanged(0),
+    ));
+
+    // Left ellipsis
+    if (currentPage > 2) {
+      pages.add(const _Ellipsis());
+    }
+
+    // Pages around current
+    for (int i = currentPage - 1; i <= currentPage + 1; i++) {
+      if (i <= 0 || i >= totalPages - 1) continue;
+      pages.add(_PageButton(
+        page: i,
+        isCurrent: i == currentPage,
+        onTap: () => onPageChanged(i),
+      ));
+    }
+
+    // Right ellipsis
+    if (currentPage < totalPages - 3) {
+      pages.add(const _Ellipsis());
+    }
+
+    // Always show last page
+    pages.add(_PageButton(
+      page: totalPages - 1,
+      isCurrent: (totalPages - 1) == currentPage,
+      onTap: () => onPageChanged(totalPages - 1),
+    ));
+
+    return pages;
+  }
+}
+
+class _ArrowButton extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _ArrowButton({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: enabled
+              ? AppColors.primaryLight.withValues(alpha: 0.1)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          icon,
+          size: 20,
+          color: enabled
+              ? AppColors.primaryLight
+              : AppColors.textTertiary(context),
         ),
       ),
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          child: Row(
-            children: [
-              if (selected) ...[
-                Icon(
-                  Icons.check_circle_rounded,
-                  size: 20,
-                  color: AppColors.primaryLight,
-                ),
-                const SizedBox(width: 10),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      bank,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary(context),
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    _CategoryChip(
-                      label: category,
-                      isCategorized: isCategorized,
-                    ),
-                  ],
-                ),
-              ),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 160),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      amount,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: amountColor,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    _TileMarqueeText(
-                      text: name,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: AppColors.textSecondary(context),
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+    );
+  }
+}
+
+class _PageButton extends StatelessWidget {
+  final int page;
+  final bool isCurrent;
+  final VoidCallback onTap;
+
+  const _PageButton({
+    required this.page,
+    required this.isCurrent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: isCurrent ? null : onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(
+          color: isCurrent ? AppColors.primaryLight : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: Text(
+            '${page + 1}',
+            style: TextStyle(
+              color: isCurrent
+                  ? AppColors.white
+                  : AppColors.textSecondary(context),
+              fontSize: 13,
+              fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500,
+            ),
           ),
         ),
       ),
@@ -1841,135 +1916,22 @@ class _TransactionTile extends StatelessWidget {
   }
 }
 
-class _TileMarqueeText extends StatefulWidget {
-  final String text;
-  final TextStyle? style;
-
-  const _TileMarqueeText({required this.text, this.style});
-
-  @override
-  State<_TileMarqueeText> createState() => _TileMarqueeTextState();
-}
-
-class _TileMarqueeTextState extends State<_TileMarqueeText>
-    with SingleTickerProviderStateMixin {
-  Ticker? _ticker;
-  final _px = ValueNotifier<double>(0.0);
-  double _scrollDistance = 0;
-  static const _gap = 20.0;
-  static const _pxPerSec = 30.0;
-
-  @override
-  void dispose() {
-    _ticker?.dispose();
-    _px.dispose();
-    super.dispose();
-  }
-
-  void _ensureScroll(double distance) {
-    _scrollDistance = distance;
-    if (_ticker != null) return;
-    _ticker = createTicker((elapsed) {
-      _px.value =
-          (elapsed.inMicroseconds * _pxPerSec / 1000000.0) % _scrollDistance;
-    })..start();
-  }
+class _Ellipsis extends StatelessWidget {
+  const _Ellipsis();
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final tp = TextPainter(
-        text: TextSpan(text: widget.text, style: widget.style),
-        maxLines: 1,
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      if (tp.width <= constraints.maxWidth) {
-        return Text(widget.text, style: widget.style, maxLines: 1);
-      }
-
-      _ensureScroll(tp.width + _gap);
-
-      return SizedBox(
-        width: constraints.maxWidth,
-        height: tp.height,
-        child: ClipRect(
-          child: ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              colors: [
-                Colors.transparent, Colors.white,
-                Colors.white, Colors.transparent,
-              ],
-              stops: [0.0, 0.06, 0.94, 1.0],
-            ).createShader(bounds),
-            blendMode: BlendMode.dstIn,
-            child: OverflowBox(
-              maxWidth: double.infinity,
-              alignment: Alignment.centerLeft,
-              child: ValueListenableBuilder<double>(
-                valueListenable: _px,
-                builder: (context, px, child) => Transform.translate(
-                  offset: Offset(-px, 0),
-                  child: child,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(widget.text, style: widget.style),
-                    const SizedBox(width: _gap),
-                    Text(widget.text, style: widget.style),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    });
-  }
-}
-
-class _CategoryChip extends StatelessWidget {
-  final String label;
-  final bool isCategorized;
-
-  const _CategoryChip({
-    required this.label,
-    required this.isCategorized,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (isCategorized) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: AppColors.incomeSuccess,
-          borderRadius: BorderRadius.circular(8),
-        ),
+    return SizedBox(
+      width: 24,
+      height: 32,
+      child: Center(
         child: Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.white,
-            fontSize: 11,
+          '...',
+          style: TextStyle(
+            color: AppColors.textTertiary(context),
+            fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.textTertiary(context)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -2109,8 +2071,7 @@ class _LedgerDateField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateText =
-        date != null ? _formatDateHeader(date!) : 'Select date';
+    final dateText = date != null ? _formatDateHeader(date!) : 'Select date';
 
     return GestureDetector(
       onTap: onTap,
@@ -2129,8 +2090,7 @@ class _LedgerDateField extends StatelessWidget {
           const SizedBox(height: 6),
           Container(
             width: double.infinity,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: AppColors.cardColor(context),
               borderRadius: BorderRadius.circular(8),
@@ -2163,14 +2123,12 @@ class _LedgerTransactionEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCredit = transaction.type == 'CREDIT';
-    final amountColor =
-        isCredit ? AppColors.incomeSuccess : AppColors.red;
+    final amountColor = isCredit ? AppColors.incomeSuccess : AppColors.red;
     final arrow = isCredit ? '↓' : '↑';
     final sign = isCredit ? '+' : '-';
 
     final amount = transaction.amount;
-    final amountStr =
-        formatNumberAbbreviated(amount).replaceAll('k', 'K');
+    final amountStr = formatNumberAbbreviated(amount).replaceAll('k', 'K');
 
     final name = _transactionCounterparty(transaction);
     final bankName = _bankLabel(transaction.bankId);
@@ -2178,11 +2136,10 @@ class _LedgerTransactionEntry extends StatelessWidget {
     final dt = _parseTransactionTime(transaction.time);
     final timeStr = dt != null ? _formatLedgerTime(dt) : '';
 
-    final parsedBalance =
-        double.tryParse(transaction.currentBalance ?? '');
+    final parsedBalance = double.tryParse(transaction.currentBalance ?? '');
     final balanceStr = showBalance && parsedBalance != null
         ? formatNumberAbbreviated(parsedBalance).replaceAll('k', 'K')
-        : '*****';
+        : '-';
 
     return Padding(
       padding: const EdgeInsets.only(top: 14, bottom: 6),
@@ -2438,8 +2395,9 @@ class _BankGridState extends State<_BankGrid> with WidgetsBindingObserver {
       final banks = await _detectionService.detectUnregisteredBanks(
         forceRefresh: forceRefresh,
       );
-      banks.sort((a, b) =>
-          a.bank.shortName.toLowerCase().compareTo(b.bank.shortName.toLowerCase()));
+      banks.sort((a, b) => a.bank.shortName
+          .toLowerCase()
+          .compareTo(b.bank.shortName.toLowerCase()));
       if (mounted) setState(() => _detectedBanks = banks);
     } catch (_) {
       // Silently fail — detected banks are a nice-to-have
@@ -2575,7 +2533,9 @@ class _BankGridCard extends StatelessWidget {
                       color: isSyncing
                           ? AppColors.primaryLight
                           : showBalance
-                              ? (AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700)
+                              ? (AppColors.isDark(context)
+                                  ? AppColors.slate400
+                                  : AppColors.slate700)
                               : AppColors.textSecondary(context),
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -2613,7 +2573,8 @@ class _AddAccountCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.cardColor(context),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.borderColor(context), style: BorderStyle.solid),
+          border: Border.all(
+              color: AppColors.borderColor(context), style: BorderStyle.solid),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2636,7 +2597,8 @@ class _AddAccountCard extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.mutedFill(context), width: 1.5),
+                    border: Border.all(
+                        color: AppColors.mutedFill(context), width: 1.5),
                   ),
                   child: Icon(
                     Icons.add,
@@ -2793,8 +2755,7 @@ class _BankSelectorStrip extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: isTotalsSelected
-                        ? Border.all(
-                            color: AppColors.primaryLight, width: 2.5)
+                        ? Border.all(color: AppColors.primaryLight, width: 2.5)
                         : null,
                   ),
                   child: Padding(
@@ -2829,9 +2790,9 @@ class _BankSelectorStrip extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.all(2),
                       child: _BankLogoCircle(
-                              imagePath: image,
-                              size: 36,
-                            ),
+                        imagePath: image,
+                        size: 36,
+                      ),
                     ),
                   ),
                 );
@@ -2887,17 +2848,15 @@ class _AccountCard extends StatelessWidget {
         showBalance ? '+ETB ${_formatEtbAbbrev(account.totalCredit)}' : '***';
     final debitLabel =
         showBalance ? '-ETB ${_formatEtbAbbrev(account.totalDebit)}' : '***';
-    final normalizedProgress = syncProgress == null
-        ? null
-        : syncProgress!.clamp(0.0, 1.0).toDouble();
+    final normalizedProgress =
+        syncProgress == null ? null : syncProgress!.clamp(0.0, 1.0).toDouble();
     final syncPercentLabel = normalizedProgress == null
         ? null
         : '${(normalizedProgress * 100).round()}%';
     final primaryValueLabel =
         syncStatus != null ? (syncPercentLabel ?? '0%') : balanceLabel;
 
-    final accountLabel =
-        isCash ? 'On-hand cash' : account.accountNumber;
+    final accountLabel = isCash ? 'On-hand cash' : account.accountNumber;
     final holderLabel =
         isCash ? 'Personal funds' : account.accountHolderName.toUpperCase();
 
@@ -2918,249 +2877,254 @@ class _AccountCard extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-              Row(
-                children: [
-                  _BankLogoCircle(imagePath: bankImage, size: 44),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          accountLabel,
-                          style: TextStyle(
-                            color: AppColors.textPrimary(context),
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          holderLabel,
-                          style: TextStyle(
-                            color: AppColors.textSecondary(context),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                        if (syncStatus != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            syncStatus!,
-                            style: TextStyle(
-                              color: AppColors.primaryLight,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                        if (isExpanded) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            primaryValueLabel,
-                            style: TextStyle(
-                              color: syncStatus != null
-                                  ? AppColors.primaryLight
-                                  : AppColors.textPrimary(context),
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    isExpanded
-                        ? Icons.keyboard_arrow_up
-                        : Icons.keyboard_arrow_down,
-                    color: AppColors.textSecondary(context),
-                    size: 22,
-                  ),
-                ],
-              ),
-              if (!isExpanded) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const SizedBox(width: 56),
-                    Text(
-                      primaryValueLabel,
-                      style: TextStyle(
-                        color: syncStatus != null
-                            ? AppColors.primaryLight
-                            : showBalance
-                                ? (AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700)
-                            : AppColors.textSecondary(context),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing:
-                            (syncPercentLabel != null || showBalance) ? 0 : 2,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              if (isExpanded) ...[
-                const SizedBox(height: 14),
-                Container(height: 1, color: AppColors.borderColor(context)),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'TRANSACTIONS',
-                          style: TextStyle(
-                            color: AppColors.textSecondary(context),
-                            fontSize: 10,
-                            letterSpacing: 0.8,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _formatCount(transactionCount),
-                          style: TextStyle(
-                            color: AppColors.textPrimary(context),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 24),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'IN & OUT',
-                          style: TextStyle(
-                            color: AppColors.textSecondary(context),
-                            fontSize: 10,
-                            letterSpacing: 0.8,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
+                  Row(
+                    children: [
+                      _BankLogoCircle(imagePath: bankImage, size: 44),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              creditLabel,
-                              style: const TextStyle(
-                                color: AppColors.incomeSuccess,
-                                fontSize: 14,
+                              accountLabel,
+                              style: TextStyle(
+                                color: AppColors.textPrimary(context),
+                                fontSize: 15,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
+                            const SizedBox(height: 2),
                             Text(
-                              ' | ',
+                              holderLabel,
                               style: TextStyle(
-                                color: AppColors.textTertiary(context),
-                                fontSize: 14,
+                                color: AppColors.textSecondary(context),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                letterSpacing: 0.3,
                               ),
                             ),
+                            if (syncStatus != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                syncStatus!,
+                                style: TextStyle(
+                                  color: AppColors.primaryLight,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                            if (isExpanded) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                primaryValueLabel,
+                                style: TextStyle(
+                                  color: syncStatus != null
+                                      ? AppColors.primaryLight
+                                      : AppColors.textPrimary(context),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        isExpanded
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                        color: AppColors.textSecondary(context),
+                        size: 22,
+                      ),
+                    ],
+                  ),
+                  if (!isExpanded) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const SizedBox(width: 56),
+                        Text(
+                          primaryValueLabel,
+                          style: TextStyle(
+                            color: syncStatus != null
+                                ? AppColors.primaryLight
+                                : showBalance
+                                    ? (AppColors.isDark(context)
+                                        ? AppColors.slate400
+                                        : AppColors.slate700)
+                                    : AppColors.textSecondary(context),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing:
+                                (syncPercentLabel != null || showBalance)
+                                    ? 0
+                                    : 2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (isExpanded) ...[
+                    const SizedBox(height: 14),
+                    Container(height: 1, color: AppColors.borderColor(context)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Text(
-                              debitLabel,
-                              style: const TextStyle(
-                                color: AppColors.red,
-                                fontSize: 14,
+                              'TRANSACTIONS',
+                              style: TextStyle(
+                                color: AppColors.textSecondary(context),
+                                fontSize: 10,
+                                letterSpacing: 0.8,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _formatCount(transactionCount),
+                              style: TextStyle(
+                                color: AppColors.textPrimary(context),
+                                fontSize: 16,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                           ],
                         ),
+                        const SizedBox(width: 24),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'IN & OUT',
+                              style: TextStyle(
+                                color: AppColors.textSecondary(context),
+                                fontSize: 10,
+                                letterSpacing: 0.8,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  creditLabel,
+                                  style: const TextStyle(
+                                    color: AppColors.incomeSuccess,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  ' | ',
+                                  style: TextStyle(
+                                    color: AppColors.textTertiary(context),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                Text(
+                                  debitLabel,
+                                  style: const TextStyle(
+                                    color: AppColors.red,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ],
                     ),
-                  ],
-                ),
-                // Delete for non-cash accounts
-                if (onDelete != null) ...[
-                  const SizedBox(height: 14),
-                  Container(height: 1, color: AppColors.borderColor(context)),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: onDelete,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.delete_outline_rounded,
-                          size: 16,
-                          color: AppColors.red.withValues(alpha: 0.7),
+                    // Delete for non-cash accounts
+                    if (onDelete != null) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                          height: 1, color: AppColors.borderColor(context)),
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: onDelete,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.delete_outline_rounded,
+                              size: 16,
+                              color: AppColors.red.withValues(alpha: 0.7),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Remove Account',
+                              style: TextStyle(
+                                color: AppColors.red.withValues(alpha: 0.7),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Remove Account',
-                          style: TextStyle(
-                            color: AppColors.red.withValues(alpha: 0.7),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
+                      ),
+                    ],
+                  ],
+                  // Cash wallet actions – always visible below the card
+                  if (isCash) ...[
+                    const SizedBox(height: 12),
+                    Container(height: 1, color: AppColors.borderColor(context)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _CashActionButton(
+                            label: 'Expense',
+                            icon: Icons.remove_circle_outline,
+                            color: AppColors.red,
+                            onTap: onCashExpense,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _CashActionButton(
+                            label: 'Income',
+                            icon: Icons.add_circle_outline,
+                            color: AppColors.incomeSuccess,
+                            onTap: onCashIncome,
                           ),
                         ),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _CashActionButton(
+                            label: 'Clear',
+                            icon: Icons.cleaning_services_outlined,
+                            color: AppColors.red,
+                            outlined: true,
+                            onTap: onClearCash,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _CashActionButton(
+                            label: 'Set amount',
+                            icon: Icons.tune,
+                            color: AppColors.primaryDark,
+                            outlined: true,
+                            onTap: onSetCashAmount,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
-              ],
-              // Cash wallet actions – always visible below the card
-              if (isCash) ...[
-                const SizedBox(height: 12),
-                Container(height: 1, color: AppColors.borderColor(context)),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _CashActionButton(
-                        label: 'Expense',
-                        icon: Icons.remove_circle_outline,
-                        color: AppColors.red,
-                        onTap: onCashExpense,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _CashActionButton(
-                        label: 'Income',
-                        icon: Icons.add_circle_outline,
-                        color: AppColors.incomeSuccess,
-                        onTap: onCashIncome,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _CashActionButton(
-                        label: 'Clear',
-                        icon: Icons.cleaning_services_outlined,
-                        color: AppColors.red,
-                        outlined: true,
-                        onTap: onClearCash,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _CashActionButton(
-                        label: 'Set amount',
-                        icon: Icons.tune,
-                        color: AppColors.primaryDark,
-                        outlined: true,
-                        onTap: onSetCashAmount,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
+              ),
             ),
             // Sync progress bar — sits at the bottom edge of the card
             if (syncStatus != null)
@@ -3249,7 +3213,8 @@ class _CashActionButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: outlined ? AppColors.cardColor(context) : color,
           borderRadius: BorderRadius.circular(10),
-          border: outlined ? Border.all(color: color.withValues(alpha: 0.5)) : null,
+          border:
+              outlined ? Border.all(color: color.withValues(alpha: 0.5)) : null,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -3374,8 +3339,7 @@ class _SetCashAmountSheetState extends State<_SetCashAmountSheet> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: AppColors.primaryLight),
+                  borderSide: const BorderSide(color: AppColors.primaryLight),
                 ),
               ),
               validator: (value) {
@@ -3492,7 +3456,8 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
         }
         final hasInitialBank = widget.initialBankId != null &&
             banks.any((bank) => bank.id == widget.initialBankId);
-        _selectedBankId = hasInitialBank ? widget.initialBankId : banks.first.id;
+        _selectedBankId =
+            hasInitialBank ? widget.initialBankId : banks.first.id;
       });
     }
   }
@@ -3630,7 +3595,9 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               Text(
                 'Bank',
                 style: TextStyle(
-                  color: AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700,
+                  color: AppColors.isDark(context)
+                      ? AppColors.slate400
+                      : AppColors.slate700,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -3682,7 +3649,9 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               Text(
                 'Account Number',
                 style: TextStyle(
-                  color: AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700,
+                  color: AppColors.isDark(context)
+                      ? AppColors.slate400
+                      : AppColors.slate700,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -3702,19 +3671,20 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                   fillColor: AppColors.surfaceColor(context),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.borderColor(context)),
+                    borderSide:
+                        BorderSide(color: AppColors.borderColor(context)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.borderColor(context)),
+                    borderSide:
+                        BorderSide(color: AppColors.borderColor(context)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        const BorderSide(color: AppColors.primaryLight),
+                    borderSide: const BorderSide(color: AppColors.primaryLight),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 14),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 ),
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Required' : null,
@@ -3725,7 +3695,9 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               Text(
                 'Account Holder Name',
                 style: TextStyle(
-                  color: AppColors.isDark(context) ? AppColors.slate400 : AppColors.slate700,
+                  color: AppColors.isDark(context)
+                      ? AppColors.slate400
+                      : AppColors.slate700,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -3744,19 +3716,20 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                   fillColor: AppColors.surfaceColor(context),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.borderColor(context)),
+                    borderSide:
+                        BorderSide(color: AppColors.borderColor(context)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.borderColor(context)),
+                    borderSide:
+                        BorderSide(color: AppColors.borderColor(context)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        const BorderSide(color: AppColors.primaryLight),
+                    borderSide: const BorderSide(color: AppColors.primaryLight),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 14),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 ),
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Required' : null,
@@ -3847,7 +3820,8 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                         foregroundColor: AppColors.white,
                         elevation: 0,
                         disabledBackgroundColor: AppColors.mutedFill(context),
-                        disabledForegroundColor: AppColors.textTertiary(context),
+                        disabledForegroundColor:
+                            AppColors.textTertiary(context),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -3918,8 +3892,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
             Expanded(
               child: GridView.builder(
                 padding: const EdgeInsets.all(16),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3,
                   crossAxisSpacing: 14,
                   mainAxisSpacing: 14,
@@ -4128,7 +4101,8 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: Icon(Icons.close, color: AppColors.textSecondary(context)),
+                  icon: Icon(Icons.close,
+                      color: AppColors.textSecondary(context)),
                   splashRadius: 20,
                 ),
               ],
@@ -4275,7 +4249,8 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
                           onPressed: _clearAll,
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.textSecondary(context),
-                            side: BorderSide(color: AppColors.borderColor(context)),
+                            side: BorderSide(
+                                color: AppColors.borderColor(context)),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
@@ -4356,16 +4331,21 @@ class _FilterChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? AppColors.primaryDark : AppColors.surfaceColor(context),
+          color: selected
+              ? AppColors.primaryDark
+              : AppColors.surfaceColor(context),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected ? AppColors.primaryDark : AppColors.borderColor(context),
+            color: selected
+                ? AppColors.primaryDark
+                : AppColors.borderColor(context),
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? AppColors.white : AppColors.textSecondary(context),
+            color:
+                selected ? AppColors.white : AppColors.textSecondary(context),
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -4406,8 +4386,9 @@ class _DatePickerField extends StatelessWidget {
               child: Text(
                 value ?? hint,
                 style: TextStyle(
-                  color:
-                      value != null ? AppColors.textPrimary(context) : AppColors.textTertiary(context),
+                  color: value != null
+                      ? AppColors.textPrimary(context)
+                      : AppColors.textTertiary(context),
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
