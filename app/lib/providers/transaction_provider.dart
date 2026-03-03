@@ -559,7 +559,8 @@ class TransactionProvider with ChangeNotifier {
         monthHasTransactions[monthOffset] = true;
       }
 
-      final isMisc = _categoryById[transaction.categoryId]?.uncategorized == true;
+      final isMisc =
+          _categoryById[transaction.categoryId]?.uncategorized == true;
 
       if (isSelfTransfer || isMisc) continue;
 
@@ -769,8 +770,10 @@ class TransactionProvider with ChangeNotifier {
         .where((summary) => summary.bankId == CashConstants.bankId)
         .toList();
     final currentBalance = walletSummaries.isNotEmpty
-        ? walletSummaries.fold<double>(0.0, (sum, summary) => sum + summary.balance)
-        : cashAccounts.fold<double>(0.0, (sum, account) => sum + account.balance);
+        ? walletSummaries.fold<double>(
+            0.0, (sum, summary) => sum + summary.balance)
+        : cashAccounts.fold<double>(
+            0.0, (sum, account) => sum + account.balance);
 
     final delta = targetBalance - currentBalance;
     if (delta.abs() < 0.0001) return 0.0;
@@ -875,6 +878,7 @@ class TransactionProvider with ChangeNotifier {
     required bool essential,
     bool uncategorized = false,
     String? iconKey,
+    String? colorKey,
     String? description,
     String flow = 'expense',
     bool recurring = false,
@@ -884,6 +888,7 @@ class TransactionProvider with ChangeNotifier {
       essential: essential,
       uncategorized: uncategorized,
       iconKey: iconKey,
+      colorKey: colorKey,
       description: description,
       flow: flow,
       recurring: recurring,

@@ -232,8 +232,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
             (c.id == null || !(excludeIds?.contains(c.id) ?? false)))
         .fold<Category?>(
           null,
-          (best, c) =>
-              best == null || (c.id ?? 0) > (best.id ?? 0) ? c : best,
+          (best, c) => best == null || (c.id ?? 0) > (best.id ?? 0) ? c : best,
         );
   }
 
@@ -243,8 +242,6 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   }) {
     return _findCategoryByNameAndFlow(name: name, flow: flow) != null;
   }
-
-  String _serializeColorKey(String colorKey) => 'color:$colorKey';
 
   String? _extractColorKey(String? iconKey) {
     if (iconKey == null || iconKey.isEmpty) return null;
@@ -280,17 +277,15 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
       return;
     }
 
-    final knownCategoryIds = _provider.categories
-        .map((c) => c.id)
-        .whereType<int>()
-        .toSet();
+    final knownCategoryIds =
+        _provider.categories.map((c) => c.id).whereType<int>().toSet();
 
     try {
       await _provider.createCategory(
         name: selfName,
         essential: false,
         flow: flow,
-        iconKey: _serializeColorKey('gray'),
+        colorKey: 'gray',
       );
     } catch (_) {
       if (!mounted) return;
@@ -301,7 +296,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
       flow: flow,
       excludeIds: knownCategoryIds,
     );
-    final target = created ?? _findCategoryByNameAndFlow(name: selfName, flow: flow);
+    final target =
+        created ?? _findCategoryByNameAndFlow(name: selfName, flow: flow);
     if (target != null) {
       await _setCategory(target);
     }
@@ -315,16 +311,14 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
       _newCategoryFocus.requestFocus();
       return;
     }
-    final knownCategoryIds = _provider.categories
-        .map((c) => c.id)
-        .whereType<int>()
-        .toSet();
+    final knownCategoryIds =
+        _provider.categories.map((c) => c.id).whereType<int>().toSet();
     try {
       await _provider.createCategory(
         name: createdName,
         essential: false,
         flow: flow,
-        iconKey: _serializeColorKey(_draftColorKey),
+        colorKey: _draftColorKey,
       );
     } catch (error) {
       if (!mounted) return;
@@ -420,140 +414,141 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-            // Drag handle
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.textTertiary(context),
-                  borderRadius: BorderRadius.circular(2),
+              // Drag handle
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.textTertiary(context),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
 
-            // Header row
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 12, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Transaction Details',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary(context),
+              // Header row
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 12, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Transaction Details',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary(context),
+                        ),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
-                    color: AppColors.textSecondary(context),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-
-            // Amount
-            Padding(
-              padding: const EdgeInsets.only(top: 12, bottom: 4),
-              child: Text(
-                _formattedAmount,
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: _isCredit ? AppColors.incomeSuccess : AppColors.red,
-                ),
-              ),
-            ),
-
-            // Counterparty name
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: SizedBox(
-                width: double.infinity,
-                child: _MarqueeText(
-                  text: _counterparty,
-                  centerWhenStatic: true,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: AppColors.textSecondary(context),
-                  ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Scrollable detail rows + category + delete
-            Flexible(
-              child: SingleChildScrollView(
-                controller: _sheetScrollController,
-                padding: EdgeInsets.fromLTRB(20, 0, 20, keyboardScrollBuffer),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _DetailRow(
-                      label: 'Reference',
-                      value: _tx.reference,
-                      marquee: true,
-                      onTap: _copyReference,
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      color: AppColors.textSecondary(context),
+                      onPressed: () => Navigator.pop(context),
                     ),
-                    _DetailRow(label: 'Bank', value: _bankShortName),
-                    // if (_tx.accountNumber != null &&
-                    //     _tx.accountNumber!.isNotEmpty)
-                    //   _DetailRow(label: 'Account', value: _tx.accountNumber!),
-                    if (_formattedDate != null)
-                      _DetailRow(label: 'Date & Time', value: _formattedDate!),
-                    if (_formattedBalance != null)
+                  ],
+                ),
+              ),
+
+              // Amount
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 4),
+                child: Text(
+                  _formattedAmount,
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: _isCredit ? AppColors.incomeSuccess : AppColors.red,
+                  ),
+                ),
+              ),
+
+              // Counterparty name
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: _MarqueeText(
+                    text: _counterparty,
+                    centerWhenStatic: true,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: AppColors.textSecondary(context),
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Scrollable detail rows + category + delete
+              Flexible(
+                child: SingleChildScrollView(
+                  controller: _sheetScrollController,
+                  padding: EdgeInsets.fromLTRB(20, 0, 20, keyboardScrollBuffer),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       _DetailRow(
-                          label: 'Balance After', value: _formattedBalance!),
-                    if (_formattedServiceCharge != null)
-                      _DetailRow(
-                          label: 'Service Charge',
-                          value: _formattedServiceCharge!),
-                    if (_formattedVat != null)
-                      _DetailRow(label: 'VAT', value: _formattedVat!),
+                        label: 'Reference',
+                        value: _tx.reference,
+                        marquee: true,
+                        onTap: _copyReference,
+                      ),
+                      _DetailRow(label: 'Bank', value: _bankShortName),
+                      // if (_tx.accountNumber != null &&
+                      //     _tx.accountNumber!.isNotEmpty)
+                      //   _DetailRow(label: 'Account', value: _tx.accountNumber!),
+                      if (_formattedDate != null)
+                        _DetailRow(
+                            label: 'Date & Time', value: _formattedDate!),
+                      if (_formattedBalance != null)
+                        _DetailRow(
+                            label: 'Balance After', value: _formattedBalance!),
+                      if (_formattedServiceCharge != null)
+                        _DetailRow(
+                            label: 'Service Charge',
+                            value: _formattedServiceCharge!),
+                      if (_formattedVat != null)
+                        _DetailRow(label: 'VAT', value: _formattedVat!),
 
-                    // Category row
-                    if (isSelfTransfer)
-                      _DetailRow(
-                        label: 'Category',
-                        value: selfTransferLabel ?? 'Self transfer',
-                      )
-                    else
-                      _buildCategoryRow(category),
+                      // Category row
+                      if (isSelfTransfer)
+                        _DetailRow(
+                          label: 'Category',
+                          value: selfTransferLabel ?? 'Self transfer',
+                        )
+                      else
+                        _buildCategoryRow(category),
 
-                    // Category picker chips
-                    if (_categoryExpanded && !isSelfTransfer)
-                      _buildCategoryPicker(category),
+                      // Category picker chips
+                      if (_categoryExpanded && !isSelfTransfer)
+                        _buildCategoryPicker(category),
 
-                    const SizedBox(height: 20),
+                      const SizedBox(height: 20),
 
-                    // Delete button
-                    SizedBox(
-                      width: double.infinity,
-                      child: TextButton.icon(
-                        onPressed: _deleteTransaction,
-                        label: const Text('Delete transaction'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.red,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            side: BorderSide(
-                              color: AppColors.red.withValues(alpha: 0.3),
+                      // Delete button
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton.icon(
+                          onPressed: _deleteTransaction,
+                          label: const Text('Delete transaction'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.red,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              side: BorderSide(
+                                color: AppColors.red.withValues(alpha: 0.3),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
 
-                    const SizedBox(height: 24),
-                  ],
+                      const SizedBox(height: 24),
+                    ],
+                  ),
                 ),
               ),
-            ),
             ],
           ),
         ),
@@ -588,7 +583,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
               maxWidth: MediaQuery.of(context).size.width * 0.5,
             ),
             child: GestureDetector(
-              onTap: () => setState(() => _categoryExpanded = !_categoryExpanded),
+              onTap: () =>
+                  setState(() => _categoryExpanded = !_categoryExpanded),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -704,8 +700,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     final selectedColor = _colorFromKey(_draftColorKey);
     final flow = _isCredit ? 'income' : 'expense';
     final draftName = _newCategoryController.text.trim();
-    final isDuplicateName =
-        draftName.isNotEmpty && _categoryExistsForFlow(name: draftName, flow: flow);
+    final isDuplicateName = draftName.isNotEmpty &&
+        _categoryExistsForFlow(name: draftName, flow: flow);
     final canSubmit = draftName.isNotEmpty && !isDuplicateName;
     final textFieldBorderColor =
         isDuplicateName ? AppColors.red : AppColors.borderColor(context);
@@ -732,7 +728,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                   ),
                   decoration: InputDecoration(
                     hintText: 'Category name',
-                    hintStyle: TextStyle(color: AppColors.textTertiary(context)),
+                    hintStyle:
+                        TextStyle(color: AppColors.textTertiary(context)),
                     filled: true,
                     fillColor: AppColors.surfaceColor(context),
                     isDense: true,
@@ -858,11 +855,18 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   }
 
   Color _categoryColor(Category category) {
-    final explicitKey = _extractColorKey(category.iconKey);
+    final explicitKey = _normalizeColorKey(category.colorKey) ??
+        _extractColorKey(category.iconKey);
     if (explicitKey != null) {
       return _colorFromKey(explicitKey);
     }
     return _kCategoryColorOptions[_fallbackColorIndex(category)].color;
+  }
+
+  String? _normalizeColorKey(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    return trimmed;
   }
 }
 

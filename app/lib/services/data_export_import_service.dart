@@ -329,7 +329,8 @@ class DataExportImportService {
         String budgetKey(Budget budget) {
           final name = budget.name.trim().toLowerCase();
           final type = budget.type.trim().toLowerCase();
-          final category = budget.categoryId?.toString() ?? '';
+          final category =
+              budget.selectedCategoryIds.toList()..sort((a, b) => a - b);
           final start = budget.startDate.toIso8601String();
           final end = budget.endDate?.toIso8601String() ?? '';
           final amount = budget.amount.toStringAsFixed(2);
@@ -344,15 +345,27 @@ class DataExportImportService {
         final existingKeys = existingBudgets.map(budgetKey).toSet();
 
         final budgetsList = budgetsRaw.map(Budget.fromJson).map((budget) {
-          final categoryId = budget.categoryId;
-          if (categoryId == null) return budget;
-          final mappedId = categoryIdMap[categoryId];
-          if (mappedId != null) {
-            return budget.copyWith(categoryId: mappedId);
+          final sourceIds = budget.selectedCategoryIds;
+          if (sourceIds.isEmpty) return budget;
+          final mappedIds = <int>[];
+          for (final id in sourceIds) {
+            final mapped = categoryIdMap[id];
+            if (mapped != null) {
+              mappedIds.add(mapped);
+            }
+          }
+          if (mappedIds.isNotEmpty) {
+            mappedIds.sort();
+            final deduped = mappedIds.toSet().toList(growable: false);
+            return budget.copyWith(
+              categoryId: deduped.first,
+              categoryIds: deduped,
+            );
           }
           if (categoryIdsCanBeMapped) {
             final cleared = Map<String, dynamic>.from(budget.toJson());
             cleared['categoryId'] = null;
+            cleared['categoryIds'] = null;
             return Budget.fromJson(cleared);
           }
           return budget;

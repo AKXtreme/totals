@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 class Budget {
   final int? id;
   final String name;
   final String type; // 'daily', 'monthly', 'yearly', 'category'
   final double amount;
   final int? categoryId;
+  final List<int>? categoryIds;
   final DateTime startDate;
   final DateTime? endDate;
   final bool rollover;
@@ -19,6 +22,7 @@ class Budget {
     required this.type,
     required this.amount,
     this.categoryId,
+    this.categoryIds,
     required this.startDate,
     this.endDate,
     this.rollover = false,
@@ -29,6 +33,40 @@ class Budget {
     this.timeFrame,
   });
 
+  static List<int>? _decodeCategoryIds(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is List) {
+      final parsed = raw
+          .map((e) {
+            if (e is int) return e;
+            if (e is num) return e.toInt();
+            if (e is String) return int.tryParse(e.trim());
+            return null;
+          })
+          .whereType<int>()
+          .toSet()
+          .toList();
+      return parsed.isEmpty ? null : parsed;
+    }
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return null;
+      try {
+        final decoded = jsonDecode(trimmed);
+        return _decodeCategoryIds(decoded);
+      } catch (_) {
+        final parsed = trimmed
+            .split(',')
+            .map((e) => int.tryParse(e.trim()))
+            .whereType<int>()
+            .toSet()
+            .toList();
+        return parsed.isEmpty ? null : parsed;
+      }
+    }
+    return null;
+  }
+
   factory Budget.fromDb(Map<String, dynamic> row) {
     return Budget(
       id: row['id'] as int?,
@@ -36,6 +74,7 @@ class Budget {
       type: (row['type'] as String?) ?? 'monthly',
       amount: (row['amount'] as num?)?.toDouble() ?? 0.0,
       categoryId: row['categoryId'] as int?,
+      categoryIds: _decodeCategoryIds(row['categoryIds']),
       startDate: row['startDate'] != null
           ? DateTime.parse(row['startDate'] as String)
           : DateTime.now(),
@@ -101,6 +140,7 @@ class Budget {
       type: (json['type'] as String?) ?? 'monthly',
       amount: toDouble(json['amount']),
       categoryId: toInt(json['categoryId']),
+      categoryIds: _decodeCategoryIds(json['categoryIds']),
       startDate: parseDate(json['startDate']) ?? DateTime.now(),
       endDate: parseDate(json['endDate']),
       rollover: toBool(json['rollover']),
@@ -122,6 +162,7 @@ class Budget {
       'type': type,
       'amount': amount,
       'categoryId': categoryId,
+      'categoryIds': categoryIds,
       'startDate': startDate.toIso8601String(),
       'endDate': endDate?.toIso8601String(),
       'rollover': rollover,
@@ -140,6 +181,8 @@ class Budget {
       'type': type,
       'amount': amount,
       'categoryId': categoryId,
+      'categoryIds':
+          categoryIds == null || categoryIds!.isEmpty ? null : jsonEncode(categoryIds),
       'startDate': startDate.toIso8601String(),
       'endDate': endDate?.toIso8601String(),
       'rollover': rollover ? 1 : 0,
@@ -157,6 +200,7 @@ class Budget {
     String? type,
     double? amount,
     int? categoryId,
+    List<int>? categoryIds,
     DateTime? startDate,
     DateTime? endDate,
     bool? rollover,
@@ -172,6 +216,7 @@ class Budget {
       type: type ?? this.type,
       amount: amount ?? this.amount,
       categoryId: categoryId ?? this.categoryId,
+      categoryIds: categoryIds ?? this.categoryIds,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       rollover: rollover ?? this.rollover,
@@ -181,6 +226,28 @@ class Budget {
       updatedAt: updatedAt ?? this.updatedAt,
       timeFrame: timeFrame ?? this.timeFrame,
     );
+  }
+
+  List<int> get selectedCategoryIds {
+    final ids = <int>{};
+    if (categoryIds != null) {
+      ids.addAll(categoryIds!.where((id) => id > 0));
+    }
+    if (categoryId != null && categoryId! > 0) {
+      ids.add(categoryId!);
+    }
+    return ids.toList(growable: false);
+  }
+
+  int? get primaryCategoryId {
+    final ids = selectedCategoryIds;
+    if (ids.isEmpty) return null;
+    return ids.first;
+  }
+
+  bool includesCategory(int? id) {
+    if (id == null) return false;
+    return selectedCategoryIds.contains(id);
   }
 
   // Helper methods for period calculations

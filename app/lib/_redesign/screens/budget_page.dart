@@ -166,10 +166,30 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
   }
 
   double _spentForBudget(Budget b, List<Transaction> debits) {
-    if (b.categoryId == null) return 0;
+    final categoryIds = b.selectedCategoryIds;
+    if (categoryIds.isEmpty) return 0;
     return debits
-        .where((t) => t.categoryId == b.categoryId)
+        .where(
+            (t) => t.categoryId != null && categoryIds.contains(t.categoryId))
         .fold(0.0, (s, t) => s + t.amount);
+  }
+
+  bool _isWantsBudget(Budget budget, TransactionProvider tp) {
+    final categories = budget.selectedCategoryIds
+        .map(tp.getCategoryById)
+        .whereType<Category>()
+        .toList(growable: false);
+    if (categories.isEmpty) return false;
+    return categories.any((c) => !c.essential);
+  }
+
+  String? _categorySummaryForBudget(Budget budget, TransactionProvider tp) {
+    final categories = budget.selectedCategoryIds
+        .map(tp.getCategoryById)
+        .whereType<Category>()
+        .toList(growable: false);
+    if (categories.isEmpty) return null;
+    return categories.map((c) => c.name).join(' • ');
   }
 
   // ── Build ───────────────────────────────────────────────────────────────
@@ -228,9 +248,7 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
     final needsBudgets = <Budget>[];
     final wantsBudgets = <Budget>[];
     for (final b in budgets) {
-      final cat =
-          b.categoryId != null ? tp.getCategoryById(b.categoryId) : null;
-      if (cat != null && !cat.essential) {
+      if (_isWantsBudget(b, tp)) {
         wantsBudgets.add(b);
       } else {
         needsBudgets.add(b);
@@ -243,10 +261,7 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
         0.0, (double s, b) => s + (b.amount - _spentForBudget(b, debits)));
 
     // Unbudgeted spending
-    final budgetedCatIds = budgets
-        .where((b) => b.categoryId != null)
-        .map((b) => b.categoryId!)
-        .toSet();
+    final budgetedCatIds = budgets.expand((b) => b.selectedCategoryIds).toSet();
     final unbudgetedTxns =
         debits.where((t) => !budgetedCatIds.contains(t.categoryId)).toList();
     final unbudgetedAmount = unbudgetedTxns.fold(0.0, (s, t) => s + t.amount);
@@ -286,9 +301,7 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
                   .map((b) => _BudgetItemRow(
                         budget: b,
                         spent: _spentForBudget(b, debits),
-                        category: b.categoryId != null
-                            ? tp.getCategoryById(b.categoryId)
-                            : null,
+                        categoryLabel: _categorySummaryForBudget(b, tp),
                         onTap: () => setState(() => _detailBudget = b),
                       ))
                   .toList(),
@@ -305,9 +318,7 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
                   .map((b) => _BudgetItemRow(
                         budget: b,
                         spent: _spentForBudget(b, debits),
-                        category: b.categoryId != null
-                            ? tp.getCategoryById(b.categoryId)
-                            : null,
+                        categoryLabel: _categorySummaryForBudget(b, tp),
                         onTap: () => setState(() => _detailBudget = b),
                       ))
                   .toList(),
@@ -354,14 +365,17 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
   ) {
     final spent = _spentForBudget(budget, debits);
     final available = budget.amount - spent;
-    final cat = budget.categoryId != null
-        ? tp.getCategoryById(budget.categoryId)
-        : null;
-    final color = _colorForCategory(budget.categoryId);
+    final primaryCategoryId = budget.primaryCategoryId;
+    final color = _colorForCategory(primaryCategoryId);
+    final categorySummary = _categorySummaryForBudget(budget, tp);
 
     // Transactions for this budget
-    final txns = budget.categoryId != null
-        ? debits.where((t) => t.categoryId == budget.categoryId).toList()
+    final selectedIds = budget.selectedCategoryIds;
+    final txns = selectedIds.isNotEmpty
+        ? debits
+            .where((t) =>
+                t.categoryId != null && selectedIds.contains(t.categoryId))
+            .toList()
         : <Transaction>[];
     // Sort newest first
     txns.sort((a, b) {
@@ -402,7 +416,7 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
           spent: spent,
           available: available,
           color: color,
-          category: cat,
+          categoryLabel: categorySummary,
           dailyRate: dailyRate,
           daysLeft: daysLeft,
         ),
@@ -444,26 +458,32 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
               _DateGroupHeader(label: label, count: items.length),
               ...items.map((t) => Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: TransactionTile(
-                      bank: _bankLabel(t.bankId),
-                      category: cat?.name ?? 'Uncategorized',
-                      categoryModel: cat,
-                      isCategorized: cat != null,
-                      isDebit: t.type?.toUpperCase() == 'DEBIT',
-                      amount: formatNumberWithComma(t.amount),
-                      amountColor: t.type?.toUpperCase() == 'DEBIT'
-                          ? AppColors.red
-                          : AppColors.incomeSuccess,
-                      name: (t.receiver?.trim().isNotEmpty == true
-                              ? t.receiver!
-                              : t.creditor?.trim() ?? '')
-                          .trim(),
-                      onTap: () => showTransactionDetailsSheet(
-                        context: context,
-                        transaction: t,
-                        provider: tp,
-                      ),
-                    ),
+                    child: Builder(builder: (context) {
+                      final transactionCategory =
+                          tp.getCategoryById(t.categoryId);
+                      return TransactionTile(
+                        key: ValueKey(
+                            'budget_txn_${t.reference}_${t.categoryId}'),
+                        bank: _bankLabel(t.bankId),
+                        category: transactionCategory?.name ?? 'Uncategorized',
+                        categoryModel: transactionCategory,
+                        isCategorized: transactionCategory != null,
+                        isDebit: t.type?.toUpperCase() == 'DEBIT',
+                        amount: formatNumberWithComma(t.amount),
+                        amountColor: t.type?.toUpperCase() == 'DEBIT'
+                            ? AppColors.red
+                            : AppColors.incomeSuccess,
+                        name: (t.receiver?.trim().isNotEmpty == true
+                                ? t.receiver!
+                                : t.creditor?.trim() ?? '')
+                            .trim(),
+                        onTap: () => showTransactionDetailsSheet(
+                          context: context,
+                          transaction: t,
+                          provider: tp,
+                        ),
+                      );
+                    }),
                   )),
             ];
           }),
@@ -761,13 +781,13 @@ class _BudgetGroupSection extends StatelessWidget {
 class _BudgetItemRow extends StatelessWidget {
   final Budget budget;
   final double spent;
-  final Category? category;
+  final String? categoryLabel;
   final VoidCallback onTap;
 
   const _BudgetItemRow({
     required this.budget,
     required this.spent,
-    required this.category,
+    required this.categoryLabel,
     required this.onTap,
   });
 
@@ -776,7 +796,7 @@ class _BudgetItemRow extends StatelessWidget {
     final available = budget.amount - spent;
     final progress =
         budget.amount > 0 ? (spent / budget.amount).clamp(0.0, 1.0) : 0.0;
-    final color = _colorForCategory(budget.categoryId);
+    final color = _colorForCategory(budget.primaryCategoryId);
     final availableColor =
         available >= 0 ? AppColors.incomeSuccess : AppColors.red;
 
@@ -808,13 +828,31 @@ class _BudgetItemRow extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      budget.name,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary(context),
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          budget.name,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary(context),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (categoryLabel != null &&
+                            categoryLabel!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          _AutoMarqueeText(
+                            text: categoryLabel!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary(context),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
@@ -1150,7 +1188,7 @@ class _DetailSummaryCard extends StatelessWidget {
   final double spent;
   final double available;
   final Color color;
-  final Category? category;
+  final String? categoryLabel;
   final double dailyRate;
   final int daysLeft;
 
@@ -1159,7 +1197,7 @@ class _DetailSummaryCard extends StatelessWidget {
     required this.spent,
     required this.available,
     required this.color,
-    required this.category,
+    required this.categoryLabel,
     required this.dailyRate,
     required this.daysLeft,
   });
@@ -1198,9 +1236,25 @@ class _DetailSummaryCard extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimary(context),
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
+          if (categoryLabel != null && categoryLabel!.trim().isNotEmpty) ...[
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: _AutoMarqueeText(
+                text: categoryLabel!,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary(context),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           // ASSIGNED | ACTIVITY | AVAILABLE
           Row(
@@ -1305,7 +1359,7 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   late final TextEditingController _alertController;
   late String _selectedPeriod;
   late String _selectedGroup; // 'needs' or 'wants'
-  int? _selectedCategoryId;
+  final Set<int> _selectedCategoryIds = <int>{};
   late bool _rollover;
   bool _isSaving = false;
   bool _uniqueToSelectedMonth = false;
@@ -1322,15 +1376,15 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   DateTime get _selectedMonthStart =>
       DateTime(widget.selectedMonth.year, widget.selectedMonth.month, 1);
   DateTime get _selectedMonthEnd => DateTime(
-            widget.selectedMonth.year,
-            widget.selectedMonth.month + 1,
-            1,
-          )
-          .subtract(const Duration(seconds: 1));
+        widget.selectedMonth.year,
+        widget.selectedMonth.month + 1,
+        1,
+      ).subtract(const Duration(seconds: 1));
   bool get _hasFutureBudgetsToUpdate {
     final existing = widget.existing;
     if (existing == null) return false;
-    return existing.endDate == null || existing.endDate!.isAfter(_selectedMonthEnd);
+    return existing.endDate == null ||
+        existing.endDate!.isAfter(_selectedMonthEnd);
   }
 
   @override
@@ -1344,13 +1398,17 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     _alertController = TextEditingController(
       text: b != null ? b.alertThreshold.toStringAsFixed(0) : '80',
     );
-    _selectedCategoryId = b?.categoryId;
+    _selectedCategoryIds.addAll(b?.selectedCategoryIds ?? const <int>[]);
     _rollover = b?.rollover ?? false;
 
     // Determine group from existing category
-    if (b != null && b.categoryId != null) {
-      final cat = widget.transactionProvider.getCategoryById(b.categoryId);
-      _selectedGroup = (cat != null && !cat.essential) ? 'wants' : 'needs';
+    if (b != null && b.selectedCategoryIds.isNotEmpty) {
+      final selectedCats = b.selectedCategoryIds
+          .map(widget.transactionProvider.getCategoryById)
+          .whereType<Category>()
+          .toList();
+      _selectedGroup =
+          selectedCats.any((c) => !c.essential) ? 'wants' : 'needs';
     } else {
       _selectedGroup = 'needs';
     }
@@ -1385,8 +1443,6 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
         .toList();
   }
 
-  String _serializeColorKey(String colorKey) => 'color:$colorKey';
-
   String? _extractColorKey(String? iconKey) {
     if (iconKey == null || iconKey.isEmpty) return null;
     const prefix = 'color:';
@@ -1413,11 +1469,18 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   }
 
   Color _categoryChipColor(Category category) {
-    final explicitColorKey = _extractColorKey(category.iconKey);
+    final explicitColorKey = _normalizeColorKey(category.colorKey) ??
+        _extractColorKey(category.iconKey);
     if (explicitColorKey != null) {
       return _colorFromKey(explicitColorKey);
     }
     return _kBudgetCategoryColorOptions[_fallbackColorIndex(category)].color;
+  }
+
+  String? _normalizeColorKey(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    return trimmed;
   }
 
   Category? _findCategoryByName({
@@ -1434,10 +1497,9 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
             (c.id == null || !(excludeIds?.contains(c.id) ?? false)))
         .fold<Category?>(
           null,
-          (best, current) =>
-              best == null || (current.id ?? 0) > (best.id ?? 0)
-                  ? current
-                  : best,
+          (best, current) => best == null || (current.id ?? 0) > (best.id ?? 0)
+              ? current
+              : best,
         );
   }
 
@@ -1508,7 +1570,7 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
         name: createdName,
         essential: isEssential,
         flow: flow,
-        iconKey: _serializeColorKey(_draftCategoryColorKey),
+        colorKey: _draftCategoryColorKey,
       );
     } catch (error) {
       if (!mounted) return;
@@ -1539,7 +1601,9 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
       _showNewCategoryComposer = false;
       _showCategoryColorChoices = false;
       _newCategoryController.clear();
-      _selectedCategoryId = target?.id;
+      if (target?.id != null) {
+        _selectedCategoryIds.add(target!.id!);
+      }
     });
     _newCategoryFocus.unfocus();
   }
@@ -1547,7 +1611,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final selectedMonthLabel = DateFormat('MMM yyyy').format(_selectedMonthStart);
+    final selectedMonthLabel =
+        DateFormat('MMM yyyy').format(_selectedMonthStart);
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final expenseCategories = _filteredCategories;
     final keyboardScrollBuffer = bottomInset > 0 && _showNewCategoryComposer
@@ -1675,12 +1740,13 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                             _showNewCategoryComposer = false;
                             _showCategoryColorChoices = false;
                             _newCategoryController.clear();
-                            // Reset category when group changes
-                            if (_selectedCategoryId != null &&
-                                !_filteredCategories
-                                    .any((c) => c.id == _selectedCategoryId)) {
-                              _selectedCategoryId = null;
-                            }
+                            // Keep only categories valid for the new group.
+                            final allowedIds = _filteredCategories
+                                .map((c) => c.id)
+                                .whereType<int>()
+                                .toSet();
+                            _selectedCategoryIds
+                                .removeWhere((id) => !allowedIds.contains(id));
                           });
                         },
                       ),
@@ -1704,7 +1770,7 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
 
                       // Category
                       Text(
-                        'Category (optional)',
+                        'Categories (optional)',
                         style: theme.textTheme.labelMedium?.copyWith(
                           color: AppColors.textSecondary(context),
                           fontWeight: FontWeight.w600,
@@ -1718,22 +1784,34 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                           _CategoryChipButton(
                             label: 'None',
                             color: AppColors.textTertiary(context),
-                            selected: _selectedCategoryId == null,
+                            selected: _selectedCategoryIds.isEmpty,
                             showColorDot: false,
                             onTap: () =>
-                                setState(() => _selectedCategoryId = null),
+                                setState(() => _selectedCategoryIds.clear()),
                           ),
                           ...expenseCategories.map((cat) {
+                            final catId = cat.id;
+                            final isSelected = catId != null &&
+                                _selectedCategoryIds.contains(catId);
                             return _CategoryChipButton(
                               label: cat.name,
                               color: _categoryChipColor(cat),
-                              selected: _selectedCategoryId == cat.id,
-                              onTap: () =>
-                                  setState(() => _selectedCategoryId = cat.id),
+                              selected: isSelected,
+                              onTap: () {
+                                if (catId == null) return;
+                                setState(() {
+                                  if (isSelected) {
+                                    _selectedCategoryIds.remove(catId);
+                                  } else {
+                                    _selectedCategoryIds.add(catId);
+                                  }
+                                });
+                              },
                             );
                           }),
                           _CategoryChipButton(
-                            label: _showNewCategoryComposer ? 'Cancel' : '+ New',
+                            label:
+                                _showNewCategoryComposer ? 'Cancel' : '+ New',
                             color: _showNewCategoryComposer
                                 ? AppColors.red
                                 : AppColors.textSecondary(context),
@@ -1942,8 +2020,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     final selectedColor = _colorFromKey(_draftCategoryColorKey);
     const flow = 'expense';
     final draftName = _newCategoryController.text.trim();
-    final isDuplicateName =
-        draftName.isNotEmpty && _categoryExistsForFlow(name: draftName, flow: flow);
+    final isDuplicateName = draftName.isNotEmpty &&
+        _categoryExistsForFlow(name: draftName, flow: flow);
     final canSubmit = draftName.isNotEmpty && !isDuplicateName;
     final textFieldBorderColor =
         isDuplicateName ? AppColors.red : AppColors.borderColor(context);
@@ -1971,7 +2049,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                   ),
                   decoration: InputDecoration(
                     hintText: 'Category name',
-                    hintStyle: TextStyle(color: AppColors.textTertiary(context)),
+                    hintStyle:
+                        TextStyle(color: AppColors.textTertiary(context)),
                     filled: true,
                     fillColor: AppColors.surfaceColor(context),
                     isDense: true,
@@ -2130,9 +2209,12 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
 
-    final isCategory = _selectedCategoryId != null;
+    final selectedIds = _selectedCategoryIds.toList(growable: false);
+    final primaryCategoryId = selectedIds.isEmpty ? null : selectedIds.first;
+    final isCategory = selectedIds.isNotEmpty;
     final now = DateTime.now();
-    final startDate = _isEdit ? widget.existing!.startDate : _selectedMonthStart;
+    final startDate =
+        _isEdit ? widget.existing!.startDate : _selectedMonthStart;
     final endDate = _isEdit
         ? widget.existing!.endDate
         : (_uniqueToSelectedMonth ? _selectedMonthEnd : null);
@@ -2141,7 +2223,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
       name: _nameController.text.trim(),
       type: isCategory ? 'category' : _selectedPeriod,
       amount: double.parse(_amountController.text.trim()),
-      categoryId: _selectedCategoryId,
+      categoryId: primaryCategoryId,
+      categoryIds: selectedIds.isEmpty ? null : selectedIds,
       startDate: startDate,
       endDate: endDate,
       rollover: _rollover,
@@ -2302,6 +2385,146 @@ class _PeriodToggle extends StatelessWidget {
           );
         }).toList(),
       ),
+    );
+  }
+}
+
+class _AutoMarqueeText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  final TextAlign textAlign;
+  final double gap;
+  final double pixelsPerSecond;
+
+  const _AutoMarqueeText({
+    required this.text,
+    required this.style,
+    this.textAlign = TextAlign.start,
+    this.gap = 28,
+    this.pixelsPerSecond = 28,
+  });
+
+  @override
+  State<_AutoMarqueeText> createState() => _AutoMarqueeTextState();
+}
+
+class _AutoMarqueeTextState extends State<_AutoMarqueeText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  Duration? _currentDuration;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _stopMarquee() {
+    if (_controller.isAnimating) {
+      _controller.stop();
+    }
+    _controller.value = 0;
+  }
+
+  void _startMarquee(double scrollDistance) {
+    if (scrollDistance <= 0 || !mounted) {
+      _stopMarquee();
+      return;
+    }
+    final millis = ((scrollDistance / widget.pixelsPerSecond) * 1000)
+        .round()
+        .clamp(3500, 24000)
+        .toInt();
+    final duration = Duration(milliseconds: millis);
+    if (_currentDuration != duration) {
+      _currentDuration = duration;
+      _controller.duration = duration;
+    }
+    if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.text.trim().isEmpty) {
+      _stopMarquee();
+      return const SizedBox.shrink();
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.maxWidth.isFinite || constraints.maxWidth <= 0) {
+          _stopMarquee();
+          return Text(
+            widget.text,
+            style: widget.style,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: widget.textAlign,
+          );
+        }
+
+        final painter = TextPainter(
+          text: TextSpan(text: widget.text, style: widget.style),
+          maxLines: 1,
+          textDirection: Directionality.of(context),
+        )..layout(maxWidth: double.infinity);
+
+        final textWidth = painter.width;
+        final shouldMarquee = textWidth > constraints.maxWidth + 0.5;
+
+        if (!shouldMarquee) {
+          _stopMarquee();
+          return Text(
+            widget.text,
+            style: widget.style,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: widget.textAlign,
+          );
+        }
+
+        final scrollDistance = textWidth + widget.gap;
+        _startMarquee(scrollDistance);
+
+        return ClipRect(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              final offsetX = -_controller.value * scrollDistance;
+              return Transform.translate(
+                offset: Offset(offsetX, 0),
+                child: child,
+              );
+            },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.text,
+                  style: widget.style,
+                  maxLines: 1,
+                  softWrap: false,
+                ),
+                SizedBox(width: widget.gap),
+                Text(
+                  widget.text,
+                  style: widget.style,
+                  maxLines: 1,
+                  softWrap: false,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -12,6 +12,7 @@ class BudgetService {
     required DateTime startDate,
     required DateTime endDate,
     int? categoryId,
+    List<int>? categoryIds,
   }) async {
     final transactions = await _transactionRepository.getTransactionsByDateRange(
       startDate,
@@ -19,9 +20,17 @@ class BudgetService {
       type: 'DEBIT', // Only count expenses
     );
 
-    if (categoryId != null) {
+    final ids = <int>{};
+    if (categoryIds != null) {
+      ids.addAll(categoryIds.where((id) => id > 0));
+    }
+    if (categoryId != null && categoryId > 0) {
+      ids.add(categoryId);
+    }
+
+    if (ids.isNotEmpty) {
       final filtered = transactions
-          .where((t) => t.categoryId == categoryId)
+          .where((t) => t.categoryId != null && ids.contains(t.categoryId))
           .toList();
       return filtered.fold<double>(0.0, (sum, t) => sum + t.amount.abs());
     }
@@ -38,6 +47,7 @@ class BudgetService {
       startDate: periodStart,
       endDate: periodEnd,
       categoryId: budget.categoryId,
+      categoryIds: budget.categoryIds,
     );
 
     final remaining = budget.amount - spent;

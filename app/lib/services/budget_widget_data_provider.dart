@@ -153,12 +153,23 @@ class BudgetWidgetDataProvider {
   }
 
   _BudgetGroup _groupForBudget(Budget budget, Map<int, Category> categoryById) {
-    final categoryId = budget.categoryId;
-    if (categoryId == null) return _BudgetGroup.needs;
+    final ids = budget.selectedCategoryIds;
+    if (ids.isEmpty) return _BudgetGroup.needs;
 
-    final category = categoryById[categoryId];
-    if (category == null) return _BudgetGroup.needs;
-    return category.essential ? _BudgetGroup.needs : _BudgetGroup.wants;
+    var hasWants = false;
+    var hasNeeds = false;
+    for (final id in ids) {
+      final category = categoryById[id];
+      if (category == null) continue;
+      if (category.essential) {
+        hasNeeds = true;
+      } else {
+        hasWants = true;
+      }
+    }
+    if (hasWants) return _BudgetGroup.wants;
+    if (hasNeeds) return _BudgetGroup.needs;
+    return _BudgetGroup.needs;
   }
 
   bool _matchesPeriod(Budget budget, String period) {

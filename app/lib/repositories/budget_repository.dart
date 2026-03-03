@@ -50,15 +50,8 @@ class BudgetRepository {
   }
 
   Future<List<Budget>> getBudgetsByCategory(int categoryId) async {
-    final db = await DatabaseHelper.instance.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'budgets',
-      where: 'categoryId = ? AND isActive = ?',
-      whereArgs: [categoryId, 1],
-      orderBy: 'createdAt DESC',
-    );
-
-    return maps.map<Budget>((map) => Budget.fromDb(map)).toList();
+    final budgets = await getActiveBudgets();
+    return budgets.where((b) => b.includesCategory(categoryId)).toList();
   }
 
   Future<Budget?> getBudgetById(int id) async {

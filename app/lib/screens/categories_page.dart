@@ -1,20 +1,10 @@
-import 'package:flutter/material.dart' hide Category;
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/models/category.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/utils/category_icons.dart';
-
-// ── Color helper ────────────────────────────────────────────────────────────
-Color _categoryColor(Category category) {
-  if (category.uncategorized) return AppColors.slate400;
-  final isIncome = category.flow.toLowerCase() == 'income';
-  if (isIncome)
-    return category.essential
-        ? AppColors.incomeSuccess
-        : const Color(0xFF14B8A6);
-  return category.essential ? AppColors.blue : AppColors.amber;
-}
+import 'package:totals/utils/category_style.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Categories Page
@@ -72,6 +62,7 @@ class _CategoriesPageState extends State<CategoriesPage>
           essential: isEssential,
           uncategorized: isUncategorized,
           iconKey: result.iconKey,
+          colorKey: result.colorKey,
           description: result.description,
           flow: result.flow,
           recurring: result.recurring,
@@ -83,6 +74,7 @@ class _CategoriesPageState extends State<CategoriesPage>
             essential: isEssential,
             uncategorized: isUncategorized,
             iconKey: result.iconKey,
+            colorKey: result.colorKey,
             description: result.description,
             flow: result.flow,
             recurring: result.recurring,
@@ -360,7 +352,7 @@ class _CategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = _categoryColor(category);
+    final color = categoryTypeColor(category, context);
     final description = (category.description ?? '').trim();
 
     return Material(
@@ -452,6 +444,7 @@ class _CategoryEditorResult {
   final String name;
   final CategoryType type;
   final String? iconKey;
+  final String? colorKey;
   final String? description;
   final String flow;
   final bool recurring;
@@ -460,6 +453,7 @@ class _CategoryEditorResult {
     required this.name,
     required this.type,
     required this.iconKey,
+    required this.colorKey,
     required this.description,
     required this.flow,
     required this.recurring,
@@ -487,6 +481,7 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
   late final TextEditingController _descriptionController;
   late CategoryType _categoryType;
   String? _iconKey;
+  String? _colorKey;
   late String _flow;
   late bool _recurring;
 
@@ -503,6 +498,12 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
             ? 'income'
             : 'expense';
     _recurring = widget.existing?.recurring ?? false;
+    _colorKey = resolvedCategoryColorKey(widget.existing ?? _draftCategory());
+    _colorKey ??= suggestedCategoryColorKey(
+      flow: _flow,
+      essential: _categoryType == CategoryType.essential,
+      uncategorized: _categoryType == CategoryType.uncategorized,
+    );
   }
 
   @override
@@ -519,10 +520,23 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
         name: _nameController.text,
         type: _categoryType,
         iconKey: _iconKey,
+        colorKey: _colorKey,
         description: _descriptionController.text,
         flow: _flow,
         recurring: _recurring,
       ),
+    );
+  }
+
+  Category _draftCategory() {
+    return Category(
+      name: _nameController.text.trim(),
+      essential: _categoryType == CategoryType.essential,
+      uncategorized: _categoryType == CategoryType.uncategorized,
+      iconKey: _iconKey,
+      colorKey: _colorKey,
+      flow: _flow,
+      recurring: _recurring,
     );
   }
 
@@ -595,6 +609,13 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
     final isEdit = widget.existing != null;
     final canDelete = isEdit && (widget.existing?.builtIn != true);
     final isIncome = _flow == 'income';
+    final selectedColorKey = _colorKey ??
+        suggestedCategoryColorKey(
+          flow: _flow,
+          essential: _categoryType == CategoryType.essential,
+          uncategorized: _categoryType == CategoryType.uncategorized,
+        );
+    final selectedCategoryColor = categoryColorFromKey(selectedColorKey);
 
     return Container(
       padding: EdgeInsets.fromLTRB(
@@ -715,8 +736,9 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
                   ? 'Primary income sources'
                   : 'Needs — used for spending insights',
               selected: _categoryType == CategoryType.essential,
-              onTap: () =>
-                  setState(() => _categoryType = CategoryType.essential),
+              onTap: () => setState(() {
+                _categoryType = CategoryType.essential;
+              }),
             ),
             const SizedBox(height: 8),
             _TypeOption(
@@ -725,16 +747,50 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
                   ? 'Secondary income sources'
                   : 'Wants — discretionary spending',
               selected: _categoryType == CategoryType.nonEssential,
-              onTap: () =>
-                  setState(() => _categoryType = CategoryType.nonEssential),
+              onTap: () => setState(() {
+                _categoryType = CategoryType.nonEssential;
+              }),
             ),
             const SizedBox(height: 8),
             _TypeOption(
               title: 'Uncategorized',
               subtitle: 'Catch-all or mixed transactions',
               selected: _categoryType == CategoryType.uncategorized,
-              onTap: () =>
-                  setState(() => _categoryType = CategoryType.uncategorized),
+              onTap: () => setState(() {
+                _categoryType = CategoryType.uncategorized;
+              }),
+            ),
+            const SizedBox(height: 16),
+
+            // Color picker
+            _buildLabel(context, 'Color'),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: categoryColorOptions.map((option) {
+                final selected = option.key == selectedColorKey;
+                return Tooltip(
+                  message: option.label,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _colorKey = option.key),
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: option.color,
+                        border: Border.all(
+                          color: selected
+                              ? AppColors.textPrimary(context)
+                              : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(growable: false),
             ),
             const SizedBox(height: 16),
 
@@ -786,7 +842,7 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
                       Switch(
                         value: _recurring,
                         onChanged: (v) => setState(() => _recurring = v),
-                        activeColor: AppColors.primaryLight,
+                        activeColor: selectedCategoryColor,
                       ),
                     ],
                   ),
@@ -823,7 +879,7 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
                       message: option.label,
                       child: Material(
                         color: selected
-                            ? AppColors.primaryLight.withValues(alpha: 0.12)
+                            ? selectedCategoryColor.withValues(alpha: 0.16)
                             : AppColors.surfaceColor(context),
                         borderRadius: BorderRadius.circular(10),
                         child: InkWell(
@@ -834,7 +890,7 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
                                 color: selected
-                                    ? AppColors.primaryLight
+                                    ? selectedCategoryColor
                                     : AppColors.borderColor(context),
                                 width: selected ? 2 : 1,
                               ),
@@ -844,7 +900,7 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
                               option.icon,
                               size: 20,
                               color: selected
-                                  ? AppColors.primaryLight
+                                  ? selectedCategoryColor
                                   : AppColors.textSecondary(context),
                             ),
                           ),

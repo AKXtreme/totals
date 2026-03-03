@@ -70,8 +70,9 @@ class TransactionTile extends StatelessWidget {
               : AppColors.cardColor(context),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color:
-                selected ? AppColors.primaryLight : AppColors.borderColor(context),
+            color: selected
+                ? AppColors.primaryLight
+                : AppColors.borderColor(context),
           ),
         ),
         child: InkWell(
@@ -263,11 +264,18 @@ class TransactionCategoryChip extends StatelessWidget {
     if (cat == null) {
       return isDebit ? AppColors.red : AppColors.incomeSuccess;
     }
-    final explicit = _extractColorKey(cat.iconKey);
+    final explicit =
+        _normalizeColorKey(cat.colorKey) ?? _extractColorKey(cat.iconKey);
     if (explicit != null) {
       return _colorFromKey(explicit);
     }
     return _kCategoryColorPalette[_fallbackColorIndex(cat)];
+  }
+
+  String? _normalizeColorKey(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    return trimmed;
   }
 
   String? _extractColorKey(String? iconKey) {
@@ -325,7 +333,8 @@ class _TileMarqueeTextState extends State<TileMarqueeText>
     _ticker = createTicker((elapsed) {
       _px.value =
           (elapsed.inMicroseconds * _pxPerSec / 1000000.0) % _scrollDistance;
-    })..start();
+    })
+      ..start();
   }
 
   @override
