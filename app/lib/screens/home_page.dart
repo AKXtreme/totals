@@ -32,6 +32,7 @@ import 'package:totals/widgets/category_filter_sheet.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:totals/services/bank_detection_startup_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -72,6 +73,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(BankDetectionStartupService.runOnAppOpen());
 
     _notificationIntentSub = NotificationIntentBus.instance.stream.listen(
       (intent) {

@@ -230,6 +230,16 @@ class SmsService {
     return bank != null;
   }
 
+  static String _normalizeSenderToken(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  static bool _addressMatchesCode(String normalizedAddress, String code) {
+    final normalizedCode = _normalizeSenderToken(code);
+    if (normalizedCode.isEmpty) return false;
+    return normalizedAddress.contains(normalizedCode);
+  }
+
   /// Identifies the bank associated with the sender address.
   static Future<Bank?> getRelevantBank(String? address) async {
     if (address == null) return null;
@@ -239,9 +249,12 @@ class SmsService {
       _cachedBanks = await _bankConfigService.getBanks();
     }
 
+    final normalizedAddress = _normalizeSenderToken(address);
+    if (normalizedAddress.isEmpty) return null;
+
     for (var bank in _cachedBanks!) {
       for (var code in bank.codes) {
-        if (address.contains(code)) {
+        if (_addressMatchesCode(normalizedAddress, code)) {
           return bank;
         }
       }

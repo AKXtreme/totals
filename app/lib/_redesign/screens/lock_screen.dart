@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/data/consts.dart';
 import 'package:totals/providers/transaction_provider.dart';
+import 'package:totals/services/bank_detection_startup_service.dart';
 
 class RedesignLockScreen extends StatefulWidget {
   final VoidCallback onUnlock;
@@ -23,6 +26,8 @@ class _RedesignLockScreenState extends State<RedesignLockScreen>
   @override
   void initState() {
     super.initState();
+    unawaited(BankDetectionStartupService.runOnAppOpen());
+
     _pulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),

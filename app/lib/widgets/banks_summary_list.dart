@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/models/bank.dart';
 import 'package:totals/models/summary_models.dart';
@@ -67,6 +68,12 @@ class _BanksSummaryListState extends State<BanksSummaryList> {
 
   Future<void> _loadUnregisteredBanks({bool forceRefresh = false}) async {
     try {
+      var permissionStatus = await Permission.sms.status;
+      if (!permissionStatus.isGranted) {
+        permissionStatus = await Permission.sms.request();
+      }
+      if (!permissionStatus.isGranted) return;
+
       final banks = await _detectionService.detectUnregisteredBanks(
         forceRefresh: forceRefresh,
       );

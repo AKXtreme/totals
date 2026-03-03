@@ -11,6 +11,7 @@ import 'package:totals/_redesign/screens/budget_page.dart';
 import 'package:totals/_redesign/screens/settings_page.dart';
 import 'package:totals/_redesign/screens/tools_page.dart';
 import 'package:totals/_redesign/widgets/redesign_bottom_nav.dart';
+import 'package:totals/services/bank_detection_startup_service.dart';
 import 'package:totals/services/widget_launch_intent_service.dart';
 
 class RedesignShell extends StatefulWidget {
@@ -38,6 +39,7 @@ class RedesignShellState extends State<RedesignShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(BankDetectionStartupService.runOnAppOpen());
 
     _widgetLaunchIntentSub = WidgetLaunchIntentService.instance.stream.listen(
       (target) {

@@ -65,6 +65,10 @@ class BankDetectionService {
   final BankConfigService _bankConfigService = BankConfigService();
   List<Bank>? _cachedBanks;
 
+  bool _hasDetectedBanksCache(List<DetectedBank>? banks) {
+    return banks != null && banks.isNotEmpty;
+  }
+
   /// Scans the SMS inbox and returns banks that the user has messages from
   /// but hasn't registered an account for yet.
   /// Uses cached results for faster loading. Scans SMS only when cache is empty
@@ -81,14 +85,16 @@ class BankDetectionService {
       // Try to get cached data first (unless force refresh)
       if (!forceRefresh) {
         final cachedBanks = await _getCachedBanks();
-        if (cachedBanks != null) {
+        if (_hasDetectedBanksCache(cachedBanks)) {
           // Filter out already registered banks from cache
-          final filtered = cachedBanks
+          final filtered = cachedBanks!
               .where((db) => !registeredBankIds.contains(db.bank.id))
               .toList();
 
           return filtered;
         }
+
+        print("debug: Detected banks cache is empty, scanning SMS inbox");
       }
 
       // No cache or force refresh - scan SMS
@@ -257,6 +263,16 @@ class BankDetectionService {
     return unregisteredBanks;
   }
 
+  String _normalizeSenderToken(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  bool _addressMatchesCode(String normalizedAddress, String code) {
+    final normalizedCode = _normalizeSenderToken(code);
+    if (normalizedCode.isEmpty) return false;
+    return normalizedAddress.contains(normalizedCode);
+  }
+
   /// Checks if the address matches any known bank and returns it
   Bank? _getMatchingBank(String address) {
     if (_cachedBanks == null) {
@@ -265,9 +281,12 @@ class BankDetectionService {
       return null;
     }
 
+    final normalizedAddress = _normalizeSenderToken(address);
+    if (normalizedAddress.isEmpty) return null;
+
     for (var bank in _cachedBanks!) {
       for (var code in bank.codes) {
-        if (address.contains(code)) {
+        if (_addressMatchesCode(normalizedAddress, code)) {
           return bank;
         }
       }
@@ -281,9 +300,11 @@ class BankDetectionService {
       // Try cache first
       if (!forceRefresh) {
         final cachedBanks = await _getCachedBanks();
-        if (cachedBanks != null) {
-          return cachedBanks;
+        if (_hasDetectedBanksCache(cachedBanks)) {
+          return cachedBanks!;
         }
+
+        print("debug: Detected banks cache is empty, scanning SMS inbox");
       }
 
       // Fetch banks from database (with caching)

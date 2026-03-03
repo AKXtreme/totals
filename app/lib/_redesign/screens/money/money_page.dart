@@ -2389,8 +2389,14 @@ class _BankGridState extends State<_BankGrid> with WidgetsBindingObserver {
 
   Future<void> _loadDetectedBanks({bool forceRefresh = false}) async {
     try {
-      final permissionStatus = await Permission.sms.status;
-      if (!permissionStatus.isGranted) return;
+      var permissionStatus = await Permission.sms.status;
+      if (!permissionStatus.isGranted) {
+        permissionStatus = await Permission.sms.request();
+      }
+      if (!permissionStatus.isGranted) {
+        _awaitingPermission = true;
+        return;
+      }
 
       final banks = await _detectionService.detectUnregisteredBanks(
         forceRefresh: forceRefresh,
