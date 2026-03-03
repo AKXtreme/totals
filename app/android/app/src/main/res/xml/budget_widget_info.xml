@@ -8,4 +8,4 @@
     android:initialLayout="@layout/widget_budget_layout"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
-    android:previewImage="@mipmap/ic_launcher" />
+    android:previewImage="@drawable/widget_budget_preview" />

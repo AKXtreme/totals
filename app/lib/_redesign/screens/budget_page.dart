@@ -13,7 +13,6 @@ import 'package:totals/models/category.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/budget_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
-import 'package:totals/utils/category_icons.dart';
 import 'package:totals/utils/text_utils.dart';
 
 // ── Color palette for budget items ──────────────────────────────────────────
@@ -35,6 +34,38 @@ Color _colorForCategory(int? categoryId) {
   if (categoryId == null) return _kCategoryColors[0];
   return _kCategoryColors[categoryId % _kCategoryColors.length];
 }
+
+class _BudgetCategoryColorOption {
+  final String key;
+  final Color color;
+
+  const _BudgetCategoryColorOption({
+    required this.key,
+    required this.color,
+  });
+}
+
+const List<_BudgetCategoryColorOption> _kBudgetCategoryColorOptions = [
+  _BudgetCategoryColorOption(key: 'blue', color: AppColors.blue),
+  _BudgetCategoryColorOption(key: 'emerald', color: AppColors.incomeSuccess),
+  _BudgetCategoryColorOption(key: 'amber', color: AppColors.amber),
+  _BudgetCategoryColorOption(key: 'red', color: AppColors.red),
+  _BudgetCategoryColorOption(key: 'rose', color: Color(0xFFFB7185)),
+  _BudgetCategoryColorOption(key: 'magenta', color: Color(0xFFD946EF)),
+  _BudgetCategoryColorOption(key: 'violet', color: Color(0xFF8B5CF6)),
+  _BudgetCategoryColorOption(key: 'indigo', color: Color(0xFF6366F1)),
+  _BudgetCategoryColorOption(key: 'teal', color: Color(0xFF14B8A6)),
+  _BudgetCategoryColorOption(key: 'mint', color: Color(0xFF34D399)),
+  _BudgetCategoryColorOption(key: 'orange', color: Color(0xFFF97316)),
+  _BudgetCategoryColorOption(key: 'tangerine', color: Color(0xFFFF8C42)),
+  _BudgetCategoryColorOption(key: 'yellow', color: Color(0xFFEAB308)),
+  _BudgetCategoryColorOption(key: 'cyan', color: Color(0xFF06B6D4)),
+  _BudgetCategoryColorOption(key: 'sky', color: Color(0xFF0EA5E9)),
+  _BudgetCategoryColorOption(key: 'lime', color: Color(0xFF84CC16)),
+  _BudgetCategoryColorOption(key: 'pink', color: Color(0xFFEC4899)),
+  _BudgetCategoryColorOption(key: 'brown', color: Color(0xFFA16207)),
+  _BudgetCategoryColorOption(key: 'gray', color: Color(0xFF6B7280)),
+];
 
 // ── Compact amount formatter ────────────────────────────────────────────────
 
@@ -1230,6 +1261,13 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   int? _selectedCategoryId;
   late bool _rollover;
   bool _isSaving = false;
+  bool _showNewCategoryComposer = false;
+  bool _showCategoryColorChoices = false;
+  String _draftCategoryColorKey = _kBudgetCategoryColorOptions.first.key;
+  final TextEditingController _newCategoryController = TextEditingController();
+  final FocusNode _newCategoryFocus = FocusNode();
+  final ScrollController _formScrollController = ScrollController();
+  double _lastKeyboardInset = 0;
 
   bool get _isEdit => widget.existing != null;
 
@@ -1271,6 +1309,9 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     _nameController.dispose();
     _amountController.dispose();
     _alertController.dispose();
+    _newCategoryController.dispose();
+    _newCategoryFocus.dispose();
+    _formScrollController.dispose();
     super.dispose();
   }
 
@@ -1282,11 +1323,177 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
         .toList();
   }
 
+  String _serializeColorKey(String colorKey) => 'color:$colorKey';
+
+  String? _extractColorKey(String? iconKey) {
+    if (iconKey == null || iconKey.isEmpty) return null;
+    const prefix = 'color:';
+    if (!iconKey.startsWith(prefix)) return null;
+    final value = iconKey.substring(prefix.length).trim();
+    if (value.isEmpty) return null;
+    return value;
+  }
+
+  Color _colorFromKey(String colorKey) {
+    for (final option in _kBudgetCategoryColorOptions) {
+      if (option.key == colorKey) return option.color;
+    }
+    return _kBudgetCategoryColorOptions.first.color;
+  }
+
+  int _fallbackColorIndex(Category category) {
+    final seed = '${category.flow}:${category.name.toLowerCase()}';
+    int hash = 0;
+    for (final code in seed.codeUnits) {
+      hash = (hash + code) & 0x7fffffff;
+    }
+    return hash % _kBudgetCategoryColorOptions.length;
+  }
+
+  Color _categoryChipColor(Category category) {
+    final explicitColorKey = _extractColorKey(category.iconKey);
+    if (explicitColorKey != null) {
+      return _colorFromKey(explicitColorKey);
+    }
+    return _kBudgetCategoryColorOptions[_fallbackColorIndex(category)].color;
+  }
+
+  Category? _findCategoryByName({
+    required String name,
+    required String flow,
+    Set<int>? excludeIds,
+  }) {
+    final normalizedName = name.trim().toLowerCase();
+    final normalizedFlow = flow.toLowerCase();
+    return widget.transactionProvider.categories
+        .where((c) =>
+            c.flow.toLowerCase() == normalizedFlow &&
+            c.name.trim().toLowerCase() == normalizedName &&
+            (c.id == null || !(excludeIds?.contains(c.id) ?? false)))
+        .fold<Category?>(
+          null,
+          (best, current) =>
+              best == null || (current.id ?? 0) > (best.id ?? 0)
+                  ? current
+                  : best,
+        );
+  }
+
+  bool _categoryExistsForFlow({
+    required String name,
+    required String flow,
+  }) {
+    return _findCategoryByName(name: name, flow: flow) != null;
+  }
+
+  void _toggleNewCategoryComposer() {
+    final shouldShow = !_showNewCategoryComposer;
+    setState(() {
+      _showNewCategoryComposer = shouldShow;
+      _showCategoryColorChoices = false;
+      if (!shouldShow) {
+        _newCategoryController.clear();
+      }
+    });
+    if (shouldShow) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _newCategoryFocus.requestFocus();
+        _scrollComposerIntoView();
+      });
+    } else {
+      _newCategoryFocus.unfocus();
+    }
+  }
+
+  void _toggleColorChoices() {
+    final willOpen = !_showCategoryColorChoices;
+    setState(() => _showCategoryColorChoices = willOpen);
+    if (willOpen) _scrollComposerIntoView();
+  }
+
+  void _scrollComposerIntoView() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_formScrollController.hasClients) return;
+      final maxExtent = _formScrollController.position.maxScrollExtent;
+      final target = (maxExtent - 36).clamp(0.0, maxExtent).toDouble();
+      _formScrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  Future<void> _createCategoryInline() async {
+    final createdName = _newCategoryController.text.trim();
+    if (createdName.isEmpty) return;
+    const flow = 'expense';
+    if (_categoryExistsForFlow(name: createdName, flow: flow)) {
+      _newCategoryFocus.requestFocus();
+      setState(() {});
+      return;
+    }
+
+    final knownCategoryIds = widget.transactionProvider.categories
+        .map((c) => c.id)
+        .whereType<int>()
+        .toSet();
+    final isEssential = _selectedGroup == 'needs';
+
+    try {
+      await widget.transactionProvider.createCategory(
+        name: createdName,
+        essential: isEssential,
+        flow: flow,
+        iconKey: _serializeColorKey(_draftCategoryColorKey),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final message = error.toString().toLowerCase();
+      if (message.contains('unique') ||
+          message.contains('constraint') ||
+          message.contains('already exists')) {
+        _newCategoryFocus.requestFocus();
+        setState(() {});
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not create category')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final createdCategory = _findCategoryByName(
+      name: createdName,
+      flow: flow,
+      excludeIds: knownCategoryIds,
+    );
+    final target =
+        createdCategory ?? _findCategoryByName(name: createdName, flow: flow);
+
+    setState(() {
+      _showNewCategoryComposer = false;
+      _showCategoryColorChoices = false;
+      _newCategoryController.clear();
+      _selectedCategoryId = target?.id;
+    });
+    _newCategoryFocus.unfocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final expenseCategories = _filteredCategories;
+    final keyboardScrollBuffer = bottomInset > 0 && _showNewCategoryComposer
+        ? (_showCategoryColorChoices ? 60.0 : 40.0)
+        : 0.0;
+    if (bottomInset > _lastKeyboardInset && _showNewCategoryComposer) {
+      _scrollComposerIntoView();
+    }
+    _lastKeyboardInset = bottomInset;
 
     return Container(
       constraints: BoxConstraints(
@@ -1332,7 +1539,13 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
             Divider(height: 1, color: AppColors.borderColor(context)),
             Flexible(
               child: SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
+                controller: _formScrollController,
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  24 + bottomInset + keyboardScrollBuffer,
+                ),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -1392,15 +1605,21 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                       const SizedBox(height: 6),
                       _GroupToggle(
                         selected: _selectedGroup,
-                        onChanged: (v) => setState(() {
-                          _selectedGroup = v;
-                          // Reset category when group changes
-                          if (_selectedCategoryId != null &&
-                              !_filteredCategories
-                                  .any((c) => c.id == _selectedCategoryId)) {
-                            _selectedCategoryId = null;
-                          }
-                        }),
+                        onChanged: (v) {
+                          _newCategoryFocus.unfocus();
+                          setState(() {
+                            _selectedGroup = v;
+                            _showNewCategoryComposer = false;
+                            _showCategoryColorChoices = false;
+                            _newCategoryController.clear();
+                            // Reset category when group changes
+                            if (_selectedCategoryId != null &&
+                                !_filteredCategories
+                                    .any((c) => c.id == _selectedCategoryId)) {
+                              _selectedCategoryId = null;
+                            }
+                          });
+                        },
                       ),
                       const SizedBox(height: 16),
 
@@ -1429,36 +1648,40 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      SizedBox(
-                        height: 36,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          children: [
-                            _CategoryChipButton(
-                              label: 'None',
-                              icon: null,
-                              selected: _selectedCategoryId == null,
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _CategoryChipButton(
+                            label: 'None',
+                            color: AppColors.textTertiary(context),
+                            selected: _selectedCategoryId == null,
+                            showColorDot: false,
+                            onTap: () =>
+                                setState(() => _selectedCategoryId = null),
+                          ),
+                          ...expenseCategories.map((cat) {
+                            return _CategoryChipButton(
+                              label: cat.name,
+                              color: _categoryChipColor(cat),
+                              selected: _selectedCategoryId == cat.id,
                               onTap: () =>
-                                  setState(() => _selectedCategoryId = null),
-                            ),
-                            ...expenseCategories.map((cat) {
-                              return _CategoryChipButton(
-                                label: cat.name,
-                                icon: iconForCategoryKey(cat.iconKey),
-                                selected: _selectedCategoryId == cat.id,
-                                onTap: () => setState(
-                                    () => _selectedCategoryId = cat.id),
-                              );
-                            }),
-                            _CategoryChipButton(
-                              label: '+ New',
-                              icon: null,
-                              selected: false,
-                              onTap: () => _showCreateCategoryDialog(context),
-                            ),
-                          ],
-                        ),
+                                  setState(() => _selectedCategoryId = cat.id),
+                            );
+                          }),
+                          _CategoryChipButton(
+                            label: _showNewCategoryComposer ? 'Cancel' : '+ New',
+                            color: _showNewCategoryComposer
+                                ? AppColors.red
+                                : AppColors.textSecondary(context),
+                            selected: false,
+                            showColorDot: false,
+                            isAction: true,
+                            onTap: _toggleNewCategoryComposer,
+                          ),
+                        ],
                       ),
+                      if (_showNewCategoryComposer) _buildNewCategoryComposer(),
                       const SizedBox(height: 16),
 
                       // Alert threshold
@@ -1584,92 +1807,162 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     );
   }
 
-  Future<void> _showCreateCategoryDialog(BuildContext context) async {
-    String draftName = '';
-    final isEssential = _selectedGroup == 'needs';
+  Widget _buildNewCategoryComposer() {
+    final selectedColor = _colorFromKey(_draftCategoryColorKey);
+    const flow = 'expense';
+    final draftName = _newCategoryController.text.trim();
+    final isDuplicateName =
+        draftName.isNotEmpty && _categoryExistsForFlow(name: draftName, flow: flow);
+    final canSubmit = draftName.isNotEmpty && !isDuplicateName;
+    final textFieldBorderColor =
+        isDuplicateName ? AppColors.red : AppColors.borderColor(context);
+    final focusedBorderColor =
+        isDuplicateName ? AppColors.red : AppColors.primaryLight;
 
-    final created = await showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: AppColors.cardColor(ctx),
-          title: Text(
-            'New Category',
-            style: TextStyle(color: AppColors.textPrimary(ctx)),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Text(
-                'Group: ${isEssential ? 'Needs' : 'Wants'}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary(ctx),
+              Expanded(
+                child: TextField(
+                  controller: _newCategoryController,
+                  focusNode: _newCategoryFocus,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.done,
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) => _createCategoryInline(),
+                  style: TextStyle(
+                    color: AppColors.textPrimary(context),
+                    fontSize: 14,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Category name',
+                    hintStyle: TextStyle(color: AppColors.textTertiary(context)),
+                    filled: true,
+                    fillColor: AppColors.surfaceColor(context),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: textFieldBorderColor),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: textFieldBorderColor),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: focusedBorderColor,
+                        width: 1.2,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Category name',
-                  hintStyle: TextStyle(color: AppColors.textTertiary(ctx)),
-                  filled: true,
-                  fillColor: AppColors.surfaceColor(ctx),
-                  border: OutlineInputBorder(
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _toggleColorChoices,
+                child: Container(
+                  height: 40,
+                  width: 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceColor(context),
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
+                    border: Border.all(color: AppColors.borderColor(context)),
                   ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: selectedColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      Icon(
+                        _showCategoryColorChoices
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                        size: 16,
+                        color: AppColors.textSecondary(context),
+                      ),
+                    ],
+                  ),
                 ),
-                style: TextStyle(color: AppColors.textPrimary(ctx)),
-                onChanged: (value) => draftName = value,
-                onSubmitted: (value) {
-                  final name = value.trim();
-                  if (name.isNotEmpty) {
-                    Navigator.pop(ctx, name);
-                  }
-                },
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 40,
+                child: ElevatedButton(
+                  onPressed: canSubmit ? _createCategoryInline : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryDark,
+                    foregroundColor: AppColors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    'Add',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(
-                'Cancel',
-                style: TextStyle(color: AppColors.textSecondary(ctx)),
+          if (_showCategoryColorChoices) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 30,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _kBudgetCategoryColorOptions.map((option) {
+                    final selected = option.key == _draftCategoryColorKey;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _draftCategoryColorKey = option.key;
+                            _showCategoryColorChoices = false;
+                          });
+                        },
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: option.color,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: selected
+                                  ? AppColors.textPrimary(context)
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(growable: false),
+                ),
               ),
             ),
-            TextButton(
-              onPressed: () {
-                final name = draftName.trim();
-                if (name.isNotEmpty) {
-                  Navigator.pop(ctx, name);
-                }
-              },
-              child: const Text('Create'),
-            ),
           ],
-        );
-      },
+        ],
+      ),
     );
-
-    if (created != null && created.isNotEmpty) {
-      await widget.transactionProvider.createCategory(
-        name: created,
-        essential: isEssential,
-        flow: 'expense',
-      );
-      if (mounted) {
-        final newCats = _filteredCategories;
-        final match = newCats.where((c) => c.name == created);
-        if (match.isNotEmpty) {
-          setState(() => _selectedCategoryId = match.first.id);
-        }
-      }
-    }
   }
 
   InputDecoration _inputDecoration(BuildContext context, String hint) {
@@ -1873,50 +2166,66 @@ class _PeriodToggle extends StatelessWidget {
 
 class _CategoryChipButton extends StatelessWidget {
   final String label;
-  final IconData? icon;
+  final Color color;
   final bool selected;
+  final bool showColorDot;
+  final bool isAction;
   final VoidCallback onTap;
 
   const _CategoryChipButton({
     required this.label,
-    required this.icon,
+    required this.color,
     required this.selected,
+    this.showColorDot = true,
+    this.isAction = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final bg = selected ? AppColors.primaryLight : AppColors.mutedFill(context);
-    final fg = selected ? AppColors.white : AppColors.textSecondary(context);
+    final bg = selected ? color.withValues(alpha: 0.15) : Colors.transparent;
+    final border = selected ? color : AppColors.borderColor(context);
+    final textColor =
+        isAction ? color : (selected ? color : AppColors.textPrimary(context));
 
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, size: 14, color: fg),
-                const SizedBox(width: 4),
-              ],
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: fg,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showColorDot) ...[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
                 ),
               ),
+              const SizedBox(width: 6),
             ],
-          ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 120),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: textColor,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+              ),
+            ),
+          ],
         ),
       ),
     );

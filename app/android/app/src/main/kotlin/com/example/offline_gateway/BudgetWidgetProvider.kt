@@ -197,11 +197,7 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
 
             views.setTextColor(
                 R.id.budget_available_value,
-                if (availableRaw < 0.0) {
-                    ContextCompat.getColor(context, R.color.budget_widget_available_negative)
-                } else {
-                    ContextCompat.getColor(context, R.color.budget_widget_available_positive)
-                }
+                ContextCompat.getColor(context, R.color.budget_widget_value)
             )
             views.setTextColor(
                 R.id.budget_needs_value,
