@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
-import 'package:totals/constants/cash_constants.dart';
-import 'package:totals/data/consts.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/utils/text_utils.dart';
@@ -137,7 +135,7 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
                   itemCount: transactions.length,
                   itemBuilder: (context, index) {
                     final tx = transactions[index];
-                    final bankLabel = _bankLabel(tx.bankId);
+                    final bankLabel = provider.getBankShortName(tx.bankId);
                     final category =
                         provider.getCategoryById(tx.categoryId);
                     final isSelfTransfer =
@@ -183,17 +181,6 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-String _bankLabel(int? bankId) {
-  if (bankId == null) return 'Bank';
-  if (bankId == CashConstants.bankId) return CashConstants.bankShortName;
-  try {
-    final bank = AppConstants.banks.firstWhere((b) => b.id == bankId);
-    return bank.shortName;
-  } catch (_) {
-    return 'Bank $bankId';
-  }
-}
-
 String _amountLabel(double amount, {required bool isCredit}) {
   final formatted = formatNumberWithComma(amount);
   return '${isCredit ? '+' : '-'} ETB $formatted';
@@ -218,4 +205,3 @@ String _timeLabel(Transaction tx) {
     return '';
   }
 }
-

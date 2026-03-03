@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
-import 'package:totals/constants/cash_constants.dart';
-import 'package:totals/data/consts.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/_redesign/screens/redesign_shell.dart';
@@ -179,7 +177,8 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                       const _EmptyTransactions()
                     else
                       ...todayList.map((transaction) {
-                        final bankLabel = _bankLabel(transaction.bankId);
+                        final bankLabel =
+                            provider.getBankShortName(transaction.bankId);
                         final category =
                             provider.getCategoryById(transaction.categoryId);
                         final isSelfTransfer =
@@ -315,17 +314,6 @@ String _formatEtbValue(double value) {
 String _formatSignedEtb(double value) {
   final prefix = value >= 0 ? '+' : '-';
   return '$prefix ETB ${_formatEtbValue(value.abs())}';
-}
-
-String _bankLabel(int? bankId) {
-  if (bankId == null) return 'Bank';
-  if (bankId == CashConstants.bankId) return CashConstants.bankShortName;
-  try {
-    final bank = AppConstants.banks.firstWhere((b) => b.id == bankId);
-    return bank.shortName;
-  } catch (_) {
-    return 'Bank $bankId';
-  }
 }
 
 String _amountLabel(double amount, {required bool isCredit}) {
@@ -1306,7 +1294,7 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
                         final amountColor =
                             isCredit ? AppColors.incomeSuccess : AppColors.red;
                         final name = _transactionCounterparty(txn);
-                        final bank = _bankLabel(txn.bankId);
+                        final bank = widget.provider.getBankShortName(txn.bankId);
                         final dt = _parseTransactionTime(txn.time);
                         final timeStr = dt != null ? _formatTime(dt) : '';
                         final bal = double.tryParse(txn.currentBalance ?? '');

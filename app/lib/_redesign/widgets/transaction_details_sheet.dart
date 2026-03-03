@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
-import 'package:totals/constants/cash_constants.dart';
-import 'package:totals/data/consts.dart';
 import 'package:totals/models/category.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
@@ -64,25 +62,11 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   }
 
   String get _bankFullName {
-    final id = _tx.bankId;
-    if (id == null) return 'Unknown';
-    if (id == CashConstants.bankId) return CashConstants.bankName;
-    try {
-      return AppConstants.banks.firstWhere((b) => b.id == id).name;
-    } catch (_) {
-      return 'Bank $id';
-    }
+    return _provider.getBankName(_tx.bankId);
   }
 
   String get _bankShortName {
-    final id = _tx.bankId;
-    if (id == null) return 'Bank';
-    if (id == CashConstants.bankId) return CashConstants.bankShortName;
-    try {
-      return AppConstants.banks.firstWhere((b) => b.id == id).shortName;
-    } catch (_) {
-      return 'Bank $id';
-    }
+    return _provider.getBankShortName(_tx.bankId);
   }
 
   String get _formattedAmount {

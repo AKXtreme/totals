@@ -7,6 +7,7 @@ import 'package:totals/models/user_account.dart';
 import 'package:totals/widgets/add_user_account_form.dart';
 import 'package:totals/screens/account_share_qr_page.dart';
 import 'package:totals/screens/account_share_scan_page.dart';
+import 'package:totals/services/bank_config_service.dart';
 
 class AccountsPage extends StatefulWidget {
   const AccountsPage({super.key});
@@ -17,6 +18,7 @@ class AccountsPage extends StatefulWidget {
 
 class _AccountsPageState extends State<AccountsPage> {
   final UserAccountRepository _userAccountRepo = UserAccountRepository();
+  final BankConfigService _bankConfigService = BankConfigService();
   final TextEditingController _searchController = TextEditingController();
   List<Bank> _banks = [];
   List<UserAccount> _userAccounts = [];
@@ -46,8 +48,14 @@ class _AccountsPageState extends State<AccountsPage> {
       _isLoading = true;
     });
     try {
-      // Load all banks from assets (same as form uses)
-      _banks = AllBanksFromAssets.getAllBanks();
+      final configuredBanks = await _bankConfigService.getBanks();
+      final mergedBanksById = <int, Bank>{
+        for (final bank in configuredBanks) bank.id: bank,
+      };
+      for (final legacyBank in AllBanksFromAssets.getAllBanks()) {
+        mergedBanksById.putIfAbsent(legacyBank.id, () => legacyBank);
+      }
+      _banks = mergedBanksById.values.toList();
 
       // Load user accounts
       final accounts = await _userAccountRepo.getUserAccounts();

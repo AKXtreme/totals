@@ -72,7 +72,30 @@ Color _progressColorForUsage({
 
 // ── Bank label helper ───────────────────────────────────────────────────────
 
-final List<bank_model.Bank> _assetBanks = AllBanksFromAssets.getAllBanks();
+final List<bank_model.Bank> _assetBanks = _buildAssetBanks();
+
+bank_model.Bank _canonicalMpesaBank({int id = 8}) {
+  return bank_model.Bank(
+    id: id,
+    name: 'M Pesa',
+    shortName: 'MPESA',
+    codes: ['MPESA', 'M-Pesa', 'Mpesa'],
+    image: 'assets/images/mpesa.png',
+    uniformMasking: false,
+    simBased: true,
+  );
+}
+
+List<bank_model.Bank> _buildAssetBanks() {
+  final banks = List<bank_model.Bank>.from(AllBanksFromAssets.getAllBanks());
+  final mpesaIndex = banks.indexWhere((bank) => bank.id == 8);
+  if (mpesaIndex >= 0) {
+    banks[mpesaIndex] = _canonicalMpesaBank();
+  } else {
+    banks.insert(0, _canonicalMpesaBank());
+  }
+  return banks;
+}
 
 String _bankLabel(int? bankId) {
   if (bankId == null) return 'Bank';

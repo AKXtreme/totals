@@ -32,7 +32,62 @@ enum _TopTab { activity, accounts }
 
 enum _SubTab { transactions, analytics, ledger }
 
-final List<bank_model.Bank> _assetBanks = AllBanksFromAssets.getAllBanks();
+final List<bank_model.Bank> _assetBanks = _buildAssetBanks();
+
+bank_model.Bank _canonicalMpesaBank({int id = 8}) {
+  return bank_model.Bank(
+    id: id,
+    name: 'M Pesa',
+    shortName: 'MPESA',
+    codes: ['MPESA', 'M-Pesa', 'Mpesa'],
+    image: 'assets/images/mpesa.png',
+    uniformMasking: false,
+    simBased: true,
+  );
+}
+
+List<bank_model.Bank> _buildAssetBanks() {
+  final banks = List<bank_model.Bank>.from(AllBanksFromAssets.getAllBanks());
+  final mpesaIndex = banks.indexWhere((bank) => bank.id == 8);
+  if (mpesaIndex >= 0) {
+    banks[mpesaIndex] = _canonicalMpesaBank();
+  } else {
+    banks.insert(0, _canonicalMpesaBank());
+  }
+  return banks;
+}
+
+String _normalizeBankToken(String value) {
+  return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+}
+
+String _bankDedupeKey(bank_model.Bank bank) {
+  final short = _normalizeBankToken(bank.shortName);
+  final name = _normalizeBankToken(bank.name);
+  if (short.contains('mpesa') || name.contains('mpesa')) {
+    return 'mpesa';
+  }
+  if (short.isNotEmpty) return short;
+  if (name.isNotEmpty) return name;
+  return bank.image.toLowerCase();
+}
+
+List<bank_model.Bank> _dedupeBanksForSelection(List<bank_model.Bank> banks) {
+  final dedupedByKey = <String, bank_model.Bank>{};
+  for (final bank in banks) {
+    final key = _bankDedupeKey(bank);
+    final existing = dedupedByKey[key];
+    if (existing == null) {
+      dedupedByKey[key] = bank;
+      continue;
+    }
+
+    final shouldReplace = (bank.id == 8 && existing.id != 8) ||
+        (existing.id != 8 && bank.id < existing.id);
+    if (shouldReplace) dedupedByKey[key] = bank;
+  }
+  return dedupedByKey.values.toList();
+}
 
 /// Filter state passed from the filter bottom sheet.
 class _TransactionFilter {
@@ -3471,7 +3526,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   }
 
   void _loadBanks() {
-    final banks = List<bank_model.Bank>.from(AllBanksFromAssets.getAllBanks());
+    final banks = List<bank_model.Bank>.from(_assetBanks);
     final initialBank = widget.initialBank;
     if (initialBank != null) {
       final existingIndex = banks.indexWhere((bank) => bank.id == initialBank.id);
@@ -3481,17 +3536,18 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
         banks.insert(0, initialBank);
       }
     }
+    final dedupedBanks = _dedupeBanksForSelection(banks);
     if (mounted) {
       setState(() {
-        _banks = banks;
-        if (banks.isEmpty) {
+        _banks = dedupedBanks;
+        if (dedupedBanks.isEmpty) {
           _selectedBankId = null;
           return;
         }
         final hasInitialBank = widget.initialBankId != null &&
-            banks.any((bank) => bank.id == widget.initialBankId);
+            dedupedBanks.any((bank) => bank.id == widget.initialBankId);
         _selectedBankId =
-            hasInitialBank ? widget.initialBankId : banks.first.id;
+            hasInitialBank ? widget.initialBankId : dedupedBanks.first.id;
       });
     }
   }

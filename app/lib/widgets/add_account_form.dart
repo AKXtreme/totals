@@ -37,15 +37,47 @@ class _RegisterAccountFormState extends State<RegisterAccountForm> {
     _loadBanks();
   }
 
+  String _normalizeBankToken(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  String _bankDedupeKey(Bank bank) {
+    final short = _normalizeBankToken(bank.shortName);
+    final name = _normalizeBankToken(bank.name);
+    if (short.contains('mpesa') || name.contains('mpesa')) {
+      return 'mpesa';
+    }
+    if (short.isNotEmpty) return short;
+    if (name.isNotEmpty) return name;
+    return bank.image.toLowerCase();
+  }
+
+  List<Bank> _dedupeBanks(List<Bank> banks) {
+    final dedupedByKey = <String, Bank>{};
+    for (final bank in banks) {
+      final key = _bankDedupeKey(bank);
+      final existing = dedupedByKey[key];
+      if (existing == null) {
+        dedupedByKey[key] = bank;
+        continue;
+      }
+
+      final shouldReplace = key == 'mpesa' && bank.id == 8 && existing.id != 8;
+      if (shouldReplace) dedupedByKey[key] = bank;
+    }
+    return dedupedByKey.values.toList();
+  }
+
   Future<void> _loadBanks() async {
     try {
-      final banks = await _bankConfigService.getBanks();
+      final banks = _dedupeBanks(await _bankConfigService.getBanks());
       if (mounted) {
         setState(() {
           _banks = banks;
           _isLoadingBanks = false;
           // Use initial bank ID if provided, otherwise default to first bank or 1
-          if (widget.initialBankId != null) {
+          if (widget.initialBankId != null &&
+              banks.any((bank) => bank.id == widget.initialBankId)) {
             selected_bank = widget.initialBankId!;
           } else if (banks.isNotEmpty) {
             selected_bank = banks.first.id;
@@ -246,7 +278,7 @@ class _RegisterAccountFormState extends State<RegisterAccountForm> {
                                       ),
                                       const SizedBox(height: 12),
                                       Text(
-                                        bank.shortName, // Use shortName for Grid
+                                        bank.shortName,
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           fontSize: 13,

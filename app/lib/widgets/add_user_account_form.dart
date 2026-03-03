@@ -4,6 +4,7 @@ import 'package:totals/models/bank.dart';
 import 'package:totals/data/all_banks_from_assets.dart';
 import 'package:totals/repositories/user_account_repository.dart';
 import 'package:totals/models/user_account.dart';
+import 'package:totals/services/bank_config_service.dart';
 
 class AddUserAccountForm extends StatefulWidget {
   final void Function() onAccountAdded;
@@ -21,10 +22,11 @@ class _AddUserAccountFormState extends State<AddUserAccountForm> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _accountNumber = TextEditingController();
   final TextEditingController _accountHolderName = TextEditingController();
+  final BankConfigService _bankConfigService = BankConfigService();
   int? selected_bank;
   bool isFormValid = false;
   List<Bank> _banks = [];
-  bool _isLoadingBanks = false;
+  bool _isLoadingBanks = true;
 
   @override
   void initState() {
@@ -41,16 +43,71 @@ class _AddUserAccountFormState extends State<AddUserAccountForm> {
     super.dispose();
   }
 
-  void _loadBanks() {
-    final banks = AllBanksFromAssets.getAllBanks();
-    if (mounted) {
-      setState(() {
-        _banks = banks;
-        _isLoadingBanks = false;
-        if (banks.isNotEmpty) {
-          selected_bank = banks.first.id;
-        }
-      });
+  String _normalizeBankToken(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  String _bankDedupeKey(Bank bank) {
+    final short = _normalizeBankToken(bank.shortName);
+    final name = _normalizeBankToken(bank.name);
+    if (short.contains('mpesa') || name.contains('mpesa')) {
+      return 'mpesa';
+    }
+    if (short.isNotEmpty) return short;
+    if (name.isNotEmpty) return name;
+    return bank.image.toLowerCase();
+  }
+
+  List<Bank> _dedupeBanks(List<Bank> banks) {
+    final dedupedByKey = <String, Bank>{};
+    for (final bank in banks) {
+      final key = _bankDedupeKey(bank);
+      final existing = dedupedByKey[key];
+      if (existing == null) {
+        dedupedByKey[key] = bank;
+        continue;
+      }
+
+      final shouldReplace = key == 'mpesa' && bank.id == 8 && existing.id != 8;
+      if (shouldReplace) dedupedByKey[key] = bank;
+    }
+    return dedupedByKey.values.toList();
+  }
+
+  Future<void> _loadBanks() async {
+    try {
+      final configuredBanks = await _bankConfigService.getBanks();
+      final mergedById = <int, Bank>{
+        for (final bank in configuredBanks) bank.id: bank,
+      };
+      for (final legacyBank in AllBanksFromAssets.getAllBanks()) {
+        mergedById.putIfAbsent(legacyBank.id, () => legacyBank);
+      }
+      final banks = _dedupeBanks(mergedById.values.toList());
+      if (mounted) {
+        setState(() {
+          _banks = banks;
+          _isLoadingBanks = false;
+          if (banks.isEmpty) {
+            selected_bank = null;
+          } else if (selected_bank == null ||
+              !banks.any((bank) => bank.id == selected_bank)) {
+            selected_bank = banks.first.id;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _banks = _dedupeBanks(AllBanksFromAssets.getAllBanks());
+          _isLoadingBanks = false;
+          if (_banks.isEmpty) {
+            selected_bank = null;
+          } else {
+            selected_bank = _banks.first.id;
+          }
+        });
+      }
     }
   }
 

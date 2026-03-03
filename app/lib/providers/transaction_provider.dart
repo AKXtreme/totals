@@ -74,6 +74,12 @@ class TransactionProvider with ChangeNotifier {
   List<Category> _categories = [];
   Map<int, Category> _categoryById = {};
   Map<String, String> _selfTransferLabelByReference = {};
+  Map<int, String> _bankNamesById = {
+    CashConstants.bankId: CashConstants.bankName,
+  };
+  Map<int, String> _bankShortNamesById = {
+    CashConstants.bankId: CashConstants.bankShortName,
+  };
 
   // Summaries
   AllSummary? _summary;
@@ -120,6 +126,20 @@ class TransactionProvider with ChangeNotifier {
   TransactionTrendSeries get weekTrendSeries => _weekTrendSeries;
   TransactionTrendSeries get monthTrendSeries => _monthTrendSeries;
   int get dataVersion => _dataVersion;
+  Map<int, String> get bankNamesById => _bankNamesById;
+  Map<int, String> get bankShortNamesById => _bankShortNamesById;
+
+  String getBankName(int? bankId) {
+    if (bankId == null) return 'Bank';
+    if (bankId == CashConstants.bankId) return CashConstants.bankName;
+    return _bankNamesById[bankId] ?? 'Bank $bankId';
+  }
+
+  String getBankShortName(int? bankId) {
+    if (bankId == null) return 'Bank';
+    if (bankId == CashConstants.bankId) return CashConstants.bankShortName;
+    return _bankShortNamesById[bankId] ?? 'Bank $bankId';
+  }
 
   Category? getCategoryById(int? id) {
     if (id == null) return null;
@@ -169,6 +189,14 @@ class TransactionProvider with ChangeNotifier {
       print("debug: Transactions: ${_allTransactions.length}");
 
       final banks = await _bankConfigService.getBanks();
+      _bankNamesById = {
+        CashConstants.bankId: CashConstants.bankName,
+        for (final bank in banks) bank.id: bank.name,
+      };
+      _bankShortNamesById = {
+        CashConstants.bankId: CashConstants.bankShortName,
+        for (final bank in banks) bank.id: bank.shortName,
+      };
       final labels = _buildSelfTransferLabels(
         _telebirrMatchService.findMatches(_allTransactions, banks),
       );

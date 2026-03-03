@@ -23,7 +23,6 @@ import 'package:totals/screens/settings_page.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/notification_intent_bus.dart';
 import 'package:totals/services/widget_launch_intent_service.dart';
-import 'package:totals/data/consts.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/widgets/today_transactions_list.dart';
 import 'package:totals/widgets/categorize_transaction_sheet.dart';
@@ -112,21 +111,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (!mounted) return;
 
         Provider.of<TransactionProvider>(context, listen: false).loadData();
+        final provider = Provider.of<TransactionProvider>(context, listen: false);
 
-        final bankLabel = tx.bankId == CashConstants.bankId
-            ? CashConstants.bankShortName
-            : AppConstants.banks
-                .firstWhere(
-                  (b) => b.id == tx.bankId,
-                  orElse: () => const Bank(
-                    id: -1,
-                    name: 'Totals',
-                    shortName: 'Totals',
-                    codes: [],
-                    image: '',
-                  ),
-                )
-                .shortName;
+        final bankLabel = provider.getBankShortName(tx.bankId);
 
         final sign = tx.type == 'CREDIT'
             ? '+'
