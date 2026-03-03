@@ -210,7 +210,7 @@ class TransactionRepository {
           'day': day,
           'week': week,
         },
-        conflictAlgorithm: ConflictAlgorithm.replace,
+        conflictAlgorithm: ConflictAlgorithm.ignore,
       );
     }
 

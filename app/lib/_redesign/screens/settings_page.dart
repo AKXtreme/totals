@@ -728,18 +728,18 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
                 onTap: () => _showFontSizeSheet(themeProvider),
               ),
 
-              if (!_isLoadingRedesign)
-                _SettingTile(
-                  icon: Icons.palette_rounded,
-                  iconColor: AppColors.amber,
-                  title: 'Use Redesign',
-                  subtitle: 'Switch to the new design system',
-                  trailing: Switch(
-                    value: _useRedesign,
-                    onChanged: _toggleRedesign,
-                    activeColor: AppColors.primaryLight,
-                  ),
-                ),
+              // if (!_isLoadingRedesign)
+              //   _SettingTile(
+              //     icon: Icons.palette_rounded,
+              //     iconColor: AppColors.amber,
+              //     title: 'Use Redesign',
+              //     subtitle: 'Switch to the new design system',
+              //     trailing: Switch(
+              //       value: _useRedesign,
+              //       onChanged: _toggleRedesign,
+              //       activeColor: AppColors.primaryLight,
+              //     ),
+              //   ),
 
               _SettingTile(
                 icon: Icons.toc_rounded,
