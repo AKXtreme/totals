@@ -155,7 +155,10 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     final filtered = _provider.categories
         .where((c) => c.flow.toLowerCase() == desiredFlow)
         .toList(growable: false);
-    return filtered.isEmpty ? _provider.categories : filtered;
+    final base = filtered.isEmpty ? _provider.categories : filtered;
+    return base
+        .where((c) => c.name.trim().toLowerCase() != 'self')
+        .toList(growable: false);
   }
 
   Future<void> _setCategory(Category category) async {
@@ -215,17 +218,30 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     });
   }
 
+  Category? _findCategoryByNameAndFlow({
+    required String name,
+    required String flow,
+    Set<int>? excludeIds,
+  }) {
+    final normalizedName = name.trim().toLowerCase();
+    final normalizedFlow = flow.toLowerCase();
+    return _provider.categories
+        .where((c) =>
+            c.flow.toLowerCase() == normalizedFlow &&
+            c.name.trim().toLowerCase() == normalizedName &&
+            (c.id == null || !(excludeIds?.contains(c.id) ?? false)))
+        .fold<Category?>(
+          null,
+          (best, c) =>
+              best == null || (c.id ?? 0) > (best.id ?? 0) ? c : best,
+        );
+  }
+
   bool _categoryExistsForFlow({
     required String name,
     required String flow,
   }) {
-    final normalizedName = name.trim().toLowerCase();
-    final normalizedFlow = flow.toLowerCase();
-    return _provider.categories.any(
-      (c) =>
-          c.flow.toLowerCase() == normalizedFlow &&
-          c.name.trim().toLowerCase() == normalizedName,
-    );
+    return _findCategoryByNameAndFlow(name: name, flow: flow) != null;
   }
 
   String _serializeColorKey(String colorKey) => 'color:$colorKey';
@@ -253,6 +269,42 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
       hash = (hash + code) & 0x7fffffff;
     }
     return hash % _kCategoryColorOptions.length;
+  }
+
+  Future<void> _setSelfCategory() async {
+    const selfName = 'Self';
+    final flow = _isCredit ? 'income' : 'expense';
+    final existing = _findCategoryByNameAndFlow(name: selfName, flow: flow);
+    if (existing != null) {
+      await _setCategory(existing);
+      return;
+    }
+
+    final knownCategoryIds = _provider.categories
+        .map((c) => c.id)
+        .whereType<int>()
+        .toSet();
+
+    try {
+      await _provider.createCategory(
+        name: selfName,
+        essential: false,
+        flow: flow,
+        iconKey: _serializeColorKey('gray'),
+      );
+    } catch (_) {
+      if (!mounted) return;
+    }
+
+    final created = _findCategoryByNameAndFlow(
+      name: selfName,
+      flow: flow,
+      excludeIds: knownCategoryIds,
+    );
+    final target = created ?? _findCategoryByNameAndFlow(name: selfName, flow: flow);
+    if (target != null) {
+      await _setCategory(target);
+    }
   }
 
   Future<void> _createNewCategoryInline() async {
@@ -290,19 +342,11 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
       return;
     }
     if (!mounted) return;
-    final normalizedName = createdName.toLowerCase();
-    final normalizedFlow = flow.toLowerCase();
-    final createdCategory = _provider.categories
-        .where((c) =>
-            c.id != null &&
-            !knownCategoryIds.contains(c.id) &&
-            c.flow.toLowerCase() == normalizedFlow &&
-            c.name.trim().toLowerCase() == normalizedName)
-        .fold<Category?>(
-          null,
-          (best, c) =>
-              best == null || (c.id ?? 0) > (best.id ?? 0) ? c : best,
-        );
+    final createdCategory = _findCategoryByNameAndFlow(
+      name: createdName,
+      flow: flow,
+      excludeIds: knownCategoryIds,
+    );
     if (createdCategory != null) {
       await _setCategory(createdCategory);
       return;
@@ -539,45 +583,54 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
             ),
           ),
           const Spacer(),
-          GestureDetector(
-            onTap: () => setState(() => _categoryExpanded = !_categoryExpanded),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (category != null) ...[
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: _categoryColor(category),
-                      shape: BoxShape.circle,
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.5,
+            ),
+            child: GestureDetector(
+              onTap: () => setState(() => _categoryExpanded = !_categoryExpanded),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (category != null) ...[
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: _categoryColor(category),
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    category.name,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: _categoryColor(category),
-                      fontWeight: FontWeight.w600,
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        category.name,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: _categoryColor(category),
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                ] else
-                  Text(
-                    'Categorize',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textTertiary(context),
-                      fontWeight: FontWeight.w500,
+                  ] else
+                    Text(
+                      'Categorize',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textTertiary(context),
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    _categoryExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    size: 18,
+                    color: AppColors.textTertiary(context),
                   ),
-                const SizedBox(width: 4),
-                Icon(
-                  _categoryExpanded
-                      ? Icons.keyboard_arrow_up
-                      : Icons.keyboard_arrow_down,
-                  size: 18,
-                  color: AppColors.textTertiary(context),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
@@ -613,6 +666,13 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
             spacing: 8,
             runSpacing: 8,
             children: [
+              _CategoryPickerChip(
+                label: 'Self',
+                color: _colorFromKey('gray'),
+                isSelected: false,
+                showColorDot: false,
+                onTap: _setSelfCategory,
+              ),
               _CategoryPickerChip(
                 label: _showNewCategoryForm ? 'Cancel' : '+ New',
                 color: _showNewCategoryForm
@@ -1056,12 +1116,18 @@ class _CategoryPickerChip extends StatelessWidget {
               ),
               const SizedBox(width: 6),
             ],
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: textColor,
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 120),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: textColor,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
               ),
             ),
           ],

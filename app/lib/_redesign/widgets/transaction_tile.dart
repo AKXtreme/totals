@@ -191,12 +191,18 @@ class TransactionCategoryChip extends StatelessWidget {
           color: AppColors.textTertiary(context),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 132),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
           ),
         ),
       );
@@ -210,12 +216,18 @@ class TransactionCategoryChip extends StatelessWidget {
           color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(6),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 132),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
           ),
         ),
       );
@@ -227,14 +239,20 @@ class TransactionCategoryChip extends StatelessWidget {
         border: Border.all(color: AppColors.textTertiary(context)),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: AppColors.isDark(context)
-              ? AppColors.slate400
-              : AppColors.slate700,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 132),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: AppColors.isDark(context)
+                ? AppColors.slate400
+                : AppColors.slate700,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          softWrap: false,
         ),
       ),
     );

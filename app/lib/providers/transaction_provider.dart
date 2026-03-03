@@ -127,15 +127,27 @@ class TransactionProvider with ChangeNotifier {
   }
 
   String? getSelfTransferLabel(Transaction transaction) {
-    return _selfTransferLabelByReference[transaction.reference];
+    final existing = _selfTransferLabelByReference[transaction.reference];
+    if (existing != null) return existing;
+    if (_isManualSelfCategory(transaction)) {
+      return transaction.type == 'CREDIT' ? 'to self' : 'from self';
+    }
+    return null;
   }
 
   bool isSelfTransfer(Transaction transaction) {
-    return _selfTransferLabelByReference.containsKey(transaction.reference);
+    return _isSelfTransfer(transaction);
   }
 
   bool _isSelfTransfer(Transaction transaction) {
-    return _selfTransferLabelByReference.containsKey(transaction.reference);
+    return _selfTransferLabelByReference.containsKey(transaction.reference) ||
+        _isManualSelfCategory(transaction);
+  }
+
+  bool _isManualSelfCategory(Transaction transaction) {
+    final category = _categoryById[transaction.categoryId];
+    if (category == null) return false;
+    return category.name.trim().toLowerCase() == 'self';
   }
 
   Future<void> loadData() async {
@@ -529,8 +541,7 @@ class TransactionProvider with ChangeNotifier {
           !dateOnly.isBefore(monthStart) && dateOnly.isBefore(nextMonthStart);
       final isLast30 =
           !dateOnly.isBefore(last30Start) && !dateOnly.isAfter(todayStart);
-      final isSelfTransfer =
-          _selfTransferLabelByReference.containsKey(transaction.reference);
+      final isSelfTransfer = _isSelfTransfer(transaction);
 
       if (isToday) {
         todayEntries.add(MapEntry(transaction, dt));
