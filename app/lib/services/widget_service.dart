@@ -120,20 +120,44 @@ class WidgetService {
           snapshot.emptyMessage,
         );
         await HomeWidget.saveWidgetData<String>(
-          '${prefix}_spent_label',
-          snapshot.spentLabel,
+          '${prefix}_assigned_label',
+          snapshot.assignedLabel,
         );
         await HomeWidget.saveWidgetData<String>(
-          '${prefix}_budget_label',
-          snapshot.budgetLabel,
+          '${prefix}_activity_label',
+          snapshot.activityLabel,
         );
         await HomeWidget.saveWidgetData<String>(
-          '${prefix}_spent_raw',
-          snapshot.spentRaw.toString(),
+          '${prefix}_available_label',
+          snapshot.availableLabel,
         );
         await HomeWidget.saveWidgetData<String>(
-          '${prefix}_budget_raw',
-          snapshot.budgetRaw.toString(),
+          '${prefix}_assigned_raw',
+          snapshot.assignedRaw.toString(),
+        );
+        await HomeWidget.saveWidgetData<String>(
+          '${prefix}_activity_raw',
+          snapshot.activityRaw.toString(),
+        );
+        await HomeWidget.saveWidgetData<String>(
+          '${prefix}_available_raw',
+          snapshot.availableRaw.toString(),
+        );
+        await HomeWidget.saveWidgetData<String>(
+          '${prefix}_needs_available_label',
+          snapshot.needsAvailableLabel,
+        );
+        await HomeWidget.saveWidgetData<String>(
+          '${prefix}_wants_available_label',
+          snapshot.wantsAvailableLabel,
+        );
+        await HomeWidget.saveWidgetData<String>(
+          '${prefix}_needs_available_raw',
+          snapshot.needsAvailableRaw.toString(),
+        );
+        await HomeWidget.saveWidgetData<String>(
+          '${prefix}_wants_available_raw',
+          snapshot.wantsAvailableRaw.toString(),
         );
         await HomeWidget.saveWidgetData<String>(
           '${prefix}_percent',
@@ -143,53 +167,6 @@ class WidgetService {
           '${prefix}_updated_at',
           snapshot.lastUpdated,
         );
-
-        for (int i = 0; i < 3; i++) {
-          if (i < snapshot.categories.length) {
-            final category = snapshot.categories[i];
-            await HomeWidget.saveWidgetData<String>(
-              '${prefix}_category_${i}_name',
-              category.name,
-            );
-            await HomeWidget.saveWidgetData<String>(
-              '${prefix}_category_${i}_spent_label',
-              category.spentLabel,
-            );
-            await HomeWidget.saveWidgetData<String>(
-              '${prefix}_category_${i}_spent_raw',
-              category.spentRaw.toString(),
-            );
-            await HomeWidget.saveWidgetData<String>(
-              '${prefix}_category_${i}_limit_raw',
-              category.limitRaw.toString(),
-            );
-            await HomeWidget.saveWidgetData<String>(
-              '${prefix}_category_${i}_color',
-              category.colorHex,
-            );
-          } else {
-            await HomeWidget.saveWidgetData<String>(
-              '${prefix}_category_${i}_name',
-              '',
-            );
-            await HomeWidget.saveWidgetData<String>(
-              '${prefix}_category_${i}_spent_label',
-              '',
-            );
-            await HomeWidget.saveWidgetData<String>(
-              '${prefix}_category_${i}_spent_raw',
-              '0',
-            );
-            await HomeWidget.saveWidgetData<String>(
-              '${prefix}_category_${i}_limit_raw',
-              '0',
-            );
-            await HomeWidget.saveWidgetData<String>(
-              '${prefix}_category_${i}_color',
-              '',
-            );
-          }
-        }
       }
 
       await HomeWidget.updateWidget(androidName: budgetAndroidWidgetName);

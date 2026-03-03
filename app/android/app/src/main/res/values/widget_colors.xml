@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_surface">#F8FAFD</color>
+    <color name="widget_border">#D2DAE8</color>
+    <color name="widget_text_primary">#1A2333</color>
+    <color name="widget_text_secondary">#5E6B7C</color>
+    <color name="widget_text_tertiary">#8190A1</color>
+
+    <color name="widget_chip_bg">#E9EEF6</color>
+    <color name="widget_chip_border">#D2DAE8</color>
+    <color name="widget_chip_text">#3A4A63</color>
+
+    <color name="widget_bar_track">#D4DDEA</color>
+</resources>

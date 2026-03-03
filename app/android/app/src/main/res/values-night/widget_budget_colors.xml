@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="budget_widget_bg">#1E1E1E</color>
+    <color name="budget_widget_border">#2E2E2E</color>
+    <color name="budget_widget_title">#FFFFFF</color>
+    <color name="budget_widget_subtle">#AAAAAA</color>
+    <color name="budget_widget_value">#FFFFFF</color>
+
+    <color name="budget_widget_chip_bg">#2B2B2B</color>
+    <color name="budget_widget_chip_border">#444444</color>
+    <color name="budget_widget_chip_text">#E0E0E0</color>
+
+    <color name="budget_widget_metric_bg">#2B2B2B</color>
+    <color name="budget_widget_metric_border">#444444</color>
+
+    <color name="budget_widget_needs_bg">#2B2B2B</color>
+    <color name="budget_widget_needs_border">#444444</color>
+    <color name="budget_widget_wants_bg">#2B2B2B</color>
+    <color name="budget_widget_wants_border">#444444</color>
+
+    <color name="budget_widget_available_positive">#44C793</color>
+    <color name="budget_widget_available_negative">#FF7D8F</color>
+
+    <color name="budget_widget_progress_track">#333333</color>
+    <color name="budget_widget_progress_safe">#5AC8FA</color>
+    <color name="budget_widget_progress_warn">#FFB347</color>
+    <color name="budget_widget_progress_danger">#FF5D73</color>
+</resources>

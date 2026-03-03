@@ -4,58 +4,46 @@ import 'package:totals/repositories/category_repository.dart';
 import 'package:totals/services/budget_service.dart';
 import 'package:totals/utils/text_utils.dart';
 
-class BudgetWidgetCategorySlice {
-  final String name;
-  final double spentRaw;
-  final double limitRaw;
-  final String spentLabel;
-  final String colorHex;
-
-  const BudgetWidgetCategorySlice({
-    required this.name,
-    required this.spentRaw,
-    required this.limitRaw,
-    required this.spentLabel,
-    required this.colorHex,
-  });
-}
-
 class BudgetWidgetSnapshot {
   final String period;
   final String periodLabel;
   final bool isEmpty;
   final String emptyMessage;
-  final double spentRaw;
-  final double budgetRaw;
+  final double assignedRaw;
+  final double activityRaw;
+  final double availableRaw;
   final double percentUsed;
-  final String spentLabel;
-  final String budgetLabel;
+  final String assignedLabel;
+  final String activityLabel;
+  final String availableLabel;
+  final double needsAvailableRaw;
+  final double wantsAvailableRaw;
+  final String needsAvailableLabel;
+  final String wantsAvailableLabel;
   final String lastUpdated;
-  final List<BudgetWidgetCategorySlice> categories;
 
   const BudgetWidgetSnapshot({
     required this.period,
     required this.periodLabel,
     required this.isEmpty,
     required this.emptyMessage,
-    required this.spentRaw,
-    required this.budgetRaw,
+    required this.assignedRaw,
+    required this.activityRaw,
+    required this.availableRaw,
     required this.percentUsed,
-    required this.spentLabel,
-    required this.budgetLabel,
+    required this.assignedLabel,
+    required this.activityLabel,
+    required this.availableLabel,
+    required this.needsAvailableRaw,
+    required this.wantsAvailableRaw,
+    required this.needsAvailableLabel,
+    required this.wantsAvailableLabel,
     required this.lastUpdated,
-    required this.categories,
   });
 }
 
 class BudgetWidgetDataProvider {
   static const List<String> supportedPeriods = ['monthly'];
-
-  static const List<String> _rankColors = [
-    '#5AC8FA',
-    '#FFB347',
-    '#FF5D73',
-  ];
 
   final BudgetService _budgetService;
   final CategoryRepository _categoryRepository;
@@ -98,7 +86,7 @@ class BudgetWidgetDataProvider {
   }) {
     final matchingCategoryStatuses = allCategoryStatuses
         .where((status) => _matchesPeriod(status.budget, period))
-        .toList();
+        .toList(growable: false);
 
     final combinedStatuses = <BudgetStatus>[
       ...periodStatuses,
@@ -107,25 +95,29 @@ class BudgetWidgetDataProvider {
 
     final hasAnyBudgets = combinedStatuses.isNotEmpty;
 
-    final aggregateStatuses =
-        periodStatuses.isNotEmpty ? periodStatuses : matchingCategoryStatuses;
-
-    final spentRaw = aggregateStatuses.fold<double>(
-      0.0,
-      (sum, status) => sum + status.spent,
-    );
-    final budgetRaw = aggregateStatuses.fold<double>(
+    final assignedRaw = combinedStatuses.fold<double>(
       0.0,
       (sum, status) => sum + status.budget.amount,
     );
+    final activityRaw = combinedStatuses.fold<double>(
+      0.0,
+      (sum, status) => sum + status.spent,
+    );
+    final availableRaw = assignedRaw - activityRaw;
 
-    final percentUsed = budgetRaw > 0
-        ? ((spentRaw / budgetRaw) * 100).clamp(0.0, 999.0).toDouble()
+    final percentUsed = assignedRaw > 0
+        ? ((activityRaw / assignedRaw) * 100).clamp(0.0, 999.0).toDouble()
         : 0.0;
 
-    final categories = _buildTopBudgetSlices(
+    final needsAvailableRaw = _sumGroupAvailable(
       statuses: combinedStatuses,
       categoryById: categoryById,
+      group: _BudgetGroup.needs,
+    );
+    final wantsAvailableRaw = _sumGroupAvailable(
+      statuses: combinedStatuses,
+      categoryById: categoryById,
+      group: _BudgetGroup.wants,
     );
 
     return BudgetWidgetSnapshot(
@@ -133,82 +125,40 @@ class BudgetWidgetDataProvider {
       periodLabel: _periodLabel(period),
       isEmpty: !hasAnyBudgets,
       emptyMessage: "You currently don't have any budgets.",
-      spentRaw: spentRaw,
-      budgetRaw: budgetRaw,
+      assignedRaw: assignedRaw,
+      activityRaw: activityRaw,
+      availableRaw: availableRaw,
       percentUsed: percentUsed,
-      spentLabel: formatAmountForWidget(spentRaw),
-      budgetLabel: formatAmountForWidget(budgetRaw),
+      assignedLabel: formatAmountForWidget(assignedRaw),
+      activityLabel: formatAmountForWidget(activityRaw),
+      availableLabel: formatAmountForWidget(availableRaw),
+      needsAvailableRaw: needsAvailableRaw,
+      wantsAvailableRaw: wantsAvailableRaw,
+      needsAvailableLabel: formatAmountForWidget(needsAvailableRaw),
+      wantsAvailableLabel: formatAmountForWidget(wantsAvailableRaw),
       lastUpdated: getLastUpdatedTimestamp(),
-      categories: categories,
     );
   }
 
-  List<BudgetWidgetCategorySlice> _buildTopBudgetSlices({
+  double _sumGroupAvailable({
     required List<BudgetStatus> statuses,
     required Map<int, Category> categoryById,
+    required _BudgetGroup group,
   }) {
-    final filteredStatuses =
-        statuses.where((status) => status.spent > 0).toList(growable: false);
-
-    if (filteredStatuses.isEmpty) {
-      return const [
-        BudgetWidgetCategorySlice(
-          name: 'No categories',
-          spentRaw: 0,
-          limitRaw: 0,
-          spentLabel: '',
-          colorHex: '#5AC8FA',
-        ),
-      ];
-    }
-
-    final sortedStatuses = List<BudgetStatus>.from(filteredStatuses)
-      ..sort((a, b) => b.spent.compareTo(a.spent));
-
-    return sortedStatuses.take(3).toList().asMap().entries.map((entry) {
-      final rank = entry.key;
-      final status = entry.value;
-      final budgetName = _resolveBudgetName(status, categoryById);
-      return BudgetWidgetCategorySlice(
-        name: _truncateLabel(budgetName),
-        spentRaw: status.spent,
-        limitRaw: status.budget.amount,
-        spentLabel: formatAmountForWidget(status.spent),
-        colorHex: _rankColors[rank % _rankColors.length],
-      );
-    }).toList(growable: false);
+    return statuses.fold<double>(0.0, (sum, status) {
+      final bucket = _groupForBudget(status.budget, categoryById);
+      if (bucket != group) return sum;
+      return sum + (status.budget.amount - status.spent);
+    });
   }
 
-  String _resolveBudgetName(
-    BudgetStatus status,
-    Map<int, Category> categoryById,
-  ) {
-    final budgetName = status.budget.name.trim();
-    if (budgetName.isNotEmpty) {
-      final withoutPeriodPrefix = budgetName.replaceFirst(
-        RegExp(r'^\s*monthly\s+', caseSensitive: false),
-        '',
-      );
-      return withoutPeriodPrefix.replaceFirst(
-        RegExp(r'\s+budget$', caseSensitive: false),
-        '',
-      );
-    }
+  _BudgetGroup _groupForBudget(Budget budget, Map<int, Category> categoryById) {
+    final categoryId = budget.categoryId;
+    if (categoryId == null) return _BudgetGroup.needs;
 
-    final categoryId = status.budget.categoryId;
-    if (categoryId != null) {
-      final category = categoryById[categoryId];
-      if (category != null && category.name.trim().isNotEmpty) {
-        return category.name.trim();
-      }
-    }
-    return 'Budget';
-  }
-
-  String _truncateLabel(String value, {int maxLength = 18}) {
-    final trimmed = value.trim();
-    if (trimmed.length <= maxLength) return trimmed;
-    return '${trimmed.substring(0, maxLength - 3)}...';
+    final category = categoryById[categoryId];
+    if (category == null) return _BudgetGroup.needs;
+    return category.essential ? _BudgetGroup.needs : _BudgetGroup.wants;
   }
 
   bool _matchesPeriod(Budget budget, String period) {
@@ -255,4 +205,9 @@ class BudgetWidgetDataProvider {
     final day = now.day.toString().padLeft(2, '0');
     return '$month/$day, $hour:$minute';
   }
+}
+
+enum _BudgetGroup {
+  needs,
+  wants,
 }
