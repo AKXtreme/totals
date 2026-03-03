@@ -3582,7 +3582,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     return Container(
       padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + 20),
       decoration: BoxDecoration(
-        color: AppColors.cardColor(context),
+        color: AppColors.background(context),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Form(
@@ -3904,7 +3904,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       builder: (sheetContext) => Container(
         height: MediaQuery.of(context).size.height * 0.6,
         decoration: BoxDecoration(
-          color: AppColors.cardColor(sheetContext),
+          color: AppColors.background(sheetContext),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(

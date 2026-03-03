@@ -27,7 +27,7 @@ class AppColors {
   static const Color slate900 = Color(0xFF0F172A);
 
   // ── Dark-mode neutral black scale ────────────────────────────────────────
-  static const Color darkBg = Color(0xFF000000);
+  static const Color darkBg = Color(0xFF161A26);
   static const Color darkCard = Color(0xFF161A26);
   static const Color darkSurface = Color(0xFF1E2230);
   static const Color darkBorder = Color(0xFF34384A);
@@ -41,7 +41,7 @@ class AppColors {
       isDark(context) ? darkBg : slate50;
 
   static Color cardColor(BuildContext context) =>
-      isDark(context) ? darkCard : white;
+      isDark(context) ? darkSurface : white;
 
   static Color textPrimary(BuildContext context) =>
       isDark(context) ? white : slate900;

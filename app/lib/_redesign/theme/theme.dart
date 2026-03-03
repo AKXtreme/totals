@@ -99,7 +99,7 @@ class RedesignTheme {
         foregroundColor: AppColors.white,
       ),
       cardTheme: CardThemeData(
-        color: darkCard,
+        color: AppColors.darkSurface,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
@@ -108,7 +108,7 @@ class RedesignTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: darkCard,
+        fillColor: AppColors.darkSurface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: darkBorder),

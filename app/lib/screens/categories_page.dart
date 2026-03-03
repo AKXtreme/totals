@@ -9,7 +9,10 @@ import 'package:totals/utils/category_icons.dart';
 Color _categoryColor(Category category) {
   if (category.uncategorized) return AppColors.slate400;
   final isIncome = category.flow.toLowerCase() == 'income';
-  if (isIncome) return category.essential ? AppColors.incomeSuccess : const Color(0xFF14B8A6);
+  if (isIncome)
+    return category.essential
+        ? AppColors.incomeSuccess
+        : const Color(0xFF14B8A6);
   return category.essential ? AppColors.blue : AppColors.amber;
 }
 
@@ -209,9 +212,12 @@ class _CategoriesPageState extends State<CategoriesPage>
   }
 
   List<_CategorySection> _buildExpenseSections(List<Category> cats) {
-    final essential = cats.where((c) => c.type == CategoryType.essential).toList();
-    final nonEssential = cats.where((c) => c.type == CategoryType.nonEssential).toList();
-    final uncategorized = cats.where((c) => c.type == CategoryType.uncategorized).toList();
+    final essential =
+        cats.where((c) => c.type == CategoryType.essential).toList();
+    final nonEssential =
+        cats.where((c) => c.type == CategoryType.nonEssential).toList();
+    final uncategorized =
+        cats.where((c) => c.type == CategoryType.uncategorized).toList();
     return [
       if (essential.isNotEmpty)
         _CategorySection(title: 'Essential', items: essential),
@@ -224,13 +230,13 @@ class _CategoriesPageState extends State<CategoriesPage>
 
   List<_CategorySection> _buildIncomeSections(List<Category> cats) {
     final main = cats.where((c) => c.type == CategoryType.essential).toList();
-    final side = cats.where((c) => c.type == CategoryType.nonEssential).toList();
-    final uncategorized = cats.where((c) => c.type == CategoryType.uncategorized).toList();
+    final side =
+        cats.where((c) => c.type == CategoryType.nonEssential).toList();
+    final uncategorized =
+        cats.where((c) => c.type == CategoryType.uncategorized).toList();
     return [
-      if (main.isNotEmpty)
-        _CategorySection(title: 'Main income', items: main),
-      if (side.isNotEmpty)
-        _CategorySection(title: 'Side income', items: side),
+      if (main.isNotEmpty) _CategorySection(title: 'Main income', items: main),
+      if (side.isNotEmpty) _CategorySection(title: 'Side income', items: side),
       if (uncategorized.isNotEmpty)
         _CategorySection(title: 'Uncategorized', items: uncategorized),
     ];
@@ -492,9 +498,10 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
         TextEditingController(text: widget.existing?.description ?? '');
     _categoryType = widget.existing?.type ?? CategoryType.nonEssential;
     _iconKey = widget.existing?.iconKey ?? 'more_horiz';
-    _flow = (widget.existing?.flow ?? widget.initialFlow).toLowerCase() == 'income'
-        ? 'income'
-        : 'expense';
+    _flow =
+        (widget.existing?.flow ?? widget.initialFlow).toLowerCase() == 'income'
+            ? 'income'
+            : 'expense';
     _recurring = widget.existing?.recurring ?? false;
   }
 
@@ -561,8 +568,7 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
     if (confirm != true || !mounted) return;
 
     try {
-      final provider =
-          Provider.of<TransactionProvider>(context, listen: false);
+      final provider = Provider.of<TransactionProvider>(context, listen: false);
       await provider.deleteCategory(existing);
       if (!mounted) return;
       Navigator.pop(context);
@@ -822,8 +828,7 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
                         borderRadius: BorderRadius.circular(10),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(10),
-                          onTap: () =>
-                              setState(() => _iconKey = option.key),
+                          onTap: () => setState(() => _iconKey = option.key),
                           child: Container(
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(10),
@@ -857,7 +862,7 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  // icon: const Icon(Icons.delete_outline_rounded, size: 18),
                   label: const Text('Delete category'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.red,
@@ -1032,9 +1037,7 @@ class _TypeOption extends StatelessWidget {
                         : AppColors.textTertiary(context),
                     width: 2,
                   ),
-                  color: selected
-                      ? AppColors.primaryLight
-                      : Colors.transparent,
+                  color: selected ? AppColors.primaryLight : Colors.transparent,
                 ),
                 child: selected
                     ? const Icon(
