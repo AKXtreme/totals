@@ -19,6 +19,23 @@ import 'package:totals/_redesign/screens/redesign_shell.dart';
 import 'package:totals/_redesign/theme/theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+SnackBarThemeData _globalSnackBarTheme() {
+  return SnackBarThemeData(
+    behavior: SnackBarBehavior.floating,
+    backgroundColor: const Color(0xFF334155),
+    contentTextStyle: const TextStyle(
+      color: Colors.white,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+    ),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(10),
+    ),
+    insetPadding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+    elevation: 0,
+  );
+}
+
 Widget _buildUiScaledApp({
   required BuildContext context,
   required Widget child,
@@ -126,6 +143,7 @@ class MyApp extends StatelessWidget {
                       seedColor: Colors.blue,
                       brightness: Brightness.light,
                     ),
+                    snackBarTheme: _globalSnackBarTheme(),
                     useMaterial3: true,
                   ),
             darkTheme: useRedesign
@@ -147,6 +165,7 @@ class MyApp extends StatelessWidget {
                     scaffoldBackgroundColor: const Color(0xFF000000),
                     cardColor: const Color(0xFF161A26),
                     dividerColor: const Color(0xFF34384A),
+                    snackBarTheme: _globalSnackBarTheme(),
                     useMaterial3: true,
                   ),
             themeMode: themeProvider.themeMode,

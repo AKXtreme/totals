@@ -144,7 +144,6 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
         SnackBar(
           content: Text('Failed to delete: $e'),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.red,
         ),
       );
     }
@@ -931,7 +930,6 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
           SnackBar(
             content: Text('Cash wallet $direction by ETB $amount'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.green,
           ),
         );
       }
@@ -941,7 +939,6 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
           SnackBar(
             content: Text('Failed to update cash wallet: $e'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.red,
           ),
         );
       }
@@ -1075,7 +1072,6 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Account deleted successfully'),
-            backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
             duration: Duration(seconds: 2),
           ),
@@ -1086,7 +1082,6 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error deleting account: $e'),
-            backgroundColor: AppColors.red,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 3),
           ),

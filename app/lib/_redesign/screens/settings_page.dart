@@ -633,7 +633,6 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
       SnackBar(
         content: Text(message),
         behavior: SnackBarBehavior.floating,
-        backgroundColor: AppColors.red,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );

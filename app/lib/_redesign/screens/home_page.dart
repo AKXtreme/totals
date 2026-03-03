@@ -5,6 +5,7 @@ import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/data/consts.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
+import 'package:totals/screens/accounts_page.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/_redesign/screens/todays_transactions_page.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
@@ -119,13 +120,7 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                           _showBalance = !_showBalance;
                         });
                       },
-                      onBreakdownTap: () => _openBalanceBreakdown(
-                        totalBalance: totalBalance,
-                        monthTransactions: monthTransactionsCount,
-                        selfTransferCount: selfTransferCount,
-                        monthTotals: monthTotals,
-                        thirtyDayTotals: thirtyDayTotals,
-                      ),
+                      onBreakdownTap: _openAccountsPage,
                     ),
                     const SizedBox(height: 12),
                     _InsightCard(message: insightMessage),
@@ -246,6 +241,15 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
       context,
       MaterialPageRoute<void>(
         builder: (_) => const TodaysTransactionsPage(),
+      ),
+    );
+  }
+
+  void _openAccountsPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => const AccountsPage(),
       ),
     );
   }
@@ -433,7 +437,7 @@ class _TotalBalanceCard extends StatelessWidget {
               child: Row(
                 children: [
                   Text(
-                    'How did I get here?',
+                    'Open accounts',
                     style: TextStyle(
                       color: AppColors.white.withValues(alpha: 0.85),
                       fontSize: 13,

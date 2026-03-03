@@ -157,7 +157,7 @@ class _RedesignLockScreenState extends State<RedesignLockScreen>
                   color: AppColors.primaryLight.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(24),
                 ),
-                child: Row(
+                child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
@@ -165,7 +165,7 @@ class _RedesignLockScreenState extends State<RedesignLockScreen>
                       size: 18,
                       color: AppColors.primaryDark,
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     Text(
                       'Tap to unlock',
                       style: TextStyle(

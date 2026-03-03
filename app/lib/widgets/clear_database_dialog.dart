@@ -194,7 +194,6 @@ Future<void> showClearDatabaseDialog(BuildContext context) async {
                                           content: const Text(
                                             'Data cleared successfully',
                                           ),
-                                          backgroundColor: Colors.green,
                                           behavior: SnackBarBehavior.floating,
                                           shape: RoundedRectangleBorder(
                                             borderRadius:
@@ -211,7 +210,6 @@ Future<void> showClearDatabaseDialog(BuildContext context) async {
                                         SnackBar(
                                           content:
                                               Text('Error clearing data: $e'),
-                                          backgroundColor: Colors.red,
                                           behavior: SnackBarBehavior.floating,
                                           shape: RoundedRectangleBorder(
                                             borderRadius:

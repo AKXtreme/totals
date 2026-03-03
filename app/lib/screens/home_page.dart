@@ -867,13 +867,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   }
 
                   ScaffoldMessenger.of(context).showSnackBar(
-                    // style it
                     SnackBar(
-                      content: const Text(
-                        'Sweet!',
-                        style: TextStyle(fontSize: 16, color: Colors.white),
-                      ),
-                      backgroundColor: Colors.blue[200],
+                      content: const Text('Sweet!'),
                       duration: Duration(seconds: 2),
                     ),
                   );

@@ -53,7 +53,6 @@ class _AccountLoadingDialogState extends State<AccountLoadingDialog>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error: $e'),
-            backgroundColor: Colors.red,
           ),
         );
       }

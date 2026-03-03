@@ -26,6 +26,7 @@ class RedesignTheme {
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppColors.slate50,
+      snackBarTheme: _snackBarTheme(),
       dividerColor: AppColors.border,
       appBarTheme: const AppBarTheme(
         elevation: 0,
@@ -89,6 +90,7 @@ class RedesignTheme {
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: darkBg,
+      snackBarTheme: _snackBarTheme(),
       dividerColor: darkBorder,
       appBarTheme: AppBarTheme(
         elevation: 0,
@@ -130,6 +132,23 @@ class RedesignTheme {
       textTheme: GoogleFonts.spaceGroteskTextTheme(base.textTheme),
       primaryTextTheme:
           GoogleFonts.spaceGroteskTextTheme(base.primaryTextTheme),
+    );
+  }
+
+  static SnackBarThemeData _snackBarTheme() {
+    return SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: AppColors.slate700,
+      contentTextStyle: const TextStyle(
+        color: AppColors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+      insetPadding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      elevation: 0,
     );
   }
 }

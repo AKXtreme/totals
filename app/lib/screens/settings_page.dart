@@ -265,7 +265,6 @@ class _SettingsPageState extends State<SettingsPage>
                       style: TextStyle(
                           color: Theme.of(context).colorScheme.onPrimary),
                     ),
-                    backgroundColor: Theme.of(context).colorScheme.primary,
                     behavior: SnackBarBehavior.floating,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -285,7 +284,6 @@ class _SettingsPageState extends State<SettingsPage>
                       style: TextStyle(
                           color: Theme.of(context).colorScheme.onPrimary),
                     ),
-                    backgroundColor: Theme.of(context).colorScheme.primary,
                     behavior: SnackBarBehavior.floating,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -314,7 +312,6 @@ class _SettingsPageState extends State<SettingsPage>
                     style: TextStyle(
                         color: Theme.of(context).colorScheme.onPrimary),
                   ),
-                  backgroundColor: Theme.of(context).colorScheme.primary,
                   behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -361,7 +358,6 @@ class _SettingsPageState extends State<SettingsPage>
                     style:
                         TextStyle(color: Theme.of(context).colorScheme.onError),
                   ),
-                  backgroundColor: Theme.of(context).colorScheme.error,
                   behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -414,7 +410,6 @@ class _SettingsPageState extends State<SettingsPage>
                       style: TextStyle(
                           color: Theme.of(context).colorScheme.onPrimary),
                     ),
-                    backgroundColor: Theme.of(context).colorScheme.primary,
                     behavior: SnackBarBehavior.floating,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -443,7 +438,6 @@ class _SettingsPageState extends State<SettingsPage>
                         style: TextStyle(
                             color: Theme.of(context).colorScheme.onPrimary),
                       ),
-                      backgroundColor: Theme.of(context).colorScheme.primary,
                       behavior: SnackBarBehavior.floating,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -467,7 +461,6 @@ class _SettingsPageState extends State<SettingsPage>
                         style: TextStyle(
                             color: Theme.of(context).colorScheme.onError),
                       ),
-                      backgroundColor: Theme.of(context).colorScheme.error,
                       behavior: SnackBarBehavior.floating,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -513,7 +506,6 @@ class _SettingsPageState extends State<SettingsPage>
                 style:
                     TextStyle(color: Theme.of(context).colorScheme.onPrimary),
               ),
-              backgroundColor: Theme.of(context).colorScheme.primary,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -530,7 +522,6 @@ class _SettingsPageState extends State<SettingsPage>
               'Export failed: $e',
               style: TextStyle(color: Theme.of(context).colorScheme.onError),
             ),
-            backgroundColor: Theme.of(context).colorScheme.error,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
@@ -604,7 +595,6 @@ class _SettingsPageState extends State<SettingsPage>
                   style:
                       TextStyle(color: Theme.of(context).colorScheme.onPrimary),
                 ),
-                backgroundColor: Theme.of(context).colorScheme.primary,
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -622,7 +612,6 @@ class _SettingsPageState extends State<SettingsPage>
               'Import failed: $e',
               style: TextStyle(color: Theme.of(context).colorScheme.onError),
             ),
-            backgroundColor: Theme.of(context).colorScheme.error,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
