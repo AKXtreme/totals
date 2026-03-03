@@ -15,26 +15,6 @@ import 'package:totals/providers/budget_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/utils/text_utils.dart';
 
-// ── Color palette for budget items ──────────────────────────────────────────
-
-const _kCategoryColors = <Color>[
-  Color(0xFFF97316), // orange
-  Color(0xFFEAB308), // yellow
-  Color(0xFF22C55E), // green
-  Color(0xFF3B82F6), // blue
-  Color(0xFFEF4444), // red
-  Color(0xFF8B5CF6), // violet
-  Color(0xFFEC4899), // pink
-  Color(0xFF14B8A6), // teal
-  Color(0xFF6366F1), // indigo
-  Color(0xFF78716C), // stone
-];
-
-Color _colorForCategory(int? categoryId) {
-  if (categoryId == null) return _kCategoryColors[0];
-  return _kCategoryColors[categoryId % _kCategoryColors.length];
-}
-
 class _BudgetCategoryColorOption {
   final String key;
   final Color color;
@@ -79,6 +59,15 @@ String _compactAmount(double value) {
     return value < 0 ? '-$s' : s;
   }
   return value.toStringAsFixed(value == value.roundToDouble() ? 0 : 1);
+}
+
+Color _progressColorForUsage({
+  required double usagePercent,
+}) {
+  final normalized = usagePercent.clamp(0.0, 999.0).toDouble();
+  if (normalized >= 80) return AppColors.red;
+  if (normalized >= 60) return AppColors.amber;
+  return AppColors.incomeSuccess;
 }
 
 // ── Bank label helper ───────────────────────────────────────────────────────
@@ -192,6 +181,12 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
     return categories.map((c) => c.name).join(' • ');
   }
 
+  bool _isRecurringBudgetInSelectedMonth(Budget budget) {
+    final end = budget.endDate;
+    if (end == null) return true;
+    return end.isAfter(_monthEndInclusive);
+  }
+
   // ── Build ───────────────────────────────────────────────────────────────
 
   @override
@@ -302,6 +297,8 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
                         budget: b,
                         spent: _spentForBudget(b, debits),
                         categoryLabel: _categorySummaryForBudget(b, tp),
+                        isRecurring:
+                            _isRecurringBudgetInSelectedMonth(b),
                         onTap: () => setState(() => _detailBudget = b),
                       ))
                   .toList(),
@@ -319,6 +316,8 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
                         budget: b,
                         spent: _spentForBudget(b, debits),
                         categoryLabel: _categorySummaryForBudget(b, tp),
+                        isRecurring:
+                            _isRecurringBudgetInSelectedMonth(b),
                         onTap: () => setState(() => _detailBudget = b),
                       ))
                   .toList(),
@@ -365,8 +364,6 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
   ) {
     final spent = _spentForBudget(budget, debits);
     final available = budget.amount - spent;
-    final primaryCategoryId = budget.primaryCategoryId;
-    final color = _colorForCategory(primaryCategoryId);
     final categorySummary = _categorySummaryForBudget(budget, tp);
 
     // Transactions for this budget
@@ -415,8 +412,8 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
           budget: budget,
           spent: spent,
           available: available,
-          color: color,
           categoryLabel: categorySummary,
+          isRecurring: _isRecurringBudgetInSelectedMonth(budget),
           dailyRate: dailyRate,
           daysLeft: daysLeft,
         ),
@@ -597,6 +594,8 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progress = assigned > 0 ? (activity / assigned).clamp(0.0, 1.0) : 0.0;
+    final usagePercent =
+        assigned > 0 ? ((activity / assigned) * 100).toDouble() : 0.0;
     final availableColor =
         available >= 0 ? AppColors.incomeSuccess : AppColors.red;
 
@@ -637,7 +636,9 @@ class _SummaryCard extends StatelessWidget {
               minHeight: 6,
               backgroundColor: AppColors.mutedFill(context),
               valueColor: AlwaysStoppedAnimation(
-                progress >= 1.0 ? AppColors.red : AppColors.incomeSuccess,
+                _progressColorForUsage(
+                  usagePercent: usagePercent,
+                ),
               ),
             ),
           ),
@@ -782,23 +783,26 @@ class _BudgetItemRow extends StatelessWidget {
   final Budget budget;
   final double spent;
   final String? categoryLabel;
+  final bool isRecurring;
   final VoidCallback onTap;
 
   const _BudgetItemRow({
     required this.budget,
     required this.spent,
     required this.categoryLabel,
+    required this.isRecurring,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final available = budget.amount - spent;
     final progress =
         budget.amount > 0 ? (spent / budget.amount).clamp(0.0, 1.0) : 0.0;
-    final color = _colorForCategory(budget.primaryCategoryId);
-    final availableColor =
-        available >= 0 ? AppColors.incomeSuccess : AppColors.red;
+    final usagePercent =
+        budget.amount > 0 ? ((spent / budget.amount) * 100).toDouble() : 0.0;
+    final progressColor = _progressColorForUsage(
+      usagePercent: usagePercent,
+    );
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -815,31 +819,31 @@ class _BudgetItemRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Name row with dot
+              // Name row
               Row(
                 children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          budget.name,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary(context),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                budget.name,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary(context),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            _BudgetRecurrenceBadge(isRecurring: isRecurring),
+                          ],
                         ),
                         if (categoryLabel != null &&
                             categoryLabel!.trim().isNotEmpty) ...[
@@ -865,11 +869,11 @@ class _BudgetItemRow extends StatelessWidget {
                   value: progress,
                   minHeight: 5,
                   backgroundColor: AppColors.mutedFill(context),
-                  valueColor: AlwaysStoppedAnimation(color),
+                  valueColor: AlwaysStoppedAnimation(progressColor),
                 ),
               ),
               const SizedBox(height: 10),
-              // Spent + available
+              // Spent + assigned
               Row(
                 children: [
                   Text(
@@ -884,15 +888,15 @@ class _BudgetItemRow extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: availableColor.withValues(alpha: 0.1),
+                      color: AppColors.mutedFill(context),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      'ETB ${_compactAmount(available)}',
+                      'ETB ${_compactAmount(budget.amount)}',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: availableColor,
+                        color: AppColors.textPrimary(context),
                       ),
                     ),
                   ),
@@ -1187,8 +1191,8 @@ class _DetailSummaryCard extends StatelessWidget {
   final Budget budget;
   final double spent;
   final double available;
-  final Color color;
   final String? categoryLabel;
+  final bool isRecurring;
   final double dailyRate;
   final int daysLeft;
 
@@ -1196,8 +1200,8 @@ class _DetailSummaryCard extends StatelessWidget {
     required this.budget,
     required this.spent,
     required this.available,
-    required this.color,
     required this.categoryLabel,
+    required this.isRecurring,
     required this.dailyRate,
     required this.daysLeft,
   });
@@ -1206,6 +1210,11 @@ class _DetailSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final progress =
         budget.amount > 0 ? (spent / budget.amount).clamp(0.0, 1.0) : 0.0;
+    final usagePercent =
+        budget.amount > 0 ? ((spent / budget.amount) * 100).toDouble() : 0.0;
+    final progressColor = _progressColorForUsage(
+      usagePercent: usagePercent,
+    );
     final availableColor =
         available >= 0 ? AppColors.incomeSuccess : AppColors.red;
 
@@ -1219,26 +1228,24 @@ class _DetailSummaryCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Dot + name
+          // Name + badge
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              Expanded(
+                child: Text(
+                  budget.name,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary(context),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               const SizedBox(width: 8),
-              Text(
-                budget.name,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary(context),
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+              _BudgetRecurrenceBadge(isRecurring: isRecurring),
             ],
           ),
           if (categoryLabel != null && categoryLabel!.trim().isNotEmpty) ...[
@@ -1251,7 +1258,6 @@ class _DetailSummaryCard extends StatelessWidget {
                   fontSize: 12,
                   color: AppColors.textSecondary(context),
                 ),
-                textAlign: TextAlign.center,
               ),
             ),
           ],
@@ -1286,7 +1292,7 @@ class _DetailSummaryCard extends StatelessWidget {
               minHeight: 6,
               backgroundColor: AppColors.mutedFill(context),
               valueColor: AlwaysStoppedAnimation(
-                progress >= 1.0 ? AppColors.red : AppColors.incomeSuccess,
+                progressColor,
               ),
             ),
           ),
@@ -1364,6 +1370,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   bool _isSaving = false;
   bool _uniqueToSelectedMonth = false;
   bool _applyToFutureBudgets = true;
+  bool _createFutureBudgets = false;
+  bool _endRecurringAtSelectedMonth = false;
   bool _showNewCategoryComposer = false;
   bool _showCategoryColorChoices = false;
   String _draftCategoryColorKey = _kBudgetCategoryColorOptions.first.key;
@@ -1385,6 +1393,15 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     if (existing == null) return false;
     return existing.endDate == null ||
         existing.endDate!.isAfter(_selectedMonthEnd);
+  }
+
+  bool get _isSingleMonthBudgetInSelectedMonth {
+    final existing = widget.existing;
+    if (existing == null || _hasFutureBudgetsToUpdate) return false;
+    final endDate = existing.endDate;
+    if (endDate == null) return false;
+    return !endDate.isBefore(_selectedMonthStart) &&
+        !endDate.isAfter(_selectedMonthEnd);
   }
 
   @override
@@ -1867,6 +1884,74 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                           ),
                           child: SwitchListTile(
                             title: Text(
+                              'Make $selectedMonthLabel the last month',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.textPrimary(context),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Stop this recurring budget after this month',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppColors.textSecondary(context),
+                              ),
+                            ),
+                            value: _endRecurringAtSelectedMonth,
+                            onChanged: (v) =>
+                                setState(() => _endRecurringAtSelectedMonth = v),
+                            activeColor: AppColors.primaryLight,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
+                      if (_isEdit && _isSingleMonthBudgetInSelectedMonth) ...[
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceColor(context),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: SwitchListTile(
+                            title: Text(
+                              'Create for future months too',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.textPrimary(context),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Turn this into a recurring budget',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppColors.textSecondary(context),
+                              ),
+                            ),
+                            value: _createFutureBudgets,
+                            onChanged: (v) =>
+                                setState(() => _createFutureBudgets = v),
+                            activeColor: AppColors.primaryLight,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
+                      if (_isEdit && _hasFutureBudgetsToUpdate) ...[
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceColor(context),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: SwitchListTile(
+                            title: Text(
                               'Apply to future budgets too',
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: AppColors.textPrimary(context),
@@ -1880,8 +1965,10 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                               ),
                             ),
                             value: _applyToFutureBudgets,
-                            onChanged: (v) =>
-                                setState(() => _applyToFutureBudgets = v),
+                            onChanged: _endRecurringAtSelectedMonth
+                                ? null
+                                : (v) =>
+                                    setState(() => _applyToFutureBudgets = v),
                             activeColor: AppColors.primaryLight,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -2215,9 +2302,16 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     final now = DateTime.now();
     final startDate =
         _isEdit ? widget.existing!.startDate : _selectedMonthStart;
-    final endDate = _isEdit
+    final baseEndDate = _isEdit
         ? widget.existing!.endDate
         : (_uniqueToSelectedMonth ? _selectedMonthEnd : null);
+    final shouldCreateFutureBudgets = _isEdit &&
+        _isSingleMonthBudgetInSelectedMonth &&
+        _createFutureBudgets;
+    final shouldEndRecurringAfterSelectedMonth =
+        _isEdit && _hasFutureBudgetsToUpdate && _endRecurringAtSelectedMonth;
+    final effectiveEndDate =
+        shouldCreateFutureBudgets ? null : baseEndDate;
     final budget = Budget(
       id: widget.existing?.id,
       name: _nameController.text.trim(),
@@ -2226,7 +2320,7 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
       categoryId: primaryCategoryId,
       categoryIds: selectedIds.isEmpty ? null : selectedIds,
       startDate: startDate,
-      endDate: endDate,
+      endDate: effectiveEndDate,
       rollover: _rollover,
       alertThreshold: double.parse(_alertController.text.trim()),
       isActive: true,
@@ -2237,13 +2331,21 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
 
     try {
       if (_isEdit) {
-        if (_applyToFutureBudgets || !_hasFutureBudgetsToUpdate) {
+        if (shouldEndRecurringAfterSelectedMonth) {
+          await widget.budgetProvider.updateBudgetForMonthOnly(
+            originalBudget: widget.existing!,
+            editedBudget: budget.copyWith(endDate: _selectedMonthEnd),
+            month: _selectedMonthStart,
+            keepFutureSegment: false,
+          );
+        } else if (_applyToFutureBudgets || !_hasFutureBudgetsToUpdate) {
           await widget.budgetProvider.updateBudget(budget);
         } else {
           await widget.budgetProvider.updateBudgetForMonthOnly(
             originalBudget: widget.existing!,
             editedBudget: budget,
             month: _selectedMonthStart,
+            keepFutureSegment: true,
           );
         }
       } else {
@@ -2525,6 +2627,37 @@ class _AutoMarqueeTextState extends State<_AutoMarqueeText>
           ),
         );
       },
+    );
+  }
+}
+
+class _BudgetRecurrenceBadge extends StatelessWidget {
+  final bool isRecurring;
+
+  const _BudgetRecurrenceBadge({
+    required this.isRecurring,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = isRecurring ? 'Recurring' : 'This month';
+    final color =
+        isRecurring ? AppColors.primaryLight : AppColors.textSecondary(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
     );
   }
 }

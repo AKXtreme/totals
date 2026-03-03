@@ -89,12 +89,14 @@ class BudgetProvider with ChangeNotifier {
     required Budget originalBudget,
     required Budget editedBudget,
     required DateTime month,
+    bool keepFutureSegment = true,
   }) async {
     try {
       await _budgetRepository.updateBudgetForMonthOnly(
         originalBudget: originalBudget,
         editedBudget: editedBudget,
         month: month,
+        keepFutureSegment: keepFutureSegment,
       );
       await loadBudgets();
       notifyListeners();

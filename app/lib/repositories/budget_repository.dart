@@ -93,6 +93,7 @@ class BudgetRepository {
     required Budget originalBudget,
     required Budget editedBudget,
     required DateTime month,
+    bool keepFutureSegment = true,
   }) async {
     if (originalBudget.id == null) {
       throw ArgumentError('Original budget must have an id.');
@@ -104,7 +105,8 @@ class BudgetRepository {
     final monthEnd = nextMonthStart.subtract(const Duration(seconds: 1));
     final originalEnd = originalBudget.endDate;
     final hadPastSegment = originalBudget.startDate.isBefore(monthStart);
-    final hasFutureSegment = originalEnd == null || originalEnd.isAfter(monthEnd);
+    final hasFutureSegment =
+        keepFutureSegment && (originalEnd == null || originalEnd.isAfter(monthEnd));
     final nowIso = DateTime.now().toIso8601String();
 
     await db.transaction((txn) async {
