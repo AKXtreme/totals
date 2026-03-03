@@ -5,7 +5,7 @@ import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/data/consts.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
-import 'package:totals/screens/accounts_page.dart';
+import 'package:totals/_redesign/screens/redesign_shell.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/_redesign/screens/todays_transactions_page.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
@@ -120,7 +120,14 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                           _showBalance = !_showBalance;
                         });
                       },
-                      onBreakdownTap: _openAccountsPage,
+                      onCardTap: _openAccountsPage,
+                      onBreakdownTap: () => _openBalanceBreakdown(
+                        totalBalance: totalBalance,
+                        monthTransactions: monthTransactionsCount,
+                        selfTransferCount: selfTransferCount,
+                        monthTotals: monthTotals,
+                        thirtyDayTotals: thirtyDayTotals,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     _InsightCard(message: insightMessage),
@@ -246,12 +253,8 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
   }
 
   void _openAccountsPage() {
-    Navigator.push(
-      context,
-      MaterialPageRoute<void>(
-        builder: (_) => const AccountsPage(),
-      ),
-    );
+    final shellState = context.findAncestorStateOfType<RedesignShellState>();
+    shellState?.openMoneyAccountsPage();
   }
 
   Future<void> _openTransactionCategorySheet({
@@ -352,6 +355,7 @@ class _TotalBalanceCard extends StatelessWidget {
   final double weekIncome;
   final double weekExpense;
   final bool showBalance;
+  final VoidCallback onCardTap;
   final VoidCallback onToggleBalance;
   final VoidCallback onBreakdownTap;
 
@@ -362,6 +366,7 @@ class _TotalBalanceCard extends StatelessWidget {
     required this.weekIncome,
     required this.weekExpense,
     required this.showBalance,
+    required this.onCardTap,
     required this.onToggleBalance,
     required this.onBreakdownTap,
   });
@@ -380,106 +385,109 @@ class _TotalBalanceCard extends StatelessWidget {
     final weekExpenseLabel =
         showBalance ? '- ${_formatDelta(weekExpense)}' : '***';
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.primaryDark,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'TOTAL BALANCE',
-                style: TextStyle(
-                  color: AppColors.white.withValues(alpha: 0.85),
-                  fontSize: 12,
-                  letterSpacing: 1.1,
-                  fontWeight: FontWeight.w500,
+    return GestureDetector(
+      onTap: onCardTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.primaryDark,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'TOTAL BALANCE',
+                  style: TextStyle(
+                    color: AppColors.white.withValues(alpha: 0.85),
+                    fontSize: 12,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              IconButton(
-                onPressed: onToggleBalance,
-                style: IconButton.styleFrom(
-                  foregroundColor: AppColors.white.withValues(alpha: 0.9),
-                  padding: EdgeInsets.zero,
-                  minimumSize: const Size(24, 24),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                const Spacer(),
+                IconButton(
+                  onPressed: onToggleBalance,
+                  style: IconButton.styleFrom(
+                    foregroundColor: AppColors.white.withValues(alpha: 0.9),
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(24, 24),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: Icon(
+                    showBalance
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    size: 20,
+                  ),
                 ),
-                icon: Icon(
-                  showBalance
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
-                  size: 20,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'ETB $displayBalance',
-            style: const TextStyle(
-              color: AppColors.white,
-              fontSize: 32,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
+              ],
             ),
-          ),
-          const SizedBox(height: 6),
-          InkWell(
-            onTap: onBreakdownTap,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  Text(
-                    'Open accounts',
-                    style: TextStyle(
-                      color: AppColors.white.withValues(alpha: 0.85),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+            const SizedBox(height: 8),
+            Text(
+              'ETB $displayBalance',
+              style: const TextStyle(
+                color: AppColors.white,
+                fontSize: 32,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+            InkWell(
+              onTap: onBreakdownTap,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Text(
+                      'How did I get here?',
+                      style: TextStyle(
+                        color: AppColors.white.withValues(alpha: 0.85),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  Icon(
-                    Icons.arrow_forward,
-                    size: 14,
-                    color: AppColors.white.withValues(alpha: 0.8),
-                  ),
-                ],
+                    const Spacer(),
+                    Icon(
+                      Icons.arrow_forward,
+                      size: 14,
+                      color: AppColors.white.withValues(alpha: 0.8),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            height: 1,
-            color: AppColors.white.withValues(alpha: 0.22),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _BalanceDelta(
-                  label: 'Today',
-                  income: todayIncomeLabel,
-                  expense: todayExpenseLabel,
+            const SizedBox(height: 10),
+            Container(
+              height: 1,
+              color: AppColors.white.withValues(alpha: 0.22),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _BalanceDelta(
+                    label: 'Today',
+                    income: todayIncomeLabel,
+                    expense: todayExpenseLabel,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _BalanceDelta(
-                  label: 'This week',
-                  income: weekIncomeLabel,
-                  expense: weekExpenseLabel,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _BalanceDelta(
+                    label: 'This week',
+                    income: weekIncomeLabel,
+                    expense: weekExpenseLabel,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

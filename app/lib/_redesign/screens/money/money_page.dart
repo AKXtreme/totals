@@ -25,7 +25,7 @@ class RedesignMoneyPage extends StatefulWidget {
   const RedesignMoneyPage({super.key});
 
   @override
-  State<RedesignMoneyPage> createState() => _RedesignMoneyPageState();
+  State<RedesignMoneyPage> createState() => RedesignMoneyPageState();
 }
 
 enum _TopTab { activity, accounts }
@@ -67,7 +67,7 @@ class _TransactionFilter {
   }
 }
 
-class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
+class RedesignMoneyPageState extends State<RedesignMoneyPage> {
   _TopTab _topTab = _TopTab.activity;
   _SubTab _subTab = _SubTab.transactions;
   final TextEditingController _searchController = TextEditingController();
@@ -84,6 +84,13 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
   static const int _pageSize = 50;
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
+
+  void openAccountsTab() {
+    if (_topTab == _TopTab.accounts) return;
+    setState(() {
+      _topTab = _TopTab.accounts;
+    });
+  }
 
   void _toggleSelection(Transaction transaction) {
     setState(() {
@@ -1581,12 +1588,8 @@ class _SearchFilterRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Container(
+          child: SizedBox(
             height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.cardColor(context),
-              borderRadius: BorderRadius.circular(10),
-            ),
             child: TextField(
               controller: controller,
               onChanged: onChanged,
@@ -1599,9 +1602,25 @@ class _SearchFilterRow extends StatelessWidget {
                   fontSize: 14,
                   fontWeight: FontWeight.w400,
                 ),
-                border: InputBorder.none,
+                filled: true,
+                fillColor: AppColors.surfaceColor(context),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: AppColors.borderColor(context)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: AppColors.borderColor(context)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(
+                    color: AppColors.primaryLight,
+                    width: 1.3,
+                  ),
+                ),
                 contentPadding:
-                    EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 isDense: true,
               ),
             ),

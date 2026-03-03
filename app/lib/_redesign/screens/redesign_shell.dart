@@ -24,9 +24,12 @@ class RedesignShell extends StatefulWidget {
 class RedesignShellState extends State<RedesignShell>
     with WidgetsBindingObserver {
   static const int _homeIndex = 0;
+  static const int _moneyIndex = 1;
   static const int _budgetIndex = 2;
   final PageController _pageController =
       PageController(initialPage: _homeIndex);
+  final GlobalKey<RedesignMoneyPageState> _moneyPageKey =
+      GlobalKey<RedesignMoneyPageState>();
   int _currentIndex = _homeIndex;
   StreamSubscription<WidgetLaunchTarget>? _widgetLaunchIntentSub;
 
@@ -134,6 +137,25 @@ class RedesignShellState extends State<RedesignShell>
     });
   }
 
+  void openMoneyAccountsPage() {
+    _onTabSelected(_moneyIndex);
+
+    void openAccountsWhenReady([int attempts = 0]) {
+      final moneyState = _moneyPageKey.currentState;
+      if (moneyState != null && moneyState.mounted) {
+        moneyState.openAccountsTab();
+        return;
+      }
+
+      if (attempts >= 3) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        openAccountsWhenReady(attempts + 1);
+      });
+    }
+
+    openAccountsWhenReady();
+  }
+
   void _onTabSelected(int index) {
     setState(() {
       _currentIndex = index;
@@ -152,12 +174,12 @@ class RedesignShellState extends State<RedesignShell>
       body: PageView(
         controller: _pageController,
         physics: const NeverScrollableScrollPhysics(),
-        children: const [
-          RedesignHomePage(),
-          RedesignMoneyPage(),
-          RedesignBudgetPage(),
-          RedesignToolsPage(),
-          RedesignSettingsPage(),
+        children: [
+          const RedesignHomePage(),
+          RedesignMoneyPage(key: _moneyPageKey),
+          const RedesignBudgetPage(),
+          const RedesignToolsPage(),
+          const RedesignSettingsPage(),
         ],
       ),
       bottomNavigationBar: RedesignBottomNav(
