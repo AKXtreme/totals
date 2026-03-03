@@ -329,8 +329,8 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
                 context,
                 MaterialPageRoute(
                   builder: (_) => _UnbudgetedTransactionsPage(
-                    transactions: unbudgetedTxns,
-                    transactionProvider: tp,
+                    selectedMonth: _selectedMonth,
+                    budgetedCategoryIds: budgetedCatIds,
                   ),
                 ),
               ),
@@ -979,18 +979,17 @@ class _UnbudgetedSpendingCard extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _UnbudgetedTransactionsPage extends StatelessWidget {
-  final List<Transaction> transactions;
-  final TransactionProvider transactionProvider;
+  final DateTime selectedMonth;
+  final Set<int> budgetedCategoryIds;
 
   const _UnbudgetedTransactionsPage({
-    required this.transactions,
-    required this.transactionProvider,
+    required this.selectedMonth,
+    required this.budgetedCategoryIds,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tp = transactionProvider;
 
     return Scaffold(
       backgroundColor: AppColors.background(context),
@@ -1011,6 +1010,26 @@ class _UnbudgetedTransactionsPage extends StatelessWidget {
       ),
       body: Consumer<TransactionProvider>(
         builder: (context, provider, _) {
+          final monthStart = DateTime(selectedMonth.year, selectedMonth.month);
+          final monthEnd =
+              DateTime(selectedMonth.year, selectedMonth.month + 1);
+          final transactions = provider.allTransactions.where((t) {
+            if (t.type != 'DEBIT') return false;
+            if (t.time == null) return false;
+            final dt = DateTime.tryParse(t.time!);
+            if (dt == null) return false;
+            if (dt.isBefore(monthStart) || !dt.isBefore(monthEnd)) return false;
+            return !budgetedCategoryIds.contains(t.categoryId);
+          }).toList()
+            ..sort((a, b) {
+              final ta = a.time != null ? DateTime.tryParse(a.time!) : null;
+              final tb = b.time != null ? DateTime.tryParse(b.time!) : null;
+              if (ta == null && tb == null) return 0;
+              if (ta == null) return 1;
+              if (tb == null) return -1;
+              return tb.compareTo(ta);
+            });
+
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
             children: [
@@ -1027,38 +1046,51 @@ class _UnbudgetedTransactionsPage extends StatelessWidget {
                 ),
               ),
 
-              // Transaction list
-              ...transactions.map((t) {
-                final cat = provider.getCategoryById(t.categoryId);
-                final isSelfTransfer = provider.isSelfTransfer(t);
-                final isMisc = cat?.uncategorized == true;
-                final categoryLabel =
-                    isSelfTransfer ? 'Self' : (cat?.name ?? 'Categorize');
-                final isCategorized = isSelfTransfer || cat != null;
-                final isCredit = t.type == 'CREDIT';
-
-                return TransactionTile(
-                  bank: _bankLabel(t.bankId),
-                  category: categoryLabel,
-                  categoryModel: cat,
-                  isCategorized: isCategorized,
-                  isDebit: !isCredit,
-                  isSelfTransfer: isSelfTransfer,
-                  isMisc: isMisc,
-                  amount: formatNumberWithComma(t.amount),
-                  amountColor:
-                      isCredit ? AppColors.incomeSuccess : AppColors.red,
-                  name: (t.receiver?.trim().isNotEmpty == true
-                          ? t.receiver!
-                          : t.creditor?.trim() ?? '')
-                      .trim(),
-                  onTap: () => showTransactionDetailsSheet(
-                    context: context,
-                    transaction: t,
-                    provider: provider,
+              if (transactions.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                    'No unbudgeted transactions for this month.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary(context),
+                    ),
                   ),
-                );
-              }),
+                )
+              else
+                ...transactions.map((t) {
+                  final cat = provider.getCategoryById(t.categoryId);
+                  final isSelfTransfer = provider.isSelfTransfer(t);
+                  final isMisc = cat?.uncategorized == true;
+                  final categoryLabel =
+                      isSelfTransfer ? 'Self' : (cat?.name ?? 'Categorize');
+                  final isCategorized = isSelfTransfer || cat != null;
+                  final isCredit = t.type == 'CREDIT';
+
+                  return TransactionTile(
+                    bank: _bankLabel(t.bankId),
+                    category: categoryLabel,
+                    categoryModel: cat,
+                    isCategorized: isCategorized,
+                    isDebit: !isCredit,
+                    isSelfTransfer: isSelfTransfer,
+                    isMisc: isMisc,
+                    amount: formatNumberWithComma(t.amount),
+                    amountColor:
+                        isCredit ? AppColors.incomeSuccess : AppColors.red,
+                    name: (t.receiver?.trim().isNotEmpty == true
+                            ? t.receiver!
+                            : t.creditor?.trim() ?? '')
+                        .trim(),
+                    onTap: () => showTransactionDetailsSheet(
+                      context: context,
+                      transaction: t,
+                      provider: provider,
+                    ),
+                  );
+                }),
             ],
           );
         },
