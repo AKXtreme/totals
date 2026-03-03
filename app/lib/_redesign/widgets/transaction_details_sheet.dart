@@ -7,7 +7,6 @@ import 'package:totals/data/consts.dart';
 import 'package:totals/models/category.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
-import 'package:totals/utils/category_icons.dart';
 import 'package:totals/utils/text_utils.dart';
 
 /// Shows the transaction details bottom sheet matching the redesign style.
@@ -43,6 +42,13 @@ class _TransactionDetailsSheet extends StatefulWidget {
 
 class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   bool _categoryExpanded = false;
+  bool _showNewCategoryForm = false;
+  bool _showColorChoices = false;
+  String _draftColorKey = _kCategoryColorOptions.first.key;
+  final TextEditingController _newCategoryController = TextEditingController();
+  final FocusNode _newCategoryFocus = FocusNode();
+  final ScrollController _sheetScrollController = ScrollController();
+  double _lastKeyboardInset = 0;
 
   Transaction get _tx => widget.transaction;
   TransactionProvider get _provider => widget.provider;
@@ -170,49 +176,143 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     );
   }
 
-  Future<void> _showNewCategoryDialog() async {
-    String draftName = '';
-    final flow = _isCredit ? 'income' : 'expense';
-    final createdName = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New category'),
-        content: TextField(
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Category name'),
-          onChanged: (value) => draftName = value,
-          onSubmitted: (value) {
-            final trimmed = value.trim();
-            if (trimmed.isNotEmpty) {
-              Navigator.pop(ctx, trimmed);
-            }
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              final trimmed = draftName.trim();
-              if (trimmed.isNotEmpty) {
-                Navigator.pop(ctx, trimmed);
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      ),
+  void _toggleNewCategoryForm() {
+    final shouldShow = !_showNewCategoryForm;
+    setState(() {
+      _showNewCategoryForm = shouldShow;
+      _showColorChoices = false;
+      if (!shouldShow) {
+        _newCategoryController.clear();
+      }
+    });
+    if (!shouldShow) {
+      _newCategoryFocus.unfocus();
+      return;
+    }
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _newCategoryFocus.requestFocus();
+      _scrollComposerIntoView();
+    });
+  }
+
+  void _toggleColorChoices() {
+    final willOpen = !_showColorChoices;
+    setState(() => _showColorChoices = willOpen);
+    if (!willOpen) return;
+    _scrollComposerIntoView();
+  }
+
+  void _scrollComposerIntoView() {
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_sheetScrollController.hasClients) return;
+      final target = _sheetScrollController.position.maxScrollExtent;
+      _sheetScrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  bool _categoryExistsForFlow({
+    required String name,
+    required String flow,
+  }) {
+    final normalizedName = name.trim().toLowerCase();
+    final normalizedFlow = flow.toLowerCase();
+    return _provider.categories.any(
+      (c) =>
+          c.flow.toLowerCase() == normalizedFlow &&
+          c.name.trim().toLowerCase() == normalizedName,
     );
-    if (createdName != null && createdName.trim().isNotEmpty) {
+  }
+
+  String _serializeColorKey(String colorKey) => 'color:$colorKey';
+
+  String? _extractColorKey(String? iconKey) {
+    if (iconKey == null || iconKey.isEmpty) return null;
+    const prefix = 'color:';
+    if (!iconKey.startsWith(prefix)) return null;
+    final value = iconKey.substring(prefix.length).trim();
+    if (value.isEmpty) return null;
+    return value;
+  }
+
+  Color _colorFromKey(String colorKey) {
+    for (final option in _kCategoryColorOptions) {
+      if (option.key == colorKey) return option.color;
+    }
+    return _kCategoryColorOptions.first.color;
+  }
+
+  int _fallbackColorIndex(Category category) {
+    final seed = '${category.flow}:${category.name.toLowerCase()}';
+    int hash = 0;
+    for (final code in seed.codeUnits) {
+      hash = (hash + code) & 0x7fffffff;
+    }
+    return hash % _kCategoryColorOptions.length;
+  }
+
+  Future<void> _createNewCategoryInline() async {
+    final createdName = _newCategoryController.text.trim();
+    if (createdName.isEmpty) return;
+    final flow = _isCredit ? 'income' : 'expense';
+    if (_categoryExistsForFlow(name: createdName, flow: flow)) {
+      _newCategoryFocus.requestFocus();
+      return;
+    }
+    final knownCategoryIds = _provider.categories
+        .map((c) => c.id)
+        .whereType<int>()
+        .toSet();
+    try {
       await _provider.createCategory(
-        name: createdName.trim(),
+        name: createdName,
         essential: false,
         flow: flow,
+        iconKey: _serializeColorKey(_draftColorKey),
       );
-      if (mounted) setState(() {});
+    } catch (error) {
+      if (!mounted) return;
+      final message = error.toString().toLowerCase();
+      if (message.contains('unique') ||
+          message.contains('constraint') ||
+          message.contains('already exists')) {
+        _newCategoryFocus.requestFocus();
+        setState(() {});
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not create category')),
+      );
+      return;
     }
+    if (!mounted) return;
+    final normalizedName = createdName.toLowerCase();
+    final normalizedFlow = flow.toLowerCase();
+    final createdCategory = _provider.categories
+        .where((c) =>
+            c.id != null &&
+            !knownCategoryIds.contains(c.id) &&
+            c.flow.toLowerCase() == normalizedFlow &&
+            c.name.trim().toLowerCase() == normalizedName)
+        .fold<Category?>(
+          null,
+          (best, c) =>
+              best == null || (c.id ?? 0) > (best.id ?? 0) ? c : best,
+        );
+    if (createdCategory != null) {
+      await _setCategory(createdCategory);
+      return;
+    }
+    setState(() {
+      _showNewCategoryForm = false;
+      _showColorChoices = false;
+      _newCategoryController.clear();
+    });
+    _newCategoryFocus.unfocus();
   }
 
   Future<void> _deleteTransaction() async {
@@ -242,22 +342,40 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   }
 
   @override
+  void dispose() {
+    _newCategoryController.dispose();
+    _newCategoryFocus.dispose();
+    _sheetScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final category = _currentCategory;
     final isSelfTransfer = _provider.isSelfTransfer(_tx);
     final selfTransferLabel = _provider.getSelfTransferLabel(_tx);
+    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    final keyboardScrollBuffer = keyboardInset > 0 ? 88.0 : 24.0;
+    if (keyboardInset > _lastKeyboardInset && _showNewCategoryForm) {
+      _scrollComposerIntoView();
+    }
+    _lastKeyboardInset = keyboardInset;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.cardColor(context),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: keyboardInset),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(context),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             // Drag handle
             Padding(
               padding: const EdgeInsets.only(top: 12),
@@ -307,10 +425,17 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
             ),
 
             // Counterparty name
-            Text(
-              _counterparty,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppColors.textSecondary(context),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: SizedBox(
+                width: double.infinity,
+                child: _MarqueeText(
+                  text: _counterparty,
+                  centerWhenStatic: true,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textSecondary(context),
+                  ),
+                ),
               ),
             ),
 
@@ -319,7 +444,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
             // Scrollable detail rows + category + delete
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                controller: _sheetScrollController,
+                padding: EdgeInsets.fromLTRB(20, 0, 20, keyboardScrollBuffer),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -384,7 +510,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                 ),
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -463,54 +590,257 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
 
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ...categories.map((c) {
-            final isSelected = current?.id != null && c.id == current!.id;
-            return _CategoryPickerChip(
-              label: c.name,
-              color: _categoryColor(c),
-              icon: iconForCategoryKey(c.iconKey),
-              isSelected: isSelected,
-              onTap: () => _setCategory(c),
-            );
-          }),
-          if (current != null)
-            _CategoryPickerChip(
-              label: 'Remove',
-              color: AppColors.red,
-              icon: Icons.close_rounded,
-              isSelected: false,
-              isRemove: true,
-              onTap: _clearCategory,
-            ),
-          _CategoryPickerChip(
-            label: '+ New',
-            color: AppColors.textSecondary(context),
-            icon: Icons.add,
-            isSelected: false,
-            onTap: () => _showNewCategoryDialog(),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ...categories.map((c) {
+                final isSelected = current?.id != null && c.id == current!.id;
+                return _CategoryPickerChip(
+                  label: c.name,
+                  color: _categoryColor(c),
+                  isSelected: isSelected,
+                  onTap: () => _setCategory(c),
+                );
+              }),
+            ],
           ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _CategoryPickerChip(
+                label: _showNewCategoryForm ? 'Cancel' : '+ New',
+                color: _showNewCategoryForm
+                    ? AppColors.red
+                    : AppColors.textSecondary(context),
+                isSelected: false,
+                isRemove: _showNewCategoryForm,
+                showColorDot: false,
+                onTap: _toggleNewCategoryForm,
+              ),
+              if (current != null)
+                _CategoryPickerChip(
+                  label: 'Remove',
+                  color: AppColors.red,
+                  isSelected: false,
+                  isRemove: true,
+                  showColorDot: false,
+                  onTap: _clearCategory,
+                ),
+            ],
+          ),
+          if (_showNewCategoryForm) _buildNewCategoryComposer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewCategoryComposer() {
+    final selectedColor = _colorFromKey(_draftColorKey);
+    final flow = _isCredit ? 'income' : 'expense';
+    final draftName = _newCategoryController.text.trim();
+    final isDuplicateName =
+        draftName.isNotEmpty && _categoryExistsForFlow(name: draftName, flow: flow);
+    final canSubmit = draftName.isNotEmpty && !isDuplicateName;
+    final textFieldBorderColor =
+        isDuplicateName ? AppColors.red : AppColors.borderColor(context);
+    final focusedBorderColor =
+        isDuplicateName ? AppColors.red : AppColors.primaryLight;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _newCategoryController,
+                  focusNode: _newCategoryFocus,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.done,
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) => _createNewCategoryInline(),
+                  style: TextStyle(
+                    color: AppColors.textPrimary(context),
+                    fontSize: 14,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Category name',
+                    hintStyle: TextStyle(color: AppColors.textTertiary(context)),
+                    filled: true,
+                    fillColor: AppColors.surfaceColor(context),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: textFieldBorderColor),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: textFieldBorderColor),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: focusedBorderColor,
+                        width: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _toggleColorChoices,
+                child: Container(
+                  height: 40,
+                  width: 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceColor(context),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.borderColor(context)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: selectedColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      Icon(
+                        _showColorChoices
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                        size: 16,
+                        color: AppColors.textSecondary(context),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 40,
+                child: ElevatedButton(
+                  onPressed: canSubmit ? _createNewCategoryInline : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryDark,
+                    foregroundColor: AppColors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    'Add',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (_showColorChoices) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 30,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _kCategoryColorOptions.map((option) {
+                    final selected = option.key == _draftColorKey;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _draftColorKey = option.key;
+                            _showColorChoices = false;
+                          });
+                        },
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: option.color,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: selected
+                                  ? AppColors.textPrimary(context)
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(growable: false),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
   Color _categoryColor(Category category) {
-    if (category.flow == 'income') {
-      return category.essential
-          ? AppColors.incomeSuccess
-          : const Color(0xFF14B8A6);
+    final explicitKey = _extractColorKey(category.iconKey);
+    if (explicitKey != null) {
+      return _colorFromKey(explicitKey);
     }
-    return category.essential ? AppColors.blue : AppColors.amber;
+    return _kCategoryColorOptions[_fallbackColorIndex(category)].color;
   }
 }
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
 const double _kLabelWidth = 110;
+
+class _CategoryColorOption {
+  final String key;
+  final Color color;
+
+  const _CategoryColorOption({
+    required this.key,
+    required this.color,
+  });
+}
+
+const List<_CategoryColorOption> _kCategoryColorOptions = [
+  _CategoryColorOption(key: 'blue', color: AppColors.blue),
+  _CategoryColorOption(key: 'emerald', color: AppColors.incomeSuccess),
+  _CategoryColorOption(key: 'amber', color: AppColors.amber),
+  _CategoryColorOption(key: 'red', color: AppColors.red),
+  _CategoryColorOption(key: 'rose', color: Color(0xFFFB7185)),
+  _CategoryColorOption(key: 'magenta', color: Color(0xFFD946EF)),
+  _CategoryColorOption(key: 'violet', color: Color(0xFF8B5CF6)),
+  _CategoryColorOption(key: 'indigo', color: Color(0xFF6366F1)),
+  _CategoryColorOption(key: 'teal', color: Color(0xFF14B8A6)),
+  _CategoryColorOption(key: 'mint', color: Color(0xFF34D399)),
+  _CategoryColorOption(key: 'orange', color: Color(0xFFF97316)),
+  _CategoryColorOption(key: 'tangerine', color: Color(0xFFFF8C42)),
+  _CategoryColorOption(key: 'yellow', color: Color(0xFFEAB308)),
+  _CategoryColorOption(key: 'cyan', color: Color(0xFF06B6D4)),
+  _CategoryColorOption(key: 'sky', color: Color(0xFF0EA5E9)),
+  _CategoryColorOption(key: 'lime', color: Color(0xFF84CC16)),
+  _CategoryColorOption(key: 'pink', color: Color(0xFFEC4899)),
+  _CategoryColorOption(key: 'brown', color: Color(0xFFA16207)),
+  _CategoryColorOption(key: 'gray', color: Color(0xFF6B7280)),
+];
 
 // ── Detail row ──────────────────────────────────────────────────────────────
 
@@ -580,8 +910,13 @@ class _DetailRow extends StatelessWidget {
 class _MarqueeText extends StatefulWidget {
   final String text;
   final TextStyle? style;
+  final bool centerWhenStatic;
 
-  const _MarqueeText({required this.text, this.style});
+  const _MarqueeText({
+    required this.text,
+    this.style,
+    this.centerWhenStatic = false,
+  });
 
   @override
   State<_MarqueeText> createState() => _MarqueeTextState();
@@ -622,7 +957,12 @@ class _MarqueeTextState extends State<_MarqueeText>
       )..layout();
 
       if (tp.width <= constraints.maxWidth) {
-        return Text(widget.text, style: widget.style, maxLines: 1);
+        final staticText = Text(widget.text, style: widget.style, maxLines: 1);
+        if (!widget.centerWhenStatic) return staticText;
+        return Align(
+          alignment: Alignment.center,
+          child: staticText,
+        );
       }
 
       _ensureScroll(tp.width + _gap);
@@ -673,17 +1013,17 @@ class _MarqueeTextState extends State<_MarqueeText>
 class _CategoryPickerChip extends StatelessWidget {
   final String label;
   final Color color;
-  final IconData icon;
   final bool isSelected;
   final bool isRemove;
+  final bool showColorDot;
   final VoidCallback onTap;
 
   const _CategoryPickerChip({
     required this.label,
     required this.color,
-    required this.icon,
     required this.isSelected,
     this.isRemove = false,
+    this.showColorDot = true,
     required this.onTap,
   });
 
@@ -705,7 +1045,7 @@ class _CategoryPickerChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (!isRemove) ...[
+            if (showColorDot) ...[
               Container(
                 width: 8,
                 height: 8,

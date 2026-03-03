@@ -405,6 +405,7 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
                     child: TransactionTile(
                       bank: _bankLabel(t.bankId),
                       category: cat?.name ?? 'Uncategorized',
+                      categoryModel: cat,
                       isCategorized: cat != null,
                       isDebit: t.type?.toUpperCase() == 'DEBIT',
                       amount: formatNumberWithComma(t.amount),
@@ -995,6 +996,7 @@ class _UnbudgetedTransactionsPage extends StatelessWidget {
                 return TransactionTile(
                   bank: _bankLabel(t.bankId),
                   category: categoryLabel,
+                  categoryModel: cat,
                   isCategorized: isCategorized,
                   isDebit: !isCredit,
                   isSelfTransfer: isSelfTransfer,

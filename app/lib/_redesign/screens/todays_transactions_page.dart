@@ -156,6 +156,7 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
                     return TransactionTile(
                       bank: bankLabel,
                       category: categoryLabel,
+                      categoryModel: category,
                       isCategorized: isCategorized,
                       isDebit: !isCredit,
                       isSelfTransfer: isSelfTransfer,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
+import 'package:totals/models/category.dart';
 
 /// Shared transaction tile used across all redesign pages.
 ///
@@ -10,6 +11,7 @@ import 'package:totals/_redesign/theme/app_colors.dart';
 class TransactionTile extends StatelessWidget {
   final String bank;
   final String category;
+  final Category? categoryModel;
   final bool isCategorized;
 
   /// Whether the transaction is a debit (expense).
@@ -39,6 +41,7 @@ class TransactionTile extends StatelessWidget {
     super.key,
     required this.bank,
     required this.category,
+    this.categoryModel,
     required this.isCategorized,
     required this.isDebit,
     required this.amount,
@@ -103,6 +106,7 @@ class TransactionTile extends StatelessWidget {
                       const SizedBox(height: 6),
                       TransactionCategoryChip(
                         label: category,
+                        category: categoryModel,
                         isCategorized: isCategorized,
                         isDebit: isDebit,
                         isSelfTransfer: isSelfTransfer,
@@ -161,6 +165,7 @@ class TransactionTile extends StatelessWidget {
 
 class TransactionCategoryChip extends StatelessWidget {
   final String label;
+  final Category? category;
   final bool isCategorized;
   final bool isDebit;
   final bool isSelfTransfer;
@@ -169,6 +174,7 @@ class TransactionCategoryChip extends StatelessWidget {
   const TransactionCategoryChip({
     super.key,
     required this.label,
+    this.category,
     required this.isCategorized,
     required this.isDebit,
     this.isSelfTransfer = false,
@@ -197,19 +203,19 @@ class TransactionCategoryChip extends StatelessWidget {
     }
 
     if (isCategorized) {
-      final color = isDebit ? AppColors.red : AppColors.incomeSuccess;
+      final color = _categoryColor();
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(8),
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
           label,
-          style: const TextStyle(
-            color: AppColors.white,
+          style: TextStyle(
+            color: color,
             fontSize: 11,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
         ),
       );
@@ -232,6 +238,39 @@ class TransactionCategoryChip extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Color _categoryColor() {
+    final cat = category;
+    if (cat == null) {
+      return isDebit ? AppColors.red : AppColors.incomeSuccess;
+    }
+    final explicit = _extractColorKey(cat.iconKey);
+    if (explicit != null) {
+      return _colorFromKey(explicit);
+    }
+    return _kCategoryColorPalette[_fallbackColorIndex(cat)];
+  }
+
+  String? _extractColorKey(String? iconKey) {
+    if (iconKey == null || iconKey.isEmpty) return null;
+    const prefix = 'color:';
+    if (!iconKey.startsWith(prefix)) return null;
+    final key = iconKey.substring(prefix.length).trim();
+    return key.isEmpty ? null : key;
+  }
+
+  Color _colorFromKey(String colorKey) {
+    return _kCategoryColorByKey[colorKey] ?? _kCategoryColorPalette.first;
+  }
+
+  int _fallbackColorIndex(Category cat) {
+    final seed = '${cat.flow}:${cat.name.toLowerCase()}';
+    int hash = 0;
+    for (final code in seed.codeUnits) {
+      hash = (hash + code) & 0x7fffffff;
+    }
+    return hash % _kCategoryColorPalette.length;
   }
 }
 
@@ -326,3 +365,47 @@ class _TileMarqueeTextState extends State<TileMarqueeText>
     });
   }
 }
+
+const Map<String, Color> _kCategoryColorByKey = {
+  'blue': AppColors.blue,
+  'emerald': AppColors.incomeSuccess,
+  'amber': AppColors.amber,
+  'red': AppColors.red,
+  'rose': Color(0xFFFB7185),
+  'magenta': Color(0xFFD946EF),
+  'violet': Color(0xFF8B5CF6),
+  'indigo': Color(0xFF6366F1),
+  'teal': Color(0xFF14B8A6),
+  'mint': Color(0xFF34D399),
+  'orange': Color(0xFFF97316),
+  'tangerine': Color(0xFFFF8C42),
+  'yellow': Color(0xFFEAB308),
+  'cyan': Color(0xFF06B6D4),
+  'sky': Color(0xFF0EA5E9),
+  'lime': Color(0xFF84CC16),
+  'pink': Color(0xFFEC4899),
+  'brown': Color(0xFFA16207),
+  'gray': Color(0xFF6B7280),
+};
+
+const List<Color> _kCategoryColorPalette = [
+  AppColors.blue,
+  AppColors.incomeSuccess,
+  AppColors.amber,
+  AppColors.red,
+  Color(0xFFFB7185),
+  Color(0xFFD946EF),
+  Color(0xFF8B5CF6),
+  Color(0xFF6366F1),
+  Color(0xFF14B8A6),
+  Color(0xFF34D399),
+  Color(0xFFF97316),
+  Color(0xFFFF8C42),
+  Color(0xFFEAB308),
+  Color(0xFF06B6D4),
+  Color(0xFF0EA5E9),
+  Color(0xFF84CC16),
+  Color(0xFFEC4899),
+  Color(0xFFA16207),
+  Color(0xFF6B7280),
+];

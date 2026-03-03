@@ -201,6 +201,7 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                         return TransactionTile(
                           bank: bankLabel,
                           category: categoryLabel,
+                          categoryModel: category,
                           isCategorized: isCategorize,
                           isDebit: !isCredit,
                           isSelfTransfer: isSelfTransfer,
