@@ -752,18 +752,18 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
                 ),
               ),
 
-              if (!_isLoadingAutoCategorize)
-                _SettingTile(
-                  icon: Icons.category,
-                  iconColor: const Color(0xFFEC4899),
-                  title: 'Auto-categorize',
-                  subtitle: 'Categorize by receiver automatically',
-                  trailing: Switch(
-                    value: _autoCategorizeEnabled,
-                    onChanged: _toggleAutoCategorize,
-                    activeColor: AppColors.primaryLight,
-                  ),
-                ),
+              // if (!_isLoadingAutoCategorize)
+              //   _SettingTile(
+              //     icon: Icons.category,
+              //     iconColor: const Color(0xFFEC4899),
+              //     title: 'Auto-categorize',
+              //     subtitle: 'Categorize by receiver automatically',
+              //     trailing: Switch(
+              //       value: _autoCategorizeEnabled,
+              //       onChanged: _toggleAutoCategorize,
+              //       activeColor: AppColors.primaryLight,
+              //     ),
+              //   ),
 
               _SettingTile(
                 icon: Icons.notifications_outlined,

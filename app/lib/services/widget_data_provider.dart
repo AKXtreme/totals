@@ -37,7 +37,7 @@ class WidgetDataProvider {
   static const List<String> _rankColors = [
     '#5AC8FA',
     '#FFB347',
-    '#FF5D73',
+    '#EF4444',
   ];
 
   WidgetDataProvider({

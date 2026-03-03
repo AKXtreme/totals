@@ -71,8 +71,8 @@ class RedesignTheme {
 
     final colorScheme = ColorScheme.dark(
       primary: AppColors.primaryDark,
-      secondary: AppColors.blue,
-      surface: darkBg,
+      secondary: AppColors.primaryLight,
+      surface: AppColors.darkSurface,
       background: darkBg,
       error: AppColors.red,
       onPrimary: AppColors.white,

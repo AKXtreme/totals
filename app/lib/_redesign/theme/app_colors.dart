@@ -26,12 +26,12 @@ class AppColors {
   static const Color slate800 = Color(0xFF1E293B);
   static const Color slate900 = Color(0xFF0F172A);
 
-  // ── Dark-mode deep navy scale ────────────────────────────────────────────
-  static const Color darkBg = Color(0xFF080C19);
-  static const Color darkCard = Color(0xFF111827);
-  static const Color darkSurface = Color(0xFF0D1120);
-  static const Color darkBorder = Color(0xFF1C2640);
-  static const Color darkMuted = Color(0xFF283350);
+  // ── Dark-mode neutral black scale ────────────────────────────────────────
+  static const Color darkBg = Color(0xFF000000);
+  static const Color darkCard = Color(0xFF161A26);
+  static const Color darkSurface = Color(0xFF1E2230);
+  static const Color darkBorder = Color(0xFF34384A);
+  static const Color darkMuted = Color(0xFF2A3040);
 
   // ── Theme-aware helpers ──────────────────────────────────────────────────
   static bool isDark(BuildContext context) =>
