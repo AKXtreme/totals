@@ -85,6 +85,25 @@ class BudgetProvider with ChangeNotifier {
     }
   }
 
+  Future<void> updateBudgetForMonthOnly({
+    required Budget originalBudget,
+    required Budget editedBudget,
+    required DateTime month,
+  }) async {
+    try {
+      await _budgetRepository.updateBudgetForMonthOnly(
+        originalBudget: originalBudget,
+        editedBudget: editedBudget,
+        month: month,
+      );
+      await loadBudgets();
+      notifyListeners();
+    } catch (e) {
+      print("debug: Error updating budget for month only: $e");
+      rethrow;
+    }
+  }
+
   Future<void> deleteBudget(int id) async {
     try {
       await _budgetRepository.deleteBudget(id);

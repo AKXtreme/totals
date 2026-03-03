@@ -133,6 +133,15 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
       DateTime(_selectedMonth.year, _selectedMonth.month);
   DateTime get _monthEnd =>
       DateTime(_selectedMonth.year, _selectedMonth.month + 1);
+  DateTime get _monthEndInclusive =>
+      _monthEnd.subtract(const Duration(milliseconds: 1));
+
+  bool _isBudgetVisibleInSelectedMonth(Budget budget) {
+    final startsAfterMonth = budget.startDate.isAfter(_monthEndInclusive);
+    final endsBeforeMonth =
+        budget.endDate != null && budget.endDate!.isBefore(_monthStart);
+    return !startsAfterMonth && !endsBeforeMonth;
+  }
 
   void _prevMonth() => setState(() {
         _selectedMonth =
@@ -169,7 +178,9 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
   Widget build(BuildContext context) {
     return Consumer2<BudgetProvider, TransactionProvider>(
       builder: (context, budgetProvider, transactionProvider, _) {
-        final budgets = budgetProvider.budgets;
+        final budgets = budgetProvider.budgets
+            .where(_isBudgetVisibleInSelectedMonth)
+            .toList();
         final debits = _monthDebits(transactionProvider);
 
         if (_detailBudget != null) {
@@ -482,6 +493,7 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
       builder: (_) => _NewBudgetFormSheet(
         budgetProvider: bp,
         transactionProvider: tp,
+        selectedMonth: _selectedMonth,
       ),
     );
   }
@@ -495,6 +507,7 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
       builder: (_) => _NewBudgetFormSheet(
         budgetProvider: bp,
         transactionProvider: tp,
+        selectedMonth: _selectedMonth,
         existing: budget,
       ),
     );
@@ -1239,11 +1252,13 @@ class _DateGroupHeader extends StatelessWidget {
 class _NewBudgetFormSheet extends StatefulWidget {
   final BudgetProvider budgetProvider;
   final TransactionProvider transactionProvider;
+  final DateTime selectedMonth;
   final Budget? existing;
 
   const _NewBudgetFormSheet({
     required this.budgetProvider,
     required this.transactionProvider,
+    required this.selectedMonth,
     this.existing,
   });
 
@@ -1261,6 +1276,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   int? _selectedCategoryId;
   late bool _rollover;
   bool _isSaving = false;
+  bool _uniqueToSelectedMonth = false;
+  bool _applyToFutureBudgets = true;
   bool _showNewCategoryComposer = false;
   bool _showCategoryColorChoices = false;
   String _draftCategoryColorKey = _kBudgetCategoryColorOptions.first.key;
@@ -1270,6 +1287,19 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   double _lastKeyboardInset = 0;
 
   bool get _isEdit => widget.existing != null;
+  DateTime get _selectedMonthStart =>
+      DateTime(widget.selectedMonth.year, widget.selectedMonth.month, 1);
+  DateTime get _selectedMonthEnd => DateTime(
+            widget.selectedMonth.year,
+            widget.selectedMonth.month + 1,
+            1,
+          )
+          .subtract(const Duration(seconds: 1));
+  bool get _hasFutureBudgetsToUpdate {
+    final existing = widget.existing;
+    if (existing == null) return false;
+    return existing.endDate == null || existing.endDate!.isAfter(_selectedMonthEnd);
+  }
 
   @override
   void initState() {
@@ -1485,6 +1515,7 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final selectedMonthLabel = DateFormat('MMM yyyy').format(_selectedMonthStart);
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final expenseCategories = _filteredCategories;
     final keyboardScrollBuffer = bottomInset > 0 && _showNewCategoryComposer
@@ -1683,6 +1714,74 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                       ),
                       if (_showNewCategoryComposer) _buildNewCategoryComposer(),
                       const SizedBox(height: 16),
+
+                      if (!_isEdit) ...[
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceColor(context),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: SwitchListTile(
+                            title: Text(
+                              'Only for $selectedMonthLabel',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.textPrimary(context),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Keep this budget unique to this month only',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppColors.textSecondary(context),
+                              ),
+                            ),
+                            value: _uniqueToSelectedMonth,
+                            onChanged: (v) =>
+                                setState(() => _uniqueToSelectedMonth = v),
+                            activeColor: AppColors.primaryLight,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
+                      if (_isEdit && _hasFutureBudgetsToUpdate) ...[
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceColor(context),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: SwitchListTile(
+                            title: Text(
+                              'Apply to future budgets too',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.textPrimary(context),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Turn off to change only $selectedMonthLabel',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppColors.textSecondary(context),
+                              ),
+                            ),
+                            value: _applyToFutureBudgets,
+                            onChanged: (v) =>
+                                setState(() => _applyToFutureBudgets = v),
+                            activeColor: AppColors.primaryLight,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
 
                       // Alert threshold
                       Text(
@@ -2001,13 +2100,18 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
 
     final isCategory = _selectedCategoryId != null;
     final now = DateTime.now();
+    final startDate = _isEdit ? widget.existing!.startDate : _selectedMonthStart;
+    final endDate = _isEdit
+        ? widget.existing!.endDate
+        : (_uniqueToSelectedMonth ? _selectedMonthEnd : null);
     final budget = Budget(
       id: widget.existing?.id,
       name: _nameController.text.trim(),
       type: isCategory ? 'category' : _selectedPeriod,
       amount: double.parse(_amountController.text.trim()),
       categoryId: _selectedCategoryId,
-      startDate: widget.existing?.startDate ?? now,
+      startDate: startDate,
+      endDate: endDate,
       rollover: _rollover,
       alertThreshold: double.parse(_alertController.text.trim()),
       isActive: true,
@@ -2018,7 +2122,15 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
 
     try {
       if (_isEdit) {
-        await widget.budgetProvider.updateBudget(budget);
+        if (_applyToFutureBudgets || !_hasFutureBudgetsToUpdate) {
+          await widget.budgetProvider.updateBudget(budget);
+        } else {
+          await widget.budgetProvider.updateBudgetForMonthOnly(
+            originalBudget: widget.existing!,
+            editedBudget: budget,
+            month: _selectedMonthStart,
+          );
+        }
       } else {
         await widget.budgetProvider.createBudget(budget);
       }
