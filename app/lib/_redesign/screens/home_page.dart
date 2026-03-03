@@ -377,10 +377,10 @@ class _TotalBalanceCard extends StatelessWidget {
         showBalance ? '- ${_formatDelta(weekExpense)}' : '***';
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.primaryDark,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -391,8 +391,8 @@ class _TotalBalanceCard extends StatelessWidget {
                 'TOTAL BALANCE',
                 style: TextStyle(
                   color: AppColors.white.withValues(alpha: 0.85),
-                  fontSize: 14,
-                  letterSpacing: 1.2,
+                  fontSize: 12,
+                  letterSpacing: 1.1,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -409,78 +409,71 @@ class _TotalBalanceCard extends StatelessWidget {
                   showBalance
                       ? Icons.visibility_outlined
                       : Icons.visibility_off_outlined,
-                  size: 22,
+                  size: 20,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
             'ETB $displayBalance',
             style: const TextStyle(
               color: AppColors.white,
-              fontSize: 36,
+              fontSize: 32,
               fontWeight: FontWeight.w800,
-              letterSpacing: -0.6,
+              letterSpacing: -0.5,
             ),
           ),
-          const SizedBox(height: 14),
-          const _DashedLine(color: AppColors.white, opacity: 0.35),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           InkWell(
             onTap: onBreakdownTap,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 children: [
                   Text(
                     'How did I get here?',
                     style: TextStyle(
                       color: AppColors.white.withValues(alpha: 0.85),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w400,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                   const Spacer(),
                   Icon(
                     Icons.arrow_forward,
-                    size: 16,
+                    size: 14,
                     color: AppColors.white.withValues(alpha: 0.8),
                   ),
                 ],
               ),
             ),
           ),
-          const _DashedLine(color: AppColors.white, opacity: 0.25),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 56,
-            child: Row(
-              children: [
-                Expanded(
-                  child: _BalanceDelta(
-                    label: 'Today (ETB)',
-                    income: todayIncomeLabel,
-                    expense: todayExpenseLabel,
-                  ),
+          const SizedBox(height: 10),
+          Container(
+            height: 1,
+            color: AppColors.white.withValues(alpha: 0.22),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _BalanceDelta(
+                  label: 'Today',
+                  income: todayIncomeLabel,
+                  expense: todayExpenseLabel,
                 ),
-                const SizedBox(width: 16),
-                const _DashedLineVertical(
-                  color: AppColors.white,
-                  opacity: 0.3,
-                  height: 44,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _BalanceDelta(
+                  label: 'This week',
+                  income: weekIncomeLabel,
+                  expense: weekExpenseLabel,
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _BalanceDelta(
-                    label: 'This week (ETB)',
-                    income: weekIncomeLabel,
-                    expense: weekExpenseLabel,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
@@ -550,12 +543,12 @@ class _BalanceDelta extends StatelessWidget {
           label,
           style: TextStyle(
             color: AppColors.white.withValues(alpha: 0.85),
-            fontSize: 13,
+            fontSize: 11,
             fontWeight: FontWeight.w500,
-            letterSpacing: 0.6,
+            letterSpacing: 0.5,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -565,24 +558,24 @@ class _BalanceDelta extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: AppColors.incomeSuccess,
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Container(
               width: 1,
-              height: 14,
+              height: 12,
               color: AppColors.white.withValues(alpha: 0.35),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Text(
               expense,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: AppColors.red,
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -596,78 +589,6 @@ class _BalanceDelta extends StatelessWidget {
 String _formatDelta(double value) {
   final formatted = formatNumberAbbreviated(value).replaceAll('k', 'K');
   return formatted;
-}
-
-class _DashedLine extends StatelessWidget {
-  final Color color;
-  final double opacity;
-
-  const _DashedLine({
-    required this.color,
-    required this.opacity,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const dashWidth = 4.0;
-        const dashSpace = 4.0;
-        final dashCount =
-            (constraints.maxWidth / (dashWidth + dashSpace)).floor();
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(
-            dashCount,
-            (_) => Container(
-              width: dashWidth,
-              height: 2,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: opacity),
-                borderRadius: BorderRadius.circular(1),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _DashedLineVertical extends StatelessWidget {
-  final Color color;
-  final double opacity;
-  final double height;
-
-  const _DashedLineVertical({
-    required this.color,
-    required this.opacity,
-    required this.height,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const dashHeight = 6.0;
-    const dashSpace = 6.0;
-    final dashCount = (height / (dashHeight + dashSpace)).floor().clamp(1, 12);
-    return SizedBox(
-      height: height,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: List.generate(
-          dashCount,
-          (_) => Container(
-            width: 2,
-            height: dashHeight,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: opacity),
-              borderRadius: BorderRadius.circular(1),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _InsightCard extends StatelessWidget {

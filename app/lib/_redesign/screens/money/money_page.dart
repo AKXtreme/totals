@@ -897,7 +897,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
             },
             child: Text('Clear',
                 style: TextStyle(
-                    color: Colors.red[600], fontWeight: FontWeight.bold)),
+                    color: AppColors.red, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -941,7 +941,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
           SnackBar(
             content: Text('Failed to update cash wallet: $e'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.red,
           ),
         );
       }
@@ -950,13 +950,14 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
     }
   }
 
-  void _showAddAccountSheet({int? bankId}) {
+  void _showAddAccountSheet({int? bankId, bank_model.Bank? initialBank}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _AddAccountSheet(
         initialBankId: bankId ?? _selectedBankId,
+        initialBank: initialBank,
         onAccountAdded: () {
           Provider.of<TransactionProvider>(context, listen: false).loadData();
         },
@@ -1031,7 +1032,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
                 'This action cannot be undone.',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Colors.red[600],
+                  color: AppColors.red,
                   fontStyle: FontStyle.italic,
                 ),
               ),
@@ -1053,7 +1054,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
               child: Text(
                 'Delete',
                 style: TextStyle(
-                  color: Colors.red[600],
+                  color: AppColors.red,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -1085,7 +1086,7 @@ class _RedesignMoneyPageState extends State<RedesignMoneyPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error deleting account: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.red,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 3),
           ),
@@ -2338,7 +2339,7 @@ class _BankGrid extends StatefulWidget {
   final bool showBalance;
   final AccountSyncStatusService syncStatusService;
   final ValueChanged<int> onBankTap;
-  final void Function({int? bankId}) onAddAccount;
+  final void Function({int? bankId, bank_model.Bank? initialBank}) onAddAccount;
 
   const _BankGrid({
     required this.bankSummaries,
@@ -2429,7 +2430,10 @@ class _BankGridState extends State<_BankGrid> with WidgetsBindingObserver {
       }),
       ..._detectedBanks.map((detected) => _DetectedBankCard(
             detected: detected,
-            onTap: () => widget.onAddAccount(bankId: detected.bank.id),
+            onTap: () => widget.onAddAccount(
+              bankId: detected.bank.id,
+              initialBank: detected.bank,
+            ),
           )),
       _AddAccountCard(onTap: () => widget.onAddAccount()),
     ];
@@ -2650,8 +2654,6 @@ class _DetectedBankCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bankImage = _getBankImage(detected.bank.id);
-
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -2677,7 +2679,7 @@ class _DetectedBankCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                _BankLogoCircle(imagePath: bankImage, size: 40),
+                _BankLogoCircle(imagePath: detected.bank.image, size: 40),
               ],
             ),
             const SizedBox(height: 8),
@@ -3415,10 +3417,12 @@ class _SetCashAmountSheetState extends State<_SetCashAmountSheet> {
 
 class _AddAccountSheet extends StatefulWidget {
   final int? initialBankId;
+  final bank_model.Bank? initialBank;
   final VoidCallback onAccountAdded;
 
   const _AddAccountSheet({
     this.initialBankId,
+    this.initialBank,
     required this.onAccountAdded,
   });
 
@@ -3452,7 +3456,16 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   }
 
   void _loadBanks() {
-    final banks = AllBanksFromAssets.getAllBanks();
+    final banks = List<bank_model.Bank>.from(AllBanksFromAssets.getAllBanks());
+    final initialBank = widget.initialBank;
+    if (initialBank != null) {
+      final existingIndex = banks.indexWhere((bank) => bank.id == initialBank.id);
+      if (existingIndex >= 0) {
+        banks[existingIndex] = initialBank;
+      } else {
+        banks.insert(0, initialBank);
+      }
+    }
     if (mounted) {
       setState(() {
         _banks = banks;
@@ -3466,6 +3479,15 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
             hasInitialBank ? widget.initialBankId : banks.first.id;
       });
     }
+  }
+
+  bank_model.Bank? _selectedBank() {
+    final selectedId = _selectedBankId;
+    if (selectedId == null) return null;
+    for (final bank in _banks) {
+      if (bank.id == selectedId) return bank;
+    }
+    return null;
   }
 
   void _validateForm() {
@@ -3540,6 +3562,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final selectedBank = _selectedBank();
 
     return Container(
       padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + 20),
@@ -3620,20 +3643,18 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                   ),
                   child: Row(
                     children: [
-                      if (_selectedBankId != null) ...[
+                      if (selectedBank != null) ...[
                         _BankLogoCircle(
-                          imagePath: _getBankImage(_selectedBankId!),
+                          imagePath: selectedBank.image,
                           size: 36,
                         ),
                         const SizedBox(width: 12),
                       ],
                       Expanded(
                         child: Text(
-                          _selectedBankId != null
-                              ? _getBankName(_selectedBankId!)
-                              : 'Select a bank',
+                          selectedBank?.shortName ?? 'Select a bank',
                           style: TextStyle(
-                            color: _selectedBankId != null
+                            color: selectedBank != null
                                 ? AppColors.textPrimary(context)
                                 : AppColors.textTertiary(context),
                             fontSize: 15,

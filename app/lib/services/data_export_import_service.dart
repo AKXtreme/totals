@@ -229,9 +229,37 @@ class DataExportImportService {
       // Use repository to ensure they're associated with active profile
       final accountsRaw = _asMapList(data['accounts']);
       if (accountsRaw.isNotEmpty) {
-        final accountsList = accountsRaw.map(Account.fromJson).toList();
+        final existingAccountKeys = await _getExistingAccountKeys(db);
+        final accountsList = <Account>[];
+        for (final rawAccount in accountsRaw) {
+          final account = Account.fromJson(rawAccount);
+          final accountNumber = account.accountNumber.trim();
+          if (accountNumber.isEmpty) {
+            continue;
+          }
+          final key = _accountKey(accountNumber, account.bank);
+          if (existingAccountKeys.contains(key)) {
+            // Preserve local account balances for existing accounts.
+            continue;
+          }
+
+          accountsList.add(
+            Account(
+              accountNumber: accountNumber,
+              bank: account.bank,
+              balance: account.balance,
+              accountHolderName: account.accountHolderName,
+              settledBalance: account.settledBalance,
+              pendingCredit: account.pendingCredit,
+              profileId: account.profileId,
+            ),
+          );
+          existingAccountKeys.add(key);
+        }
         // Use saveAllAccounts which will auto-associate with active profile
-        await _accountRepo.saveAllAccounts(accountsList);
+        if (accountsList.isNotEmpty) {
+          await _accountRepo.saveAllAccounts(accountsList);
+        }
       }
 
       // Import saved user accounts (append, skip duplicates based on account+bank)
@@ -259,23 +287,40 @@ class DataExportImportService {
       // Use repository to ensure they're associated with active profile
       final transactionsRaw = _asMapList(data['transactions']);
       if (transactionsRaw.isNotEmpty) {
-        final transactionsList =
-            transactionsRaw.map(Transaction.fromJson).map((transaction) {
+        final existingReferences = await _getExistingTransactionReferences(db);
+        final transactionsList = <Transaction>[];
+
+        for (final rawTransaction in transactionsRaw) {
+          var transaction = Transaction.fromJson(rawTransaction);
+          final reference = transaction.reference.trim();
+          if (reference.isEmpty || existingReferences.contains(reference)) {
+            continue;
+          }
+
+          if (reference != transaction.reference) {
+            transaction = transaction.copyWith(reference: reference);
+          }
+
           final categoryId = transaction.categoryId;
-          if (categoryId == null) return transaction;
-          final mappedId = categoryIdMap[categoryId];
-          if (mappedId != null) {
-            return transaction.copyWith(categoryId: mappedId);
+          if (categoryId != null) {
+            final mappedId = categoryIdMap[categoryId];
+            if (mappedId != null) {
+              transaction = transaction.copyWith(categoryId: mappedId);
+            } else if (categoryIdsCanBeMapped) {
+              // If categories are included but this ID is unresolved, clear it
+              // to avoid linking to a wrong category in the destination DB.
+              transaction = transaction.copyWith(clearCategoryId: true);
+            }
           }
-          if (categoryIdsCanBeMapped) {
-            // If categories are included but this ID is unresolved, clear it
-            // to avoid linking to a wrong category in the destination DB.
-            return transaction.copyWith(clearCategoryId: true);
-          }
-          return transaction;
-        }).toList();
+
+          transactionsList.add(transaction);
+          existingReferences.add(reference);
+        }
+
         // Use saveAllTransactions which will auto-associate with active profile
-        await _transactionRepo.saveAllTransactions(transactionsList);
+        if (transactionsList.isNotEmpty) {
+          await _transactionRepo.saveAllTransactions(transactionsList);
+        }
       }
 
       // Import budgets (append, skip duplicates)
@@ -500,6 +545,43 @@ class DataExportImportService {
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value.trim());
     return null;
+  }
+
+  String _accountKey(String accountNumber, int bank) {
+    return '${bank.toString()}::${accountNumber.trim()}';
+  }
+
+  Future<Set<String>> _getExistingAccountKeys(Database db) async {
+    final rows = await db.query(
+      'accounts',
+      columns: ['accountNumber', 'bank'],
+    );
+    final keys = <String>{};
+    for (final row in rows) {
+      final accountNumber = row['accountNumber']?.toString().trim();
+      final bank = _asInt(row['bank']);
+      if (accountNumber == null || accountNumber.isEmpty || bank == null) {
+        continue;
+      }
+      keys.add(_accountKey(accountNumber, bank));
+    }
+    return keys;
+  }
+
+  Future<Set<String>> _getExistingTransactionReferences(Database db) async {
+    final rows = await db.query(
+      'transactions',
+      columns: ['reference'],
+    );
+    final references = <String>{};
+    for (final row in rows) {
+      final reference = row['reference']?.toString().trim();
+      if (reference == null || reference.isEmpty) {
+        continue;
+      }
+      references.add(reference);
+    }
+    return references;
   }
 
   Future<List<Bank>> _getBanksFromDb() async {

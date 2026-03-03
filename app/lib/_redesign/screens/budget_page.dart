@@ -43,9 +43,8 @@ String _compactAmount(double value) {
   if (abs >= 1000) {
     final k = abs / 1000;
     // Show one decimal if fractional, none if whole
-    final s = k == k.roundToDouble()
-        ? '${k.toInt()}.0K'
-        : '${k.toStringAsFixed(1)}K';
+    final s =
+        k == k.roundToDouble() ? '${k.toInt()}.0K' : '${k.toStringAsFixed(1)}K';
     return value < 0 ? '-$s' : s;
   }
   return value.toStringAsFixed(value == value.roundToDouble() ? 0 : 1);
@@ -99,15 +98,19 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
 
   // ── Month helpers ───────────────────────────────────────────────────────
 
-  DateTime get _monthStart => DateTime(_selectedMonth.year, _selectedMonth.month);
-  DateTime get _monthEnd => DateTime(_selectedMonth.year, _selectedMonth.month + 1);
+  DateTime get _monthStart =>
+      DateTime(_selectedMonth.year, _selectedMonth.month);
+  DateTime get _monthEnd =>
+      DateTime(_selectedMonth.year, _selectedMonth.month + 1);
 
   void _prevMonth() => setState(() {
-        _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1);
+        _selectedMonth =
+            DateTime(_selectedMonth.year, _selectedMonth.month - 1);
       });
 
   void _nextMonth() => setState(() {
-        _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1);
+        _selectedMonth =
+            DateTime(_selectedMonth.year, _selectedMonth.month + 1);
       });
 
   // ── Spending computation ────────────────────────────────────────────────
@@ -152,10 +155,10 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
           backgroundColor: AppColors.background(context),
           body: SafeArea(
             child: _detailBudget != null
-                ? _buildDetailView(
-                    context, _detailBudget!, debits, budgetProvider, transactionProvider)
-                : _buildListView(
-                    context, budgets, debits, budgetProvider, transactionProvider),
+                ? _buildDetailView(context, _detailBudget!, debits,
+                    budgetProvider, transactionProvider)
+                : _buildListView(context, budgets, debits, budgetProvider,
+                    transactionProvider),
           ),
         );
       },
@@ -175,14 +178,16 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
   ) {
     // Compute totals
     final totalAssigned = budgets.fold(0.0, (s, b) => s + b.amount);
-    final totalActivity = budgets.fold(0.0, (s, b) => s + _spentForBudget(b, debits));
+    final totalActivity =
+        budgets.fold(0.0, (s, b) => s + _spentForBudget(b, debits));
     final totalAvailable = totalAssigned - totalActivity;
 
     // Split into NEEDS / WANTS
     final needsBudgets = <Budget>[];
     final wantsBudgets = <Budget>[];
     for (final b in budgets) {
-      final cat = b.categoryId != null ? tp.getCategoryById(b.categoryId) : null;
+      final cat =
+          b.categoryId != null ? tp.getCategoryById(b.categoryId) : null;
       if (cat != null && !cat.essential) {
         wantsBudgets.add(b);
       } else {
@@ -200,7 +205,8 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
         .where((b) => b.categoryId != null)
         .map((b) => b.categoryId!)
         .toSet();
-    final unbudgetedTxns = debits.where((t) => !budgetedCatIds.contains(t.categoryId)).toList();
+    final unbudgetedTxns =
+        debits.where((t) => !budgetedCatIds.contains(t.categoryId)).toList();
     final unbudgetedAmount = unbudgetedTxns.fold(0.0, (s, t) => s + t.amount);
 
     return RefreshIndicator(
@@ -306,7 +312,9 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
   ) {
     final spent = _spentForBudget(budget, debits);
     final available = budget.amount - spent;
-    final cat = budget.categoryId != null ? tp.getCategoryById(budget.categoryId) : null;
+    final cat = budget.categoryId != null
+        ? tp.getCategoryById(budget.categoryId)
+        : null;
     final color = _colorForCategory(budget.categoryId);
 
     // Transactions for this budget
@@ -446,7 +454,8 @@ class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
     );
   }
 
-  void _openEditBudgetForm(Budget budget, BudgetProvider bp, TransactionProvider tp) {
+  void _openEditBudgetForm(
+      Budget budget, BudgetProvider bp, TransactionProvider tp) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -496,7 +505,8 @@ class _MonthNavigator extends StatelessWidget {
         ),
         IconButton(
           onPressed: onNext,
-          icon: Icon(Icons.chevron_right, color: AppColors.textPrimary(context)),
+          icon:
+              Icon(Icons.chevron_right, color: AppColors.textPrimary(context)),
           splashRadius: 20,
         ),
       ],
@@ -522,7 +532,8 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progress = assigned > 0 ? (activity / assigned).clamp(0.0, 1.0) : 0.0;
-    final availableColor = available >= 0 ? AppColors.incomeSuccess : AppColors.red;
+    final availableColor =
+        available >= 0 ? AppColors.incomeSuccess : AppColors.red;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -601,7 +612,8 @@ class _SummaryColumn extends StatelessWidget {
           const SizedBox(height: 4),
           highlight
               ? Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(6),
@@ -650,7 +662,8 @@ class _BudgetGroupSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final availColor = totalAvailable >= 0 ? AppColors.incomeSuccess : AppColors.red;
+    final availColor =
+        totalAvailable >= 0 ? AppColors.incomeSuccess : AppColors.red;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -716,9 +729,11 @@ class _BudgetItemRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final available = budget.amount - spent;
-    final progress = budget.amount > 0 ? (spent / budget.amount).clamp(0.0, 1.0) : 0.0;
+    final progress =
+        budget.amount > 0 ? (spent / budget.amount).clamp(0.0, 1.0) : 0.0;
     final color = _colorForCategory(budget.categoryId);
-    final availableColor = available >= 0 ? AppColors.incomeSuccess : AppColors.red;
+    final availableColor =
+        available >= 0 ? AppColors.incomeSuccess : AppColors.red;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -783,7 +798,8 @@ class _BudgetItemRow extends StatelessWidget {
                   ),
                   const Spacer(),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: availableColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(6),
@@ -971,9 +987,8 @@ class _UnbudgetedTransactionsPage extends StatelessWidget {
                 final cat = provider.getCategoryById(t.categoryId);
                 final isSelfTransfer = provider.isSelfTransfer(t);
                 final isMisc = cat?.uncategorized == true;
-                final categoryLabel = isSelfTransfer
-                    ? 'Self'
-                    : (cat?.name ?? 'Categorize');
+                final categoryLabel =
+                    isSelfTransfer ? 'Self' : (cat?.name ?? 'Categorize');
                 final isCategorized = isSelfTransfer || cat != null;
                 final isCredit = t.type == 'CREDIT';
 
@@ -1028,7 +1043,8 @@ class _DetailTopBar extends StatelessWidget {
             label: const Text('Back'),
             style: TextButton.styleFrom(
               foregroundColor: AppColors.primaryLight,
-              textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              textStyle:
+                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
           ),
           const Spacer(),
@@ -1037,7 +1053,8 @@ class _DetailTopBar extends StatelessWidget {
             child: const Text('Edit'),
             style: TextButton.styleFrom(
               foregroundColor: AppColors.primaryLight,
-              textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              textStyle:
+                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -1071,8 +1088,10 @@ class _DetailSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = budget.amount > 0 ? (spent / budget.amount).clamp(0.0, 1.0) : 0.0;
-    final availableColor = available >= 0 ? AppColors.incomeSuccess : AppColors.red;
+    final progress =
+        budget.amount > 0 ? (spent / budget.amount).clamp(0.0, 1.0) : 0.0;
+    final availableColor =
+        available >= 0 ? AppColors.incomeSuccess : AppColors.red;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -1256,7 +1275,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   List<Category> get _filteredCategories {
     final isNeeds = _selectedGroup == 'needs';
     return widget.transactionProvider.categories
-        .where((c) => c.flow == 'expense' && !c.uncategorized && c.essential == isNeeds)
+        .where((c) =>
+            c.flow == 'expense' && !c.uncategorized && c.essential == isNeeds)
         .toList();
   }
 
@@ -1352,7 +1372,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) return 'Required';
                           final n = double.tryParse(v.trim());
-                          if (n == null || n <= 0) return 'Enter a valid amount';
+                          if (n == null || n <= 0)
+                            return 'Enter a valid amount';
                           return null;
                         },
                       ),
@@ -1373,29 +1394,29 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                           _selectedGroup = v;
                           // Reset category when group changes
                           if (_selectedCategoryId != null &&
-                              !_filteredCategories.any(
-                                  (c) => c.id == _selectedCategoryId)) {
+                              !_filteredCategories
+                                  .any((c) => c.id == _selectedCategoryId)) {
                             _selectedCategoryId = null;
                           }
                         }),
                       ),
                       const SizedBox(height: 16),
 
-                      // Period
-                      Text(
-                        'Period',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: AppColors.textSecondary(context),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      _PeriodToggle(
-                        selected: _selectedPeriod,
-                        onChanged: (v) =>
-                            setState(() => _selectedPeriod = v),
-                      ),
-                      const SizedBox(height: 16),
+                      // // Period
+                      // Text(
+                      //   'Period',
+                      //   style: theme.textTheme.labelMedium?.copyWith(
+                      //     color: AppColors.textSecondary(context),
+                      //     fontWeight: FontWeight.w600,
+                      //   ),
+                      // ),
+                      // const SizedBox(height: 6),
+                      // _PeriodToggle(
+                      //   selected: _selectedPeriod,
+                      //   onChanged: (v) =>
+                      //       setState(() => _selectedPeriod = v),
+                      // ),
+                      // const SizedBox(height: 16),
 
                       // Category
                       Text(
@@ -1423,8 +1444,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                                 label: cat.name,
                                 icon: iconForCategoryKey(cat.iconKey),
                                 selected: _selectedCategoryId == cat.id,
-                                onTap: () =>
-                                    setState(() => _selectedCategoryId = cat.id),
+                                onTap: () => setState(
+                                    () => _selectedCategoryId = cat.id),
                               );
                             }),
                             _CategoryChipButton(
@@ -1538,8 +1559,7 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                               side: BorderSide(
                                 color: AppColors.red.withValues(alpha: 0.4),
                               ),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),

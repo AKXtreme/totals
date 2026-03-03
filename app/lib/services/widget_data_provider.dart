@@ -86,8 +86,17 @@ class WidgetDataProvider {
 
     return transactions
         .where((transaction) =>
+            _shouldKeepForWidgetTotals(transaction) ||
             !toSelfReferences.contains(transaction.reference))
         .toList();
+  }
+
+  bool _shouldKeepForWidgetTotals(Transaction transaction) {
+    // Manual cash expenses should always contribute to spending totals.
+    // Self-transfer heuristics can occasionally flag overlapping references,
+    // which would hide valid cash expenses from the widget.
+    return transaction.bankId == CashConstants.bankId &&
+        transaction.type == 'DEBIT';
   }
 
   Future<Set<String>> _buildSelfTransferToReferences(
