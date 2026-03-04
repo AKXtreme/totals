@@ -1571,9 +1571,7 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   }
 
   void _toggleColorChoices() {
-    final willOpen = !_showCategoryColorChoices;
-    setState(() => _showCategoryColorChoices = willOpen);
-    if (willOpen) _scrollComposerIntoView();
+    setState(() => _showCategoryColorChoices = !_showCategoryColorChoices);
   }
 
   void _scrollComposerIntoView() {
