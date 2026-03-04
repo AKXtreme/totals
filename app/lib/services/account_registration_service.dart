@@ -50,9 +50,14 @@ class AccountRegistrationService {
       // Start sync in background (don't await)
       _syncPreviousSms(bankId, accountNumber, onProgress).then((_) {
         onSyncComplete?.call();
-      }).catchError((e) {
+      }).catchError((e) async {
         print("debug: Error syncing SMS in background: $e");
+        _syncStatusService.clearSyncStatus(accountNumber, bankId);
         onProgress?.call("Sync failed: $e", 1.0);
+        await _notificationService.dismissAccountSyncNotification(
+          accountNumber: accountNumber,
+          bankId: bankId,
+        );
         onSyncComplete?.call();
       });
     }
@@ -200,11 +205,6 @@ class AccountRegistrationService {
           : messages.length;
       final batch = messages.sublist(batchStart, batchEnd);
 
-      // True parsing progress based on processed message count.
-      final parsingProgress = batchEnd / totalMessages;
-      final status = "Parsing $batchEnd/$totalMessages messages...";
-      await reportProgress(status, progress: parsingProgress);
-
       // Process batch concurrently
       final results = await Future.wait(
         batch.map((message) async {
@@ -265,6 +265,11 @@ class AccountRegistrationService {
           skippedCount++;
         }
       }
+
+      // Report parsing progress after this batch finishes.
+      final parsingProgress = batchEnd / totalMessages;
+      final status = "Parsing $batchEnd/$totalMessages messages...";
+      await reportProgress(status, progress: parsingProgress);
     }
 
     // Update account balance from the latest message

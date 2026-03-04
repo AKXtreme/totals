@@ -433,8 +433,9 @@ class NotificationService {
       final percent = (clamped * 100).round();
       final title = bankLabel == null ? 'Syncing account' : '$bankLabel sync';
       final maskedAccount = _maskAccountNumber(accountNumber);
+      final progressStage = _formatSyncProgressStage(stage, percent);
       final body =
-          maskedAccount == null ? stage : '$stage - $maskedAccount';
+          maskedAccount == null ? progressStage : '$progressStage - $maskedAccount';
 
       await _plugin.show(
         _accountSyncNotificationId(accountNumber, bankId),
@@ -454,6 +455,7 @@ class NotificationService {
             onlyAlertOnce: true,
             enableVibration: false,
             playSound: false,
+            timeoutAfter: 900000,
           ),
           iOS: const DarwinNotificationDetails(
             presentSound: false,
@@ -480,25 +482,49 @@ class NotificationService {
       final title =
           bankLabel == null ? 'Account sync complete' : '$bankLabel sync complete';
       final body = message ?? 'Your transactions are up to date.';
+      final id = _accountSyncNotificationId(accountNumber, bankId);
 
+      await _plugin.cancel(id);
       await _plugin.show(
-        _accountSyncNotificationId(accountNumber, bankId),
+        id,
         title,
         body,
-        const NotificationDetails(
+        NotificationDetails(
           android: AndroidNotificationDetails(
             _accountSyncChannelId,
             'Account sync',
             channelDescription: 'Background sync of account transactions',
             importance: Importance.low,
             priority: Priority.low,
+            autoCancel: true,
+            showProgress: false,
+            ongoing: false,
+            onlyAlertOnce: true,
           ),
-          iOS: DarwinNotificationDetails(),
+          iOS: const DarwinNotificationDetails(),
         ),
       );
     } catch (e) {
       if (kDebugMode) {
         print('debug: Failed to show account sync completion: $e');
+      }
+      await dismissAccountSyncNotification(
+        accountNumber: accountNumber,
+        bankId: bankId,
+      );
+    }
+  }
+
+  Future<void> dismissAccountSyncNotification({
+    required String accountNumber,
+    required int bankId,
+  }) async {
+    try {
+      await ensureInitialized();
+      await _plugin.cancel(_accountSyncNotificationId(accountNumber, bankId));
+    } catch (e) {
+      if (kDebugMode) {
+        print('debug: Failed to dismiss account sync notification: $e');
       }
     }
   }
@@ -603,6 +629,18 @@ class NotificationService {
     if (trimmed.isEmpty) return null;
     if (trimmed.length <= 4) return trimmed;
     return '****${trimmed.substring(trimmed.length - 4)}';
+  }
+
+  static String _formatSyncProgressStage(String stage, int percent) {
+    final trimmed = stage.trim();
+    final normalizedStage = trimmed.replaceFirst(
+      RegExp(r'^Parsing\s+\d+\s*/\s*\d+\s+messages\.\.\.$', caseSensitive: false),
+      'Parsing messages...',
+    );
+    if (normalizedStage.isEmpty) {
+      return '$percent%';
+    }
+    return '$normalizedStage ($percent%)';
   }
 }
 
