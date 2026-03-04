@@ -696,6 +696,13 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
         : provider.allTransactions
             .where((t) => t.bankId == _selectedBankId)
             .length;
+    final selectedBankTotalBalance = bankSummary?.totalBalance ?? 0.0;
+    final selectedBankAccountCount = bankSummary?.accountCount ?? 0;
+    final selectedBankCredit = bankSummary?.totalCredit ?? 0.0;
+    final selectedBankDebit = bankSummary?.totalDebit ?? 0.0;
+    final balanceTitle = isOverview
+        ? 'TOTAL BALANCE'
+        : '${_bankLabel(_selectedBankId).toUpperCase()} BALANCE';
 
     return RefreshIndicator(
       color: AppColors.primaryLight,
@@ -705,34 +712,35 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
         child: Column(
           children: [
-            // Selector strip: Totals icon + bank icons
-            _BankSelectorStrip(
-              bankSummaries: bankSummaries,
-              selectedBankId: _selectedBankId,
-              onBankSelected: (id) => setState(() {
-                _selectedBankId = id;
-                _expandedAccountNumber = null;
-              }),
-              onTotalsSelected: () => setState(() {
-                _selectedBankId = null;
-                _expandedAccountNumber = null;
-              }),
-            ),
-            const SizedBox(height: 12),
-
             // Balance card
             _AccountsBalanceCard(
-              balance: isOverview ? totalBalance : bankSummary!.totalBalance,
+              title: balanceTitle,
+              balance: isOverview ? totalBalance : selectedBankTotalBalance,
               subtitle: isOverview
                   ? '$bankCount Banks | $accountCount Accounts'
-                  : '${bankSummary!.accountCount} Account${bankSummary!.accountCount == 1 ? '' : 's'}',
+                  : '$selectedBankAccountCount Account${selectedBankAccountCount == 1 ? '' : 's'}',
               transactionCount: isOverview ? totalTxnCount : bankTxnCount,
-              totalCredit: isOverview ? totalCredit : bankSummary!.totalCredit,
-              totalDebit: isOverview ? totalDebit : bankSummary!.totalDebit,
+              totalCredit: isOverview ? totalCredit : selectedBankCredit,
+              totalDebit: isOverview ? totalDebit : selectedBankDebit,
               showBalance: _showAccountBalances,
               onToggleBalance: () =>
                   setState(() => _showAccountBalances = !_showAccountBalances),
             ),
+            if (!isOverview) ...[
+              const SizedBox(height: 12),
+              _BankSelectorStrip(
+                bankSummaries: bankSummaries,
+                selectedBankId: _selectedBankId,
+                onBankSelected: (id) => setState(() {
+                  _selectedBankId = id;
+                  _expandedAccountNumber = null;
+                }),
+                onTotalsSelected: () => setState(() {
+                  _selectedBankId = null;
+                  _expandedAccountNumber = null;
+                }),
+              ),
+            ],
             const SizedBox(height: 16),
 
             // Content below balance card
@@ -2286,6 +2294,7 @@ const _balanceCardGradient = LinearGradient(
 );
 
 class _AccountsBalanceCard extends StatelessWidget {
+  final String title;
   final double balance;
   final String subtitle;
   final int transactionCount;
@@ -2295,6 +2304,7 @@ class _AccountsBalanceCard extends StatelessWidget {
   final VoidCallback onToggleBalance;
 
   const _AccountsBalanceCard({
+    required this.title,
     required this.balance,
     required this.subtitle,
     required this.transactionCount,
@@ -2325,7 +2335,7 @@ class _AccountsBalanceCard extends StatelessWidget {
           Row(
             children: [
               Text(
-                'TOTAL BALANCE',
+                title.toUpperCase(),
                 style: TextStyle(
                   color: AppColors.white.withValues(alpha: 0.85),
                   fontSize: 12,
