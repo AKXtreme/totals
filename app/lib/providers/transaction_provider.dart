@@ -490,6 +490,37 @@ class TransactionProvider with ChangeNotifier {
     }).toList();
   }
 
+  Transaction? _replaceTransactionLocally(Transaction updated) {
+    Transaction? previous;
+
+    List<Transaction> replaceInList(List<Transaction> source) {
+      return source.map((transaction) {
+        if (transaction.reference != updated.reference) return transaction;
+        previous ??= transaction;
+        return updated;
+      }).toList();
+    }
+
+    _allTransactions = replaceInList(_allTransactions);
+    _transactions = replaceInList(_transactions);
+    _todayTransactions = replaceInList(_todayTransactions);
+    _monthTransactions = replaceInList(_monthTransactions);
+    return previous;
+  }
+
+  void _notifyOptimisticChange() {
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
+  Future<void> _recomputeAfterTransactionMutation() async {
+    await _calculateSummaries(_allTransactions);
+    _filterTransactions(_allTransactions);
+    _recomputeRedesignHomeMetrics(_allTransactions);
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
   Map<String, String> _buildSelfTransferLabels(
     List<TelebirrBankTransferMatch> matches,
   ) {
@@ -844,34 +875,55 @@ class TransactionProvider with ChangeNotifier {
     Category category,
   ) async {
     if (category.id == null) return;
-    await _transactionRepo.saveTransaction(
-      transaction.copyWith(categoryId: category.id),
-    );
-
-    // Save mapping if auto-categorization is enabled
-    final isEnabled = await NotificationSettingsService.instance
-        .isAutoCategorizeByReceiverEnabled();
-    if (isEnabled && category.id != null) {
-      // Save receiver mapping if receiver exists
-      if (transaction.receiver != null && transaction.receiver!.isNotEmpty) {
-        await ReceiverCategoryService.instance.saveMapping(
-          transaction.receiver!,
-          category.id!,
-          'receiver',
-        );
-      }
-      // Save creditor mapping if creditor exists
-      if (transaction.creditor != null && transaction.creditor!.isNotEmpty) {
-        await ReceiverCategoryService.instance.saveMapping(
-          transaction.creditor!,
-          category.id!,
-          'creditor',
-        );
-      }
+    final updated = transaction.copyWith(categoryId: category.id);
+    final previous = _replaceTransactionLocally(updated);
+    if (previous != null) {
+      _notifyOptimisticChange();
     }
 
-    await loadData();
-    await WidgetService.refreshWidget();
+    try {
+      await _transactionRepo.saveTransaction(updated);
+    } catch (e) {
+      if (previous != null) {
+        _replaceTransactionLocally(previous);
+        _notifyOptimisticChange();
+      }
+      rethrow;
+    }
+
+    // Save mapping if auto-categorization is enabled
+    try {
+      final isEnabled = await NotificationSettingsService.instance
+          .isAutoCategorizeByReceiverEnabled();
+      if (isEnabled && category.id != null) {
+        // Save receiver mapping if receiver exists
+        if (transaction.receiver != null && transaction.receiver!.isNotEmpty) {
+          await ReceiverCategoryService.instance.saveMapping(
+            transaction.receiver!,
+            category.id!,
+            'receiver',
+          );
+        }
+        // Save creditor mapping if creditor exists
+        if (transaction.creditor != null && transaction.creditor!.isNotEmpty) {
+          await ReceiverCategoryService.instance.saveMapping(
+            transaction.creditor!,
+            category.id!,
+            'creditor',
+          );
+        }
+      }
+    } catch (e) {
+      print("debug: Error saving receiver/creditor category mapping: $e");
+    }
+
+    try {
+      await _recomputeAfterTransactionMutation();
+      await WidgetService.refreshWidget();
+    } catch (e) {
+      print("debug: Error recomputing state after categorizing: $e");
+    }
+
     // Check budget alerts after categorizing transaction (only for DEBIT transactions)
     // Only check budgets for the specific category that was selected
     if (transaction.type == 'DEBIT' && category.id != null) {
@@ -886,12 +938,31 @@ class TransactionProvider with ChangeNotifier {
 
   Future<void> clearCategoryForTransaction(Transaction transaction) async {
     // Use copyWith with clearCategoryId flag to explicitly set categoryId to null
-    await _transactionRepo.saveTransaction(
-      transaction.copyWith(clearCategoryId: true),
-      skipAutoCategorization: true,
-    );
-    await loadData();
-    await WidgetService.refreshWidget();
+    final updated = transaction.copyWith(clearCategoryId: true);
+    final previous = _replaceTransactionLocally(updated);
+    if (previous != null) {
+      _notifyOptimisticChange();
+    }
+
+    try {
+      await _transactionRepo.saveTransaction(
+        updated,
+        skipAutoCategorization: true,
+      );
+    } catch (e) {
+      if (previous != null) {
+        _replaceTransactionLocally(previous);
+        _notifyOptimisticChange();
+      }
+      rethrow;
+    }
+
+    try {
+      await _recomputeAfterTransactionMutation();
+      await WidgetService.refreshWidget();
+    } catch (e) {
+      print("debug: Error recomputing state after clearing category: $e");
+    }
   }
 
   Future<void> deleteTransactionsByReferences(
