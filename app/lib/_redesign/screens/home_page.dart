@@ -169,11 +169,9 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                       ),
                     ],
                     const SizedBox(height: 8),
-                    // Keep existing rows visible during background reloads
-                    // so returning to Home does not flash back to loading state.
-                    if (provider.isLoading && todayList.isEmpty)
-                      const _LoadingTransactions()
-                    else if (todayList.isEmpty)
+                    // Keep the empty/loaded state stable during background reloads
+                    // so returning to Home does not flicker.
+                    if (todayList.isEmpty)
                       const _EmptyTransactions()
                     else
                       ...todayList.map((transaction) {
@@ -702,41 +700,6 @@ class _SelectionBar extends StatelessWidget {
                 size: 20, color: AppColors.textSecondary(context)),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _LoadingTransactions extends StatelessWidget {
-  const _LoadingTransactions();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: List.generate(
-        3,
-        (index) => Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-          decoration: BoxDecoration(
-            color: AppColors.cardColor(context),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.borderColor(context)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: AppColors.mutedFill(context),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

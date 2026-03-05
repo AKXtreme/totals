@@ -2386,25 +2386,58 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   }
 
   Future<void> _delete() async {
+    bool deleteFutureBudgets = false;
+    final hasFutureBudgets = _hasFutureBudgetsToUpdate;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete budget?'),
-        content: const Text('This cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Delete budget?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('This cannot be undone.'),
+              if (hasFutureBudgets) ...[
+                const SizedBox(height: 12),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  dense: true,
+                  title: const Text('Delete future budgets too'),
+                  value: deleteFutureBudgets,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      deleteFutureBudgets = value ?? false;
+                    });
+                  },
+                ),
+              ],
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Delete', style: TextStyle(color: AppColors.red)),
-          ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Delete', style: TextStyle(color: AppColors.red)),
+            ),
+          ],
+        ),
       ),
     );
     if (confirmed == true) {
-      await widget.budgetProvider.deleteBudget(widget.existing!.id!);
+      if (hasFutureBudgets) {
+        await widget.budgetProvider.deleteBudgetForMonth(
+          originalBudget: widget.existing!,
+          month: _selectedMonthStart,
+          deleteFutureBudgets: deleteFutureBudgets,
+        );
+      } else {
+        await widget.budgetProvider.deleteBudget(widget.existing!.id!);
+      }
       if (mounted) Navigator.of(context).pop();
     }
   }

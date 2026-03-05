@@ -117,6 +117,25 @@ class BudgetProvider with ChangeNotifier {
     }
   }
 
+  Future<void> deleteBudgetForMonth({
+    required Budget originalBudget,
+    required DateTime month,
+    bool deleteFutureBudgets = false,
+  }) async {
+    try {
+      await _budgetRepository.deleteBudgetForMonth(
+        originalBudget: originalBudget,
+        month: month,
+        deleteFutureBudgets: deleteFutureBudgets,
+      );
+      await loadBudgets();
+      notifyListeners();
+    } catch (e) {
+      print("debug: Error deleting budget for month: $e");
+      rethrow;
+    }
+  }
+
   Future<void> deactivateBudget(int id) async {
     try {
       await _budgetRepository.deactivateBudget(id);

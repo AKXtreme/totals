@@ -168,6 +168,113 @@ class BudgetRepository {
     );
   }
 
+  Future<void> deleteBudgetForMonth({
+    required Budget originalBudget,
+    required DateTime month,
+    bool deleteFutureBudgets = false,
+  }) async {
+    if (originalBudget.id == null) {
+      throw ArgumentError('Original budget must have an id.');
+    }
+
+    final db = await DatabaseHelper.instance.database;
+    final monthStart = DateTime(month.year, month.month, 1);
+    final nextMonthStart = DateTime(month.year, month.month + 1, 1);
+    final monthEnd = nextMonthStart.subtract(const Duration(seconds: 1));
+    final originalEnd = originalBudget.endDate;
+    final hadPastSegment = originalBudget.startDate.isBefore(monthStart);
+    final hasFutureSegment =
+        originalEnd == null || originalEnd.isAfter(monthEnd);
+    final nowIso = DateTime.now().toIso8601String();
+
+    await db.transaction((txn) async {
+      if (deleteFutureBudgets) {
+        if (hadPastSegment) {
+          await txn.update(
+            'budgets',
+            {
+              'endDate': monthStart
+                  .subtract(const Duration(seconds: 1))
+                  .toIso8601String(),
+              'updatedAt': nowIso,
+            },
+            where: 'id = ?',
+            whereArgs: [originalBudget.id],
+          );
+        } else {
+          await txn.delete(
+            'budgets',
+            where: 'id = ?',
+            whereArgs: [originalBudget.id],
+          );
+        }
+        return;
+      }
+
+      if (hadPastSegment && hasFutureSegment) {
+        await txn.update(
+          'budgets',
+          {
+            'endDate': monthStart
+                .subtract(const Duration(seconds: 1))
+                .toIso8601String(),
+            'updatedAt': nowIso,
+          },
+          where: 'id = ?',
+          whereArgs: [originalBudget.id],
+        );
+
+        final futureData = originalBudget
+            .copyWith(
+              id: null,
+              startDate: nextMonthStart,
+              endDate: originalEnd,
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+            )
+            .toDb();
+        futureData.remove('id');
+        futureData['updatedAt'] = nowIso;
+        await txn.insert('budgets', futureData);
+        return;
+      }
+
+      if (hadPastSegment) {
+        await txn.update(
+          'budgets',
+          {
+            'endDate': monthStart
+                .subtract(const Duration(seconds: 1))
+                .toIso8601String(),
+            'updatedAt': nowIso,
+          },
+          where: 'id = ?',
+          whereArgs: [originalBudget.id],
+        );
+        return;
+      }
+
+      if (hasFutureSegment) {
+        await txn.update(
+          'budgets',
+          {
+            'startDate': nextMonthStart.toIso8601String(),
+            'updatedAt': nowIso,
+          },
+          where: 'id = ?',
+          whereArgs: [originalBudget.id],
+        );
+        return;
+      }
+
+      await txn.delete(
+        'budgets',
+        where: 'id = ?',
+        whereArgs: [originalBudget.id],
+      );
+    });
+  }
+
   Future<void> deactivateBudget(int id) async {
     final db = await DatabaseHelper.instance.database;
     await db.update(
