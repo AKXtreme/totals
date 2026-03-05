@@ -134,6 +134,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
   final Set<String> _selectedRefs = {};
   DateTime? _ledgerStartDate;
   DateTime? _ledgerEndDate;
+  final Set<int> _ledgerBankIds = <int>{};
   final ScrollController _activityScrollController = ScrollController();
   int _currentPage = 0;
   static const int _pageSize = 50;
@@ -158,6 +159,21 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
   }
 
   void _clearSelection() => setState(() => _selectedRefs.clear());
+
+  void _toggleLedgerBank(int bankId) {
+    setState(() {
+      if (_ledgerBankIds.contains(bankId)) {
+        _ledgerBankIds.remove(bankId);
+      } else {
+        _ledgerBankIds.add(bankId);
+      }
+    });
+  }
+
+  void _clearLedgerBankSelection() {
+    if (_ledgerBankIds.isEmpty) return;
+    setState(() => _ledgerBankIds.clear());
+  }
 
   Future<void> _deleteSelected(TransactionProvider provider) async {
     if (_selectedRefs.isEmpty) return;
@@ -464,6 +480,24 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
         if (bTime == null) return -1;
         return bTime.compareTo(aTime);
       });
+    final ledgerBankIds = <int>{};
+    for (final txn in allTxns) {
+      if (txn.bankId != null) ledgerBankIds.add(txn.bankId!);
+    }
+    final invalidLedgerBankIds = _ledgerBankIds
+        .where((id) => !ledgerBankIds.contains(id))
+        .toList(growable: false);
+    if (invalidLedgerBankIds.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _ledgerBankIds.removeWhere((id) => !ledgerBankIds.contains(id));
+          });
+        }
+      });
+    }
+    final sortedLedgerBankIds = ledgerBankIds.toList()
+      ..sort((a, b) => _bankLabel(a).compareTo(_bankLabel(b)));
 
     // Apply date range filter and find starting balance in one pass
     double? startingBalance;
@@ -493,6 +527,10 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
           59,
         );
         if (dt.isAfter(endOfDay)) inRange = false;
+      }
+      if (_ledgerBankIds.isNotEmpty &&
+          (txn.bankId == null || !_ledgerBankIds.contains(txn.bankId!))) {
+        inRange = false;
       }
 
       if (inRange) {
@@ -548,8 +586,12 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
           child: _LedgerDatePickerRow(
             startDate: _ledgerStartDate,
             endDate: _ledgerEndDate,
+            bankIds: sortedLedgerBankIds,
+            selectedBankIds: _ledgerBankIds,
             onStartDateChanged: (d) => setState(() => _ledgerStartDate = d),
             onEndDateChanged: (d) => setState(() => _ledgerEndDate = d),
+            onBankToggled: _toggleLedgerBank,
+            onClearBankSelection: _clearLedgerBankSelection,
           ),
         ),
       ),
@@ -617,8 +659,6 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
               );
             }
             final entry = item as _LedgerFlatItem;
-            // Only hide line after the very last transaction overall
-            final isLastOverall = index == flatItems.length - 1;
             final lineColor = AppColors.borderColor(context);
             return Padding(
               padding: const EdgeInsets.only(left: 20, right: 20),
@@ -631,7 +671,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
                       child: Center(
                         child: Container(
                           width: 1.5,
-                          color: isLastOverall ? Colors.transparent : lineColor,
+                          color: lineColor,
                         ),
                       ),
                     ),
@@ -2087,50 +2127,91 @@ class _LedgerFlatItem {
 class _LedgerDatePickerRow extends StatelessWidget {
   final DateTime? startDate;
   final DateTime? endDate;
+  final List<int> bankIds;
+  final Set<int> selectedBankIds;
   final ValueChanged<DateTime?> onStartDateChanged;
   final ValueChanged<DateTime?> onEndDateChanged;
+  final ValueChanged<int> onBankToggled;
+  final VoidCallback onClearBankSelection;
 
   const _LedgerDatePickerRow({
     required this.startDate,
     required this.endDate,
+    required this.bankIds,
+    required this.selectedBankIds,
     required this.onStartDateChanged,
     required this.onEndDateChanged,
+    required this.onBankToggled,
+    required this.onClearBankSelection,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: _LedgerDateField(
-            label: 'START DATE:',
-            date: startDate,
-            onTap: () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: startDate ?? DateTime.now(),
-                firstDate: DateTime(2020),
-                lastDate: DateTime.now(),
-              );
-              if (picked != null) onStartDateChanged(picked);
-            },
+        Row(
+          children: [
+            Expanded(
+              child: _LedgerDateField(
+                label: 'START DATE:',
+                date: startDate,
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: startDate ?? DateTime.now(),
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now(),
+                  );
+                  if (picked != null) onStartDateChanged(picked);
+                },
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _LedgerDateField(
+                label: 'END DATE:',
+                date: endDate,
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: endDate ?? DateTime.now(),
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now(),
+                  );
+                  if (picked != null) onEndDateChanged(picked);
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Text(
+          'BANK',
+          style: TextStyle(
+            color: AppColors.textSecondary(context),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
           ),
         ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _LedgerDateField(
-            label: 'END DATE:',
-            date: endDate,
-            onTap: () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: endDate ?? DateTime.now(),
-                firstDate: DateTime(2020),
-                lastDate: DateTime.now(),
-              );
-              if (picked != null) onEndDateChanged(picked);
-            },
-          ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _FilterChip(
+              label: 'All Banks',
+              selected: selectedBankIds.isEmpty,
+              onTap: onClearBankSelection,
+            ),
+            for (final bankId in bankIds)
+              _FilterChip(
+                label: _bankLabel(bankId),
+                selected: selectedBankIds.contains(bankId),
+                onTap: () => onBankToggled(bankId),
+              ),
+          ],
         ),
       ],
     );

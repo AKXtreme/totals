@@ -1247,7 +1247,6 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
 
                         // Transaction entry
                         final txn = item as Transaction;
-                        final isLastOverall = index == flatItems.length - 1;
                         final lineColor = AppColors.borderColor(context);
                         final isCredit = txn.type == 'CREDIT';
                         final arrow = isCredit ? '↓' : '↑';
@@ -1276,9 +1275,7 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
                                   child: Center(
                                     child: Container(
                                       width: 1.5,
-                                      color: isLastOverall
-                                          ? Colors.transparent
-                                          : lineColor,
+                                      color: lineColor,
                                     ),
                                   ),
                                 ),
