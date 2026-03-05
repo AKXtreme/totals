@@ -638,13 +638,23 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
     );
   }
 
+  IconData _themeModeIcon(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.system:
+        return Icons.phone_iphone_rounded;
+      case ThemeMode.light:
+        return Icons.light_mode_rounded;
+      case ThemeMode.dark:
+        return Icons.dark_mode_rounded;
+    }
+  }
+
   // ── Build ───────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final themeProvider = context.watch<ThemeProvider>();
-    final isDark = themeProvider.themeMode == ThemeMode.dark;
 
     return Scaffold(
       backgroundColor: AppColors.background(context),
@@ -690,15 +700,37 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               const SizedBox(height: 10),
 
               _SettingTile(
-                icon: Icons.dark_mode_outlined,
+                icon: Icons.palette_outlined,
                 iconColor: AppColors.primaryLight,
-                title: 'Dark Mode',
-                subtitle: 'Switch between light and dark theme',
-                trailing: Switch(
-                  value: isDark,
-                  onChanged: (_) => themeProvider.toggleTheme(),
-                  activeColor: AppColors.primaryLight,
+                title: 'Theme',
+                subtitle: 'Tap to cycle: System, Light, Dark',
+                trailing: OutlinedButton.icon(
+                  onPressed: themeProvider.cycleThemeMode,
+                  icon: Icon(
+                    _themeModeIcon(themeProvider.themeMode),
+                    size: 16,
+                    color: AppColors.primaryLight,
+                  ),
+                  label: Text(
+                    themeProvider.themeModeLabel,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.textPrimary(context),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                    minimumSize: const Size(0, 34),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    side: BorderSide(color: AppColors.borderColor(context)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
                 ),
+                onTap: themeProvider.cycleThemeMode,
               ),
 
               _SettingTile(

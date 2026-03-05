@@ -5,6 +5,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ThemeProvider extends ChangeNotifier {
   static const String _themeKey = 'theme_mode';
   static const String _uiScaleKey = 'ui_scale';
+  static const List<ThemeMode> _themeCycleOrder = <ThemeMode>[
+    ThemeMode.system,
+    ThemeMode.light,
+    ThemeMode.dark,
+  ];
   static const List<double> _uiScaleOptions = <double>[
     0.5,
     0.6,
@@ -16,14 +21,25 @@ class ThemeProvider extends ChangeNotifier {
     0.95,
     1.0,
   ];
-  ThemeMode _themeMode = ThemeMode.light;
+  ThemeMode _themeMode = ThemeMode.system;
   double _uiScale = 1.0;
 
   ThemeMode get themeMode => _themeMode;
   double get uiScale => _uiScale;
-  List<double> get availableUiScales => List<double>.unmodifiable(_uiScaleOptions);
+  List<double> get availableUiScales =>
+      List<double>.unmodifiable(_uiScaleOptions);
   String get uiScaleLabel => _formatUiScale(_uiScale);
   bool get isZoomedOut => (_uiScale - 0.75).abs() < 0.001;
+  String get themeModeLabel {
+    switch (_themeMode) {
+      case ThemeMode.system:
+        return 'System';
+      case ThemeMode.light:
+        return 'Light';
+      case ThemeMode.dark:
+        return 'Dark';
+    }
+  }
 
   ThemeProvider() {
     _loadThemeMode();
@@ -36,7 +52,7 @@ class ThemeProvider extends ChangeNotifier {
     if (savedTheme != null) {
       _themeMode = ThemeMode.values.firstWhere(
         (mode) => mode.toString() == savedTheme,
-        orElse: () => ThemeMode.light,
+        orElse: () => ThemeMode.system,
       );
       notifyListeners();
     }
@@ -100,9 +116,19 @@ class ThemeProvider extends ChangeNotifier {
   void toggleTheme() {
     if (_themeMode == ThemeMode.light) {
       setThemeMode(ThemeMode.dark);
-    } else {
-      setThemeMode(ThemeMode.light);
+      return;
     }
+    if (_themeMode == ThemeMode.dark) {
+      setThemeMode(ThemeMode.light);
+      return;
+    }
+    setThemeMode(ThemeMode.dark);
+  }
+
+  void cycleThemeMode() {
+    final currentIndex = _themeCycleOrder.indexOf(_themeMode);
+    final safeIndex = currentIndex < 0 ? 0 : currentIndex;
+    final nextIndex = (safeIndex + 1) % _themeCycleOrder.length;
+    setThemeMode(_themeCycleOrder[nextIndex]);
   }
 }
-
