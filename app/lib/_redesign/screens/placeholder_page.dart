@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/providers/theme_provider.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 class RedesignPlaceholderPage extends StatefulWidget {
   final String title;
@@ -294,7 +295,7 @@ class _RedesignPlaceholderPageState extends State<RedesignPlaceholderPage> {
 
               // Dark Mode toggle
               _SettingTile(
-                icon: Icons.dark_mode_outlined,
+                icon: AppIcons.dark_mode_outlined,
                 iconColor: AppColors.primaryLight,
                 title: 'Dark Mode',
                 subtitle: 'Switch between light and dark theme',
@@ -306,7 +307,7 @@ class _RedesignPlaceholderPageState extends State<RedesignPlaceholderPage> {
               ),
 
               _SettingTile(
-                icon: Icons.zoom_out_map_rounded,
+                icon: AppIcons.zoom_out_map_rounded,
                 iconColor: AppColors.incomeSuccess,
                 title: 'Display Size',
                 subtitle: 'Preview and adjust interface scale',
@@ -322,7 +323,7 @@ class _RedesignPlaceholderPageState extends State<RedesignPlaceholderPage> {
                     ),
                     const SizedBox(width: 6),
                     Icon(
-                      Icons.chevron_right,
+                      AppIcons.chevron_right,
                       color: AppColors.textTertiary(context),
                       size: 20,
                     ),
@@ -334,7 +335,7 @@ class _RedesignPlaceholderPageState extends State<RedesignPlaceholderPage> {
               // Redesign toggle
               if (widget.showRedesignToggle && !_isLoading)
                 _SettingTile(
-                  icon: Icons.palette_rounded,
+                  icon: AppIcons.palette_rounded,
                   iconColor: AppColors.amber,
                   title: 'Use Redesign',
                   subtitle: 'Switch to the new design system',

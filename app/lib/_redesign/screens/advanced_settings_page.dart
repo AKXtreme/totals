@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/services/advanced_settings_service.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 class RedesignAdvancedSettingsPage extends StatefulWidget {
   const RedesignAdvancedSettingsPage({super.key});
@@ -111,7 +112,7 @@ class _RedesignAdvancedSettingsPageState
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Icon(
-                            Icons.person_outline_rounded,
+                            AppIcons.person_outline_rounded,
                             color: AppColors.primaryLight,
                             size: 20,
                           ),
@@ -143,7 +144,7 @@ class _RedesignAdvancedSettingsPageState
                           ),
                         ),
                         Icon(
-                          Icons.chevron_right_rounded,
+                          AppIcons.chevron_right_rounded,
                           color: AppColors.textTertiary(context),
                           size: 20,
                         ),
@@ -193,7 +194,7 @@ class _OptionTile extends StatelessWidget {
               ),
               if (selected)
                 const Icon(
-                  Icons.check_rounded,
+                  AppIcons.check_rounded,
                   color: AppColors.primaryLight,
                   size: 20,
                 ),

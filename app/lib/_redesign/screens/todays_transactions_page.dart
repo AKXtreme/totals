@@ -6,6 +6,7 @@ import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/_redesign/widgets/transaction_tile.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 class TodaysTransactionsPage extends StatefulWidget {
   const TodaysTransactionsPage({super.key});
@@ -83,11 +84,11 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
             leading: _isSelecting
                 ? IconButton(
                     onPressed: _clearSelection,
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(AppIcons.close),
                   )
                 : IconButton(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back_rounded),
+                    icon: const Icon(AppIcons.arrow_back_rounded),
                   ),
             title: Text(
               _isSelecting
@@ -104,7 +105,7 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
               if (_isSelecting)
                 IconButton(
                   onPressed: () => _deleteSelected(provider),
-                  icon: Icon(Icons.delete_outline_rounded,
+                  icon: Icon(AppIcons.delete_outline_rounded,
                       color: AppColors.red),
                 ),
             ],
@@ -115,7 +116,7 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        Icons.receipt_long_rounded,
+                        AppIcons.receipt_long_rounded,
                         size: 48,
                         color: AppColors.textTertiary(context),
                       ),

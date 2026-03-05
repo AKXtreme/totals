@@ -17,6 +17,7 @@ import 'package:totals/widgets/clear_database_dialog.dart';
 import 'package:totals/repositories/profile_repository.dart';
 import 'package:totals/services/data_export_import_service.dart';
 import 'package:totals/services/notification_settings_service.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 // ── Support links ───────────────────────────────────────────────────────────
 Future<void> _openSupportLink() async {
@@ -641,11 +642,11 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
   IconData _themeModeIcon(ThemeMode mode) {
     switch (mode) {
       case ThemeMode.system:
-        return Icons.phone_iphone_rounded;
+        return AppIcons.phone_iphone_rounded;
       case ThemeMode.light:
-        return Icons.light_mode_rounded;
+        return AppIcons.light_mode_rounded;
       case ThemeMode.dark:
-        return Icons.dark_mode_rounded;
+        return AppIcons.dark_mode_rounded;
     }
   }
 
@@ -700,7 +701,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               const SizedBox(height: 10),
 
               _SettingTile(
-                icon: Icons.palette_outlined,
+                icon: AppIcons.palette_outlined,
                 iconColor: AppColors.primaryLight,
                 title: 'Theme',
                 subtitle: 'Tap to cycle: System, Light, Dark',
@@ -734,7 +735,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               ),
 
               _SettingTile(
-                icon: Icons.zoom_out_map_rounded,
+                icon: AppIcons.zoom_out_map_rounded,
                 iconColor: AppColors.incomeSuccess,
                 title: 'Display Size',
                 subtitle: 'Preview and adjust interface scale',
@@ -750,7 +751,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
                     ),
                     const SizedBox(width: 6),
                     Icon(
-                      Icons.chevron_right,
+                      AppIcons.chevron_right,
                       color: AppColors.textTertiary(context),
                       size: 20,
                     ),
@@ -761,7 +762,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
 
               // if (!_isLoadingRedesign)
               //   _SettingTile(
-              //     icon: Icons.palette_rounded,
+              //     icon: AppIcons.palette_rounded,
               //     iconColor: AppColors.amber,
               //     title: 'Use Redesign',
               //     subtitle: 'Switch to the new design system',
@@ -773,7 +774,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               //   ),
 
               _SettingTile(
-                icon: Icons.toc_rounded,
+                icon: AppIcons.toc_rounded,
                 iconColor: AppColors.blue,
                 title: 'Categories',
                 subtitle: 'Manage transaction categories',
@@ -785,7 +786,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
 
               // if (!_isLoadingAutoCategorize)
               //   _SettingTile(
-              //     icon: Icons.category,
+              //     icon: AppIcons.category,
               //     iconColor: const Color(0xFFEC4899),
               //     title: 'Auto-categorize',
               //     subtitle: 'Categorize by receiver automatically',
@@ -797,7 +798,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               //   ),
 
               _SettingTile(
-                icon: Icons.notifications_outlined,
+                icon: AppIcons.notifications_outlined,
                 iconColor: AppColors.amber,
                 title: 'Notifications',
                 subtitle: 'Daily summary and budget alerts',
@@ -816,7 +817,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               const SizedBox(height: 10),
 
               _SettingTile(
-                icon: Icons.upload_rounded,
+                icon: AppIcons.upload_rounded,
                 iconColor: AppColors.incomeSuccess,
                 title: 'Export Data',
                 subtitle: 'Save or share a backup',
@@ -834,7 +835,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               ),
 
               _SettingTile(
-                icon: Icons.download_rounded,
+                icon: AppIcons.download_rounded,
                 iconColor: AppColors.blue,
                 title: 'Import Data',
                 subtitle: 'Restore from a backup file',
@@ -852,7 +853,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               ),
 
               _SettingTile(
-                icon: Icons.delete_outline_rounded,
+                icon: AppIcons.delete_outline_rounded,
                 iconColor: AppColors.red,
                 title: 'Clear Data',
                 subtitle: 'Delete selected app data',
@@ -866,7 +867,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               const SizedBox(height: 10),
 
               _SettingTile(
-                icon: Icons.info_outline_rounded,
+                icon: AppIcons.info_outline_rounded,
                 iconColor: AppColors.primaryLight,
                 title: 'About',
                 subtitle: 'Version, privacy and credits',
@@ -879,7 +880,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               ),
 
               _SettingTile(
-                icon: Icons.help_outline_rounded,
+                icon: AppIcons.help_outline_rounded,
                 iconColor: AppColors.incomeSuccess,
                 title: 'Help & FAQ',
                 subtitle: 'Common questions answered',
@@ -997,7 +998,7 @@ class _ProfileCard extends StatelessWidget {
                 ),
               ),
               Icon(
-                Icons.chevron_right_rounded,
+                AppIcons.chevron_right_rounded,
                 color: AppColors.textTertiary(context),
                 size: 22,
               ),
@@ -1082,7 +1083,7 @@ class _SettingTile extends StatelessWidget {
                   trailing!
                 else if (onTap != null)
                   Icon(
-                    Icons.chevron_right_rounded,
+                    AppIcons.chevron_right_rounded,
                     color: AppColors.textTertiary(context),
                     size: 20,
                   ),
@@ -1126,7 +1127,7 @@ class _SupportDevelopersCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Icon(
-                Icons.favorite_rounded,
+                AppIcons.favorite_rounded,
                 color: AppColors.primaryLight,
                 size: 20,
               ),
@@ -1165,7 +1166,7 @@ class _RedesignAboutPage extends StatelessWidget {
         scrolledUnderElevation: 0,
         leading: IconButton(
           icon: Icon(
-            Icons.arrow_back_rounded,
+            AppIcons.arrow_back_rounded,
             color: AppColors.textPrimary(context),
           ),
           onPressed: () => Navigator.pop(context),
@@ -1252,10 +1253,10 @@ class _RedesignAboutPage extends StatelessWidget {
                     alignment: WrapAlignment.center,
                     children: [
                       _FeatureChip(
-                          icon: Icons.lock_outline_rounded, label: 'Private'),
-                      _FeatureChip(icon: Icons.bolt_rounded, label: 'Fast'),
+                          icon: AppIcons.lock_outline_rounded, label: 'Private'),
+                      _FeatureChip(icon: AppIcons.bolt_rounded, label: 'Fast'),
                       _FeatureChip(
-                          icon: Icons.auto_graph_rounded, label: 'Insightful'),
+                          icon: AppIcons.auto_graph_rounded, label: 'Insightful'),
                     ],
                   ),
                 ],
@@ -1286,7 +1287,7 @@ class _RedesignAboutPage extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
-                          Icons.favorite_rounded,
+                          AppIcons.favorite_rounded,
                           color: AppColors.primaryLight,
                           size: 22,
                         ),
@@ -1314,7 +1315,7 @@ class _RedesignAboutPage extends StatelessWidget {
                         ),
                       ),
                       Icon(
-                        Icons.chevron_right_rounded,
+                        AppIcons.chevron_right_rounded,
                         color: AppColors.textTertiary(context),
                         size: 20,
                       ),
@@ -1419,7 +1420,7 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
         scrolledUnderElevation: 0,
         leading: IconButton(
           icon: Icon(
-            Icons.arrow_back_rounded,
+            AppIcons.arrow_back_rounded,
             color: AppColors.textPrimary(context),
           ),
           onPressed: () => Navigator.pop(context),
@@ -1456,7 +1457,7 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
-                      Icons.help_outline_rounded,
+                      AppIcons.help_outline_rounded,
                       color: AppColors.primaryLight,
                       size: 22,
                     ),
@@ -1547,7 +1548,7 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
                                 turns: isExpanded ? 0.5 : 0,
                                 duration: const Duration(milliseconds: 200),
                                 child: Icon(
-                                  Icons.keyboard_arrow_down,
+                                  AppIcons.keyboard_arrow_down,
                                   color: AppColors.primaryLight,
                                   size: 22,
                                 ),

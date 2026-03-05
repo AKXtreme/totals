@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/services/notification_service.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 class RedesignNotificationsPage extends StatefulWidget {
   const RedesignNotificationsPage({super.key});
@@ -43,7 +44,7 @@ class _RedesignNotificationsPageState extends State<RedesignNotificationsPage> {
           IconButton(
             tooltip: 'Clear',
             onPressed: _clearHistory,
-            icon: const Icon(Icons.delete_outline_rounded),
+            icon: const Icon(AppIcons.delete_outline_rounded),
           ),
         ],
       ),

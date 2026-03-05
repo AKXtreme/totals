@@ -6,6 +6,7 @@ import 'package:totals/models/category.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/utils/text_utils.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 /// Shows the transaction details bottom sheet matching the redesign style.
 Future<void> showTransactionDetailsSheet({
@@ -426,7 +427,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close, size: 20),
+                      icon: const Icon(AppIcons.close, size: 20),
                       color: AppColors.textSecondary(context),
                       onPressed: () => Navigator.pop(context),
                     ),
@@ -604,8 +605,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                   const SizedBox(width: 4),
                   Icon(
                     _categoryExpanded
-                        ? Icons.keyboard_arrow_up
-                        : Icons.keyboard_arrow_down,
+                        ? AppIcons.keyboard_arrow_up
+                        : AppIcons.keyboard_arrow_down,
                     size: 18,
                     color: AppColors.textTertiary(context),
                   ),
@@ -763,8 +764,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                       ),
                       Icon(
                         _showColorChoices
-                            ? Icons.keyboard_arrow_up
-                            : Icons.keyboard_arrow_down,
+                            ? AppIcons.keyboard_arrow_up
+                            : AppIcons.keyboard_arrow_down,
                         size: 16,
                         color: AppColors.textSecondary(context),
                       ),

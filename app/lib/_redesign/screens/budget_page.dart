@@ -14,6 +14,7 @@ import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/budget_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/utils/text_utils.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 class _BudgetCategoryColorOption {
   final String key;
@@ -583,7 +584,7 @@ class _MonthNavigator extends StatelessWidget {
       children: [
         IconButton(
           onPressed: onPrev,
-          icon: Icon(Icons.chevron_left, color: AppColors.textPrimary(context)),
+          icon: Icon(AppIcons.chevron_left, color: AppColors.textPrimary(context)),
           splashRadius: 20,
         ),
         Text(
@@ -597,7 +598,7 @@ class _MonthNavigator extends StatelessWidget {
         IconButton(
           onPressed: onNext,
           icon:
-              Icon(Icons.chevron_right, color: AppColors.textPrimary(context)),
+              Icon(AppIcons.chevron_right, color: AppColors.textPrimary(context)),
           splashRadius: 20,
         ),
       ],
@@ -771,7 +772,7 @@ class _BudgetGroupSection extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  expanded ? Icons.expand_more : Icons.chevron_right,
+                  expanded ? AppIcons.expand_more : AppIcons.chevron_right,
                   size: 20,
                   color: AppColors.textSecondary(context),
                 ),
@@ -1034,7 +1035,7 @@ class _UnbudgetedSpendingCard extends StatelessWidget {
               ),
             ),
             Icon(
-              Icons.chevron_right,
+              AppIcons.chevron_right,
               size: 20,
               color: AppColors.textTertiary(context),
             ),
@@ -1069,7 +1070,7 @@ class _UnbudgetedTransactionsPage extends StatelessWidget {
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_rounded),
+          icon: const Icon(AppIcons.arrow_back_rounded),
         ),
         title: Text(
           'Unbudgeted Spending',
@@ -1188,7 +1189,7 @@ class _DetailTopBar extends StatelessWidget {
         children: [
           TextButton.icon(
             onPressed: onBack,
-            icon: const Icon(Icons.chevron_left, size: 20),
+            icon: const Icon(AppIcons.chevron_left, size: 20),
             label: const Text('Back'),
             style: TextButton.styleFrom(
               foregroundColor: AppColors.primaryLight,
@@ -1703,7 +1704,7 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                   const Spacer(),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(AppIcons.close),
                   ),
                 ],
               ),
@@ -2214,8 +2215,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                       ),
                       Icon(
                         _showCategoryColorChoices
-                            ? Icons.keyboard_arrow_up
-                            : Icons.keyboard_arrow_down,
+                            ? AppIcons.keyboard_arrow_up
+                            : AppIcons.keyboard_arrow_down,
                         size: 16,
                         color: AppColors.textSecondary(context),
                       ),

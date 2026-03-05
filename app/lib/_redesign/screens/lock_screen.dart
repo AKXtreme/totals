@@ -7,6 +7,7 @@ import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/data/consts.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/services/bank_detection_startup_service.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 class RedesignLockScreen extends StatefulWidget {
   final VoidCallback onUnlock;
@@ -135,7 +136,7 @@ class _RedesignLockScreenState extends State<RedesignLockScreen>
               //               image,
               //               fit: BoxFit.cover,
               //               errorBuilder: (_, __, ___) => Icon(
-              //                 Icons.account_balance_rounded,
+              //                 AppIcons.account_balance_rounded,
               //                 size: 18,
               //                 color: AppColors.textTertiary(context),
               //               ),
@@ -161,7 +162,7 @@ class _RedesignLockScreenState extends State<RedesignLockScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.fingerprint_rounded,
+                      AppIcons.fingerprint_rounded,
                       size: 18,
                       color: AppColors.primaryDark,
                     ),

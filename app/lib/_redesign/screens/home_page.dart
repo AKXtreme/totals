@@ -12,6 +12,7 @@ import 'package:totals/_redesign/screens/todays_transactions_page.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_tile.dart';
 import 'package:totals/widgets/add_cash_transaction_sheet.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 class RedesignHomePage extends StatefulWidget {
   const RedesignHomePage({super.key});
@@ -541,8 +542,8 @@ class _TotalBalanceCard extends StatelessWidget {
                   ),
                   icon: Icon(
                     showBalance
-                        ? Icons.visibility_outlined
-                        : Icons.visibility_off_outlined,
+                        ? AppIcons.visibility_outlined
+                        : AppIcons.visibility_off_outlined,
                     size: 20,
                   ),
                 ),
@@ -576,7 +577,7 @@ class _TotalBalanceCard extends StatelessWidget {
                     ),
                     const Spacer(),
                     Icon(
-                      Icons.arrow_forward,
+                      AppIcons.arrow_forward,
                       size: 14,
                       color: AppColors.white.withValues(alpha: 0.8),
                     ),
@@ -652,7 +653,7 @@ class _RefreshButton extends StatelessWidget {
                   color: AppColors.primaryLight,
                 ),
               )
-            : const Icon(Icons.refresh, size: 18),
+            : const Icon(AppIcons.refresh, size: 18),
       ),
     );
   }
@@ -755,7 +756,7 @@ class _InsightCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(
-              Icons.lightbulb_outline,
+              AppIcons.lightbulb_outline,
               color: AppColors.amber,
               size: 18,
             ),
@@ -826,13 +827,13 @@ class _SelectionBar extends StatelessWidget {
           const Spacer(),
           GestureDetector(
             onTap: onDelete,
-            child: Icon(Icons.delete_outline_rounded,
+            child: Icon(AppIcons.delete_outline_rounded,
                 size: 20, color: AppColors.red),
           ),
           const SizedBox(width: 16),
           GestureDetector(
             onTap: onClear,
-            child: Icon(Icons.close_rounded,
+            child: Icon(AppIcons.close_rounded,
                 size: 20, color: AppColors.textSecondary(context)),
           ),
         ],
@@ -859,7 +860,7 @@ class _EmptyTransactions extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            Icons.receipt_long_rounded,
+            AppIcons.receipt_long_rounded,
             size: 40,
             color: AppColors.textTertiary(context),
           ),
@@ -1312,7 +1313,7 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
                   const Spacer(),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(AppIcons.close),
                   ),
                 ],
               ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/models/category.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 /// Shared transaction tile used across all redesign pages.
 ///
@@ -85,7 +86,7 @@ class TransactionTile extends StatelessWidget {
               children: [
                 if (selected) ...[
                   const Icon(
-                    Icons.check_circle_rounded,
+                    AppIcons.check_circle_rounded,
                     size: 20,
                     color: AppColors.primaryLight,
                   ),

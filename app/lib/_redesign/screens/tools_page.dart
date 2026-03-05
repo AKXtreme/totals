@@ -4,6 +4,7 @@ import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/screens/accounts_page.dart';
 import 'package:totals/screens/verify_payments_page.dart';
 import 'package:totals/screens/web_page.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 class RedesignToolsPage extends StatelessWidget {
   const RedesignToolsPage({super.key});
@@ -36,7 +37,7 @@ class RedesignToolsPage extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               _ToolTile(
-                icon: Icons.dashboard_outlined,
+                icon: AppIcons.dashboard_outlined,
                 iconColor: AppColors.primaryLight,
                 title: 'Web Dashboard',
                 subtitle: 'View your finances in a browser',
@@ -46,7 +47,7 @@ class RedesignToolsPage extends StatelessWidget {
                 ),
               ),
               _ToolTile(
-                icon: Icons.account_balance_outlined,
+                icon: AppIcons.account_balance_outlined,
                 iconColor: AppColors.blue,
                 title: 'Quick Accounts',
                 subtitle: 'Manage linked bank accounts',
@@ -56,7 +57,7 @@ class RedesignToolsPage extends StatelessWidget {
                 ),
               ),
               _ToolTile(
-                icon: Icons.qr_code_scanner_rounded,
+                icon: AppIcons.qr_code_scanner_rounded,
                 iconColor: AppColors.incomeSuccess,
                 title: 'Verify Payments',
                 subtitle: 'Scan and verify transaction receipts',
@@ -67,7 +68,7 @@ class RedesignToolsPage extends StatelessWidget {
                 ),
               ),
               _ToolTile(
-                icon: Icons.lock_outline_rounded,
+                icon: AppIcons.lock_outline_rounded,
                 iconColor: AppColors.amber,
                 title: 'Lock App',
                 subtitle: 'Require authentication to access',
@@ -152,7 +153,7 @@ class _ToolTile extends StatelessWidget {
                   ),
                 ),
                 Icon(
-                  Icons.chevron_right_rounded,
+                  AppIcons.chevron_right_rounded,
                   color: AppColors.textTertiary(context),
                   size: 20,
                 ),

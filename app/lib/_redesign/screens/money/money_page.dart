@@ -20,6 +20,7 @@ import 'package:totals/utils/text_utils.dart';
 import 'package:totals/widgets/add_cash_transaction_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_tile.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 class RedesignMoneyPage extends StatefulWidget {
   const RedesignMoneyPage({super.key});
@@ -2018,7 +2019,7 @@ class _AnalyticsFilterButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        icon: const Icon(Icons.filter_alt_outlined, size: 20),
+        icon: const Icon(AppIcons.filter_alt_outlined, size: 20),
       ),
     );
   }
@@ -2110,7 +2111,7 @@ class _AnalyticsOverviewGrid extends StatelessWidget {
           children: [
             Expanded(
               child: _AnalyticsMetricCard(
-                icon: Icons.trending_up_rounded,
+                icon: AppIcons.trending_up_rounded,
                 iconBg: const Color(0xFFDCFCE7),
                 iconFg: AppColors.incomeSuccess,
                 title: 'TOTAL INCOME',
@@ -2121,7 +2122,7 @@ class _AnalyticsOverviewGrid extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: _AnalyticsMetricCard(
-                icon: Icons.trending_down_rounded,
+                icon: AppIcons.trending_down_rounded,
                 iconBg: const Color(0xFFFEE2E2),
                 iconFg: AppColors.red,
                 title: 'TOTAL EXPENSE',
@@ -2136,7 +2137,7 @@ class _AnalyticsOverviewGrid extends StatelessWidget {
           children: [
             Expanded(
               child: _AnalyticsMetricCard(
-                icon: Icons.receipt_long_rounded,
+                icon: AppIcons.receipt_long_rounded,
                 iconBg: const Color(0xFFEDE9FE),
                 iconFg: const Color(0xFF6366F1),
                 title: 'TRANSACTIONS',
@@ -2148,7 +2149,7 @@ class _AnalyticsOverviewGrid extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: _AnalyticsMetricCard(
-                icon: Icons.schedule_rounded,
+                icon: AppIcons.schedule_rounded,
                 iconBg: const Color(0xFFFEF3C7),
                 iconFg: const Color(0xFFD97706),
                 title: 'TOTAL FEES',
@@ -2280,7 +2281,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
               ),
               const SizedBox(width: 3),
               Icon(
-                Icons.keyboard_arrow_down_rounded,
+                AppIcons.keyboard_arrow_down_rounded,
                 color: AppColors.textTertiary(context),
               ),
               const Spacer(),
@@ -2397,7 +2398,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.chevron_left_rounded, color: AppColors.textTertiary(context)),
+              Icon(AppIcons.chevron_left_rounded, color: AppColors.textTertiary(context)),
               const SizedBox(width: 12),
               Text(
                 'Today',
@@ -2407,7 +2408,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              Icon(Icons.chevron_right_rounded, color: AppColors.textTertiary(context)),
+              Icon(AppIcons.chevron_right_rounded, color: AppColors.textTertiary(context)),
             ],
           ),
         ],
@@ -2503,7 +2504,7 @@ class _AnalyticsBottomSheetOption extends StatelessWidget {
               ),
               if (selected)
                 const Icon(
-                  Icons.check_rounded,
+                  AppIcons.check_rounded,
                   color: AppColors.primaryLight,
                   size: 20,
                 ),
@@ -2622,7 +2623,7 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
                 ),
               ),
               Icon(
-                Icons.keyboard_arrow_down_rounded,
+                AppIcons.keyboard_arrow_down_rounded,
                 color: AppColors.textTertiary(context),
               ),
             ],
@@ -3260,7 +3261,7 @@ class _SearchFilterRow extends StatelessWidget {
                   ),
                 ),
                 child: Icon(
-                  Icons.filter_list,
+                  AppIcons.filter_list,
                   color: hasFilters
                       ? AppColors.primaryDark
                       : AppColors.textSecondary(context),
@@ -3332,14 +3333,14 @@ class _SelectionBar extends StatelessWidget {
           const Spacer(),
           GestureDetector(
             onTap: onDelete,
-            child: Icon(Icons.delete_outline_rounded,
+            child: Icon(AppIcons.delete_outline_rounded,
                 size: 20, color: AppColors.red),
           ),
           const SizedBox(width: 16),
           GestureDetector(
             onTap: onClear,
             child:
-                Icon(Icons.close_rounded, size: 20, color: AppColors.slate600),
+                Icon(AppIcons.close_rounded, size: 20, color: AppColors.slate600),
           ),
         ],
       ),
@@ -3395,7 +3396,7 @@ class _PaginationBar extends StatelessWidget {
         children: [
           // Previous arrow
           _ArrowButton(
-            icon: Icons.chevron_left_rounded,
+            icon: AppIcons.chevron_left_rounded,
             enabled: currentPage > 0,
             onTap: () => onPageChanged(currentPage - 1),
           ),
@@ -3405,7 +3406,7 @@ class _PaginationBar extends StatelessWidget {
           const SizedBox(width: 4),
           // Next arrow
           _ArrowButton(
-            icon: Icons.chevron_right_rounded,
+            icon: AppIcons.chevron_right_rounded,
             enabled: currentPage < totalPages - 1,
             onTap: () => onPageChanged(currentPage + 1),
           ),
@@ -3941,8 +3942,8 @@ class _AccountsBalanceCard extends StatelessWidget {
                 onTap: onToggleBalance,
                 child: Icon(
                   showBalance
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
+                      ? AppIcons.visibility_outlined
+                      : AppIcons.visibility_off_outlined,
                   color: AppColors.white.withValues(alpha: 0.9),
                   size: 22,
                 ),
@@ -4284,7 +4285,7 @@ class _AddAccountCard extends StatelessWidget {
                         color: AppColors.mutedFill(context), width: 1.5),
                   ),
                   child: Icon(
-                    Icons.add,
+                    AppIcons.add,
                     color: AppColors.textSecondary(context),
                     size: 22,
                   ),
@@ -4375,7 +4376,7 @@ class _DetectedBankCard extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    Icons.add_rounded,
+                    AppIcons.add_rounded,
                     size: 12,
                     color: AppColors.primaryLight,
                   ),
@@ -4615,8 +4616,8 @@ class _AccountCard extends StatelessWidget {
                       ),
                       Icon(
                         isExpanded
-                            ? Icons.keyboard_arrow_up
-                            : Icons.keyboard_arrow_down,
+                            ? AppIcons.keyboard_arrow_up
+                            : AppIcons.keyboard_arrow_down,
                         color: AppColors.textSecondary(context),
                         size: 22,
                       ),
@@ -4735,7 +4736,7 @@ class _AccountCard extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(
-                              Icons.delete_outline_rounded,
+                              AppIcons.delete_outline_rounded,
                               size: 16,
                               color: AppColors.red.withValues(alpha: 0.7),
                             ),
@@ -4763,7 +4764,7 @@ class _AccountCard extends StatelessWidget {
                         Expanded(
                           child: _CashActionButton(
                             label: 'Expense',
-                            icon: Icons.remove_circle_outline,
+                            icon: AppIcons.remove_circle_outline,
                             color: AppColors.red,
                             onTap: onCashExpense,
                           ),
@@ -4772,7 +4773,7 @@ class _AccountCard extends StatelessWidget {
                         Expanded(
                           child: _CashActionButton(
                             label: 'Income',
-                            icon: Icons.add_circle_outline,
+                            icon: AppIcons.add_circle_outline,
                             color: AppColors.incomeSuccess,
                             onTap: onCashIncome,
                           ),
@@ -4785,7 +4786,7 @@ class _AccountCard extends StatelessWidget {
                         Expanded(
                           child: _CashActionButton(
                             label: 'Clear',
-                            icon: Icons.cleaning_services_outlined,
+                            icon: AppIcons.cleaning_services_outlined,
                             color: AppColors.red,
                             outlined: true,
                             onTap: onClearCash,
@@ -4795,7 +4796,7 @@ class _AccountCard extends StatelessWidget {
                         Expanded(
                           child: _CashActionButton(
                             label: 'Set amount',
-                            icon: Icons.tune,
+                            icon: AppIcons.tune,
                             color: AppColors.primaryDark,
                             outlined: true,
                             onTap: onSetCashAmount,
@@ -4842,7 +4843,7 @@ class _BankLogoCircle extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         child: Icon(
-          Icons.account_balance,
+          AppIcons.account_balance,
           size: size * 0.5,
           color: AppColors.textSecondary(context),
         ),
@@ -4860,7 +4861,7 @@ class _BankLogoCircle extends StatelessWidget {
         errorBuilder: (_, __, ___) => Container(
           color: AppColors.mutedFill(context),
           child: Icon(
-            Icons.account_balance,
+            AppIcons.account_balance,
             size: size * 0.5,
             color: AppColors.textSecondary(context),
           ),
@@ -5284,7 +5285,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        Icons.close,
+                        AppIcons.close,
                         color: AppColors.textSecondary(context),
                         size: 20,
                       ),
@@ -5337,7 +5338,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                         ),
                       ),
                       Icon(
-                        Icons.keyboard_arrow_down_rounded,
+                        AppIcons.keyboard_arrow_down_rounded,
                         color: AppColors.textSecondary(context),
                       ),
                     ],
@@ -5448,7 +5449,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                 child: Row(
                   children: [
                     Icon(
-                      Icons.sms_outlined,
+                      AppIcons.sms_outlined,
                       color: AppColors.textSecondary(context),
                       size: 20,
                     ),
@@ -5802,7 +5803,7 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: Icon(Icons.close,
+                  icon: Icon(AppIcons.close,
                       color: AppColors.textSecondary(context)),
                   splashRadius: 20,
                 ),
@@ -6099,14 +6100,14 @@ class _DatePickerField extends StatelessWidget {
               GestureDetector(
                 onTap: onClear,
                 child: Icon(
-                  Icons.close,
+                  AppIcons.close,
                   size: 16,
                   color: AppColors.textTertiary(context),
                 ),
               )
             else
               Icon(
-                Icons.calendar_today_outlined,
+                AppIcons.calendar_today_outlined,
                 size: 16,
                 color: AppColors.textTertiary(context),
               ),

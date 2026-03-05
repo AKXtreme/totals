@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 
 class RedesignBottomNav extends StatelessWidget {
   final int currentIndex;
@@ -33,36 +34,36 @@ class RedesignBottomNav extends StatelessWidget {
           children: [
             _NavItem(
               label: 'Home',
-              activeIcon: Icons.home_filled,
-              inactiveIcon: Icons.home_outlined,
+              activeIcon: AppIcons.home_filled,
+              inactiveIcon: AppIcons.home_outlined,
               isActive: currentIndex == 0,
               onTap: () => onTap(0),
             ),
             _NavItem(
               label: 'Money',
-              activeIcon: Icons.account_balance_wallet,
-              inactiveIcon: Icons.account_balance_wallet_outlined,
+              activeIcon: AppIcons.account_balance_wallet,
+              inactiveIcon: AppIcons.account_balance_wallet_outlined,
               isActive: currentIndex == 1,
               onTap: () => onTap(1),
             ),
             _NavItem(
               label: 'Budget',
-              activeIcon: Icons.savings,
-              inactiveIcon: Icons.savings_outlined,
+              activeIcon: AppIcons.savings,
+              inactiveIcon: AppIcons.savings_outlined,
               isActive: currentIndex == 2,
               onTap: () => onTap(2),
             ),
             _NavItem(
               label: 'Tools',
-              activeIcon: Icons.grid_view_rounded,
-              inactiveIcon: Icons.grid_view_outlined,
+              activeIcon: AppIcons.grid_view_rounded,
+              inactiveIcon: AppIcons.grid_view_outlined,
               isActive: currentIndex == 3,
               onTap: () => onTap(3),
             ),
             _NavItem(
               label: 'Profile',
-              activeIcon: Icons.person,
-              inactiveIcon: Icons.person_outline,
+              activeIcon: AppIcons.person,
+              inactiveIcon: AppIcons.person_outline,
               isActive: currentIndex == 4,
               onTap: () => onTap(4),
             ),
