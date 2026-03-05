@@ -823,7 +823,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
                 icon: Icons.delete_outline_rounded,
                 iconColor: AppColors.red,
                 title: 'Clear Data',
-                subtitle: 'Delete all transactions and accounts',
+                subtitle: 'Delete selected app data',
                 onTap: () => showClearDatabaseDialog(context),
               ),
 

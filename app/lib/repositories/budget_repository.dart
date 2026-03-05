@@ -194,6 +194,11 @@ class BudgetRepository {
     );
   }
 
+  Future<void> clearAll() async {
+    final db = await DatabaseHelper.instance.database;
+    await db.delete('budgets');
+  }
+
   // Get active budgets for current period
   Future<List<Budget>> getActiveBudgetsForCurrentPeriod(String type) async {
     final now = DateTime.now();

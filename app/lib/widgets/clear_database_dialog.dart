@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:totals/providers/budget_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/repositories/account_repository.dart';
+import 'package:totals/repositories/budget_repository.dart';
 import 'package:totals/repositories/failed_parse_repository.dart';
 import 'package:totals/repositories/transaction_repository.dart';
 
 Future<void> showClearDatabaseDialog(BuildContext context) async {
-  bool clearTransactions = false;
-  bool clearAccounts = false;
+  bool clearFinancialData = false;
+  bool clearBudgets = false;
   bool clearFailedParses = false;
   final parentContext = context;
 
@@ -21,7 +23,7 @@ Future<void> showClearDatabaseDialog(BuildContext context) async {
       return StatefulBuilder(
         builder: (context, setState) {
           final hasSelection =
-              clearTransactions || clearAccounts || clearFailedParses;
+              clearFinancialData || clearBudgets || clearFailedParses;
 
           return Container(
             padding: EdgeInsets.fromLTRB(
@@ -96,25 +98,25 @@ Future<void> showClearDatabaseDialog(BuildContext context) async {
                   _buildClearOption(
                     context: context,
                     icon: Icons.receipt_long,
-                    title: 'Transactions',
-                    subtitle: 'All transaction history',
-                    value: clearTransactions,
+                    title: 'Transactions & Accounts',
+                    subtitle: 'All transaction history and bank accounts',
+                    value: clearFinancialData,
                     onChanged: (value) {
                       setState(() {
-                        clearTransactions = value ?? false;
+                        clearFinancialData = value ?? false;
                       });
                     },
                   ),
                   const SizedBox(height: 12),
                   _buildClearOption(
                     context: context,
-                    icon: Icons.account_balance,
-                    title: 'Accounts',
-                    subtitle: 'All bank accounts',
-                    value: clearAccounts,
+                    icon: Icons.pie_chart_outline,
+                    title: 'Budgets',
+                    subtitle: 'All budget rules and limits',
+                    value: clearBudgets,
                     onChanged: (value) {
                       setState(() {
-                        clearAccounts = value ?? false;
+                        clearBudgets = value ?? false;
                       });
                     },
                   ),
@@ -172,21 +174,30 @@ Future<void> showClearDatabaseDialog(BuildContext context) async {
                           onPressed: hasSelection
                               ? () async {
                                   try {
-                                    if (clearTransactions) {
+                                    if (clearFinancialData) {
                                       await TransactionRepository().clearAll();
-                                    }
-                                    if (clearAccounts) {
                                       await AccountRepository().clearAll();
+                                    }
+                                    if (clearBudgets) {
+                                      await BudgetRepository().clearAll();
                                     }
                                     if (clearFailedParses) {
                                       await FailedParseRepository().clear();
                                     }
 
                                     if (parentContext.mounted) {
-                                      Provider.of<TransactionProvider>(
+                                      await Provider.of<TransactionProvider>(
                                         parentContext,
                                         listen: false,
                                       ).loadData();
+                                      if (clearFinancialData || clearBudgets) {
+                                        try {
+                                          await Provider.of<BudgetProvider>(
+                                            parentContext,
+                                            listen: false,
+                                          ).loadBudgets();
+                                        } catch (_) {}
+                                      }
                                       Navigator.pop(sheetContext);
                                       ScaffoldMessenger.of(parentContext)
                                           .showSnackBar(
