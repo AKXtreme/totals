@@ -119,14 +119,20 @@ class RedesignBudgetPage extends StatefulWidget {
   const RedesignBudgetPage({super.key});
 
   @override
-  State<RedesignBudgetPage> createState() => _RedesignBudgetPageState();
+  State<RedesignBudgetPage> createState() => RedesignBudgetPageState();
 }
 
-class _RedesignBudgetPageState extends State<RedesignBudgetPage> {
+class RedesignBudgetPageState extends State<RedesignBudgetPage> {
   DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
   Budget? _detailBudget;
   bool _needsExpanded = true;
   bool _wantsExpanded = true;
+
+  bool handleSystemBack() {
+    if (_detailBudget == null) return false;
+    setState(() => _detailBudget = null);
+    return true;
+  }
 
   @override
   void initState() {

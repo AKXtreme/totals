@@ -30,6 +30,8 @@ class RedesignShellState extends State<RedesignShell>
       PageController(initialPage: _homeIndex);
   final GlobalKey<RedesignMoneyPageState> _moneyPageKey =
       GlobalKey<RedesignMoneyPageState>();
+  final GlobalKey<RedesignBudgetPageState> _budgetPageKey =
+      GlobalKey<RedesignBudgetPageState>();
   int _currentIndex = _homeIndex;
   StreamSubscription<WidgetLaunchTarget>? _widgetLaunchIntentSub;
 
@@ -169,22 +171,31 @@ class RedesignShellState extends State<RedesignShell>
       return RedesignLockScreen(onUnlock: _authenticateIfAvailable);
     }
 
-    return Scaffold(
-      extendBody: true,
-      body: PageView(
-        controller: _pageController,
-        physics: const NeverScrollableScrollPhysics(),
-        children: [
-          const RedesignHomePage(),
-          RedesignMoneyPage(key: _moneyPageKey),
-          const RedesignBudgetPage(),
-          const RedesignToolsPage(),
-          const RedesignSettingsPage(),
-        ],
-      ),
-      bottomNavigationBar: RedesignBottomNav(
-        currentIndex: _currentIndex,
-        onTap: _onTabSelected,
+    return WillPopScope(
+      onWillPop: () async {
+        if (_currentIndex == _budgetIndex) {
+          final handled = _budgetPageKey.currentState?.handleSystemBack() ?? false;
+          if (handled) return false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        extendBody: true,
+        body: PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            const RedesignHomePage(),
+            RedesignMoneyPage(key: _moneyPageKey),
+            RedesignBudgetPage(key: _budgetPageKey),
+            const RedesignToolsPage(),
+            const RedesignSettingsPage(),
+          ],
+        ),
+        bottomNavigationBar: RedesignBottomNav(
+          currentIndex: _currentIndex,
+          onTap: _onTabSelected,
+        ),
       ),
     );
   }
