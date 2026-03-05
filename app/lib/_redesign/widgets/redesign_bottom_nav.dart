@@ -5,11 +5,13 @@ import 'package:totals/_redesign/theme/app_icons.dart';
 class RedesignBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
+  final ValueChanged<Offset>? onProfileLongPressAt;
 
   const RedesignBottomNav({
     super.key,
     required this.currentIndex,
     required this.onTap,
+    this.onProfileLongPressAt,
   });
 
   @override
@@ -66,6 +68,7 @@ class RedesignBottomNav extends StatelessWidget {
               inactiveIcon: AppIcons.person_outline,
               isActive: currentIndex == 4,
               onTap: () => onTap(4),
+              onLongPressAt: onProfileLongPressAt,
             ),
           ],
         ),
@@ -80,6 +83,7 @@ class _NavItem extends StatelessWidget {
   final IconData inactiveIcon;
   final bool isActive;
   final VoidCallback onTap;
+  final ValueChanged<Offset>? onLongPressAt;
 
   const _NavItem({
     required this.label,
@@ -87,6 +91,7 @@ class _NavItem extends StatelessWidget {
     required this.inactiveIcon,
     required this.isActive,
     required this.onTap,
+    this.onLongPressAt,
   });
 
   @override
@@ -98,6 +103,16 @@ class _NavItem extends StatelessWidget {
     return Expanded(
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPressAt == null
+            ? null
+            : () {
+                final box = context.findRenderObject() as RenderBox?;
+                if (box == null) return;
+                final anchor = box.localToGlobal(
+                  Offset(box.size.width * 0.8, 0),
+                );
+                onLongPressAt!(anchor);
+              },
         borderRadius: BorderRadius.circular(10),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),

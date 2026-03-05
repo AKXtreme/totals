@@ -4,6 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:provider/provider.dart';
+import 'package:totals/_redesign/theme/app_colors.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 import 'package:totals/_redesign/screens/home_page.dart';
 import 'package:totals/_redesign/screens/lock_screen.dart';
 import 'package:totals/_redesign/screens/money/money_page.dart';
@@ -11,6 +14,10 @@ import 'package:totals/_redesign/screens/budget_page.dart';
 import 'package:totals/_redesign/screens/settings_page.dart';
 import 'package:totals/_redesign/screens/tools_page.dart';
 import 'package:totals/_redesign/widgets/redesign_bottom_nav.dart';
+import 'package:totals/models/profile.dart';
+import 'package:totals/providers/budget_provider.dart';
+import 'package:totals/providers/transaction_provider.dart';
+import 'package:totals/repositories/profile_repository.dart';
 import 'package:totals/services/bank_detection_startup_service.dart';
 import 'package:totals/services/widget_launch_intent_service.dart';
 
@@ -36,6 +43,7 @@ class RedesignShellState extends State<RedesignShell>
   DateTime? _lastProfileTabTapAt;
   int _currentIndex = _homeIndex;
   StreamSubscription<WidgetLaunchTarget>? _widgetLaunchIntentSub;
+  final ProfileRepository _profileRepo = ProfileRepository();
 
   // Auth state
   final LocalAuthentication _auth = LocalAuthentication();
@@ -186,6 +194,147 @@ class RedesignShellState extends State<RedesignShell>
     _pageController.jumpToPage(index);
   }
 
+  String _profileInitials(String name) {
+    if (name.isEmpty) return '?';
+    final list = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList(growable: false);
+    if (list.isEmpty) return '?';
+    if (list.length >= 2) {
+      return (list[0][0] + list[1][0]).toUpperCase();
+    }
+    return list.first[0].toUpperCase();
+  }
+
+  Future<void> _onProfileLongPressAt(Offset anchor) async {
+    final profiles = await _profileRepo.getProfiles();
+    final activeProfileId = await _profileRepo.getActiveProfileId();
+    if (!mounted || profiles.isEmpty) return;
+
+    final selectedProfileId = await _showProfilePickerMenu(
+      anchor: anchor,
+      profiles: profiles,
+      activeProfileId: activeProfileId,
+    );
+
+    if (selectedProfileId == null || selectedProfileId == activeProfileId) {
+      return;
+    }
+
+    final selected = profiles.where((p) => p.id == selectedProfileId).toList();
+    await _profileRepo.setActiveProfile(selectedProfileId);
+    if (!mounted) return;
+
+    final txProvider = Provider.of<TransactionProvider>(context, listen: false);
+    final budgetProvider = Provider.of<BudgetProvider>(context, listen: false);
+    await txProvider.loadData();
+    await budgetProvider.loadBudgets();
+
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          selected.isNotEmpty
+              ? 'Switched to ${selected.first.name}'
+              : 'Profile switched',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<int?> _showProfilePickerMenu({
+    required Offset anchor,
+    required List<Profile> profiles,
+    required int? activeProfileId,
+  }) async {
+    final overlayBox =
+        Overlay.maybeOf(context)?.context.findRenderObject() as RenderBox?;
+    if (overlayBox == null) return null;
+
+    const menuWidth = 220.0;
+    const rowHeight = 48.0;
+    final visibleProfiles = profiles.where((p) => p.id != null).toList();
+    final menuHeight = (visibleProfiles.length * rowHeight) + 16;
+
+    final left = (anchor.dx - menuWidth + 24)
+        .clamp(8.0, overlayBox.size.width - menuWidth - 8.0)
+        .toDouble();
+    final top = (anchor.dy - menuHeight - 10)
+        .clamp(8.0, overlayBox.size.height - menuHeight - 8.0)
+        .toDouble();
+
+    final selected = await showMenu<int>(
+      context: context,
+      color: AppColors.cardColor(context),
+      elevation: 10,
+      position: RelativeRect.fromLTRB(
+        left,
+        top,
+        overlayBox.size.width - left - menuWidth,
+        overlayBox.size.height - top - menuHeight,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      items: visibleProfiles.map((profile) {
+        final profileId = profile.id!;
+        final isActive = profileId == activeProfileId;
+        return PopupMenuItem<int>(
+          value: profileId,
+          height: rowHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isActive
+                      ? AppColors.primaryLight
+                      : AppColors.mutedFill(context),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  _profileInitials(profile.name),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: isActive
+                        ? Colors.white
+                        : AppColors.textSecondary(context),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  profile.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                    color: AppColors.textPrimary(context),
+                  ),
+                ),
+              ),
+              if (isActive)
+                const Icon(
+                  AppIcons.check_rounded,
+                  size: 16,
+                  color: AppColors.primaryLight,
+                ),
+            ],
+          ),
+        );
+      }).toList(growable: false),
+    );
+
+    return selected;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_isAuthenticated) {
@@ -216,6 +365,7 @@ class RedesignShellState extends State<RedesignShell>
         bottomNavigationBar: RedesignBottomNav(
           currentIndex: _currentIndex,
           onTap: _onTabSelected,
+          onProfileLongPressAt: _onProfileLongPressAt,
         ),
       ),
     );
