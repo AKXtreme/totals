@@ -4,6 +4,7 @@ import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/_redesign/screens/redesign_shell.dart';
+import 'package:totals/services/sms_service.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/_redesign/screens/todays_transactions_page.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
@@ -19,9 +20,11 @@ class RedesignHomePage extends StatefulWidget {
 enum _ChartRange { week, month }
 
 class _RedesignHomePageState extends State<RedesignHomePage> {
+  final SmsService _smsService = SmsService();
   bool _showBalance = false;
   _ChartRange _chartRange = _ChartRange.week;
   final Set<String> _selectedRefs = {};
+  bool _isRefreshingTodaySms = false;
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
 
@@ -36,6 +39,54 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
   }
 
   void _clearSelection() => setState(() => _selectedRefs.clear());
+
+  Future<void> _refreshTodaySms(TransactionProvider provider) async {
+    if (_isRefreshingTodaySms) return;
+    setState(() => _isRefreshingTodaySms = true);
+
+    try {
+      final result = await _smsService.syncTodayBankSms();
+      if (!mounted) return;
+
+      if (result.permissionDenied) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('SMS permission denied.'),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      if (result.added > 0) {
+        await provider.loadData();
+      }
+
+      final message = result.added > 0
+          ? 'Added ${result.added} new transactions'
+          : 'No missed transactions';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to refresh SMS'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isRefreshingTodaySms = false);
+    }
+  }
 
   Future<void> _deleteSelected(TransactionProvider provider) async {
     if (_selectedRefs.isEmpty) return;
@@ -153,8 +204,8 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                             ),
                             const SizedBox(width: 4),
                             _RefreshButton(
-                              isLoading: provider.isLoading,
-                              onTap: provider.loadData,
+                              isLoading: _isRefreshingTodaySms,
+                              onTap: () => _refreshTodaySms(provider),
                             ),
                           ],
                         ),
