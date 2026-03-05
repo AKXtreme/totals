@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum HomeAppBarAction {
-  quickCash,
-  notifications,
+enum ProfileDoubleTapAction {
+  lock,
+  doNothing,
 }
 
 class AdvancedSettingsService {
@@ -11,45 +11,46 @@ class AdvancedSettingsService {
 
   static final AdvancedSettingsService instance = AdvancedSettingsService._();
 
-  static const String _homeAppBarActionKey = 'redesign_home_appbar_action';
+  static const String _profileDoubleTapActionKey =
+      'redesign_profile_double_tap_action';
 
-  final ValueNotifier<HomeAppBarAction> homeAppBarAction =
-      ValueNotifier<HomeAppBarAction>(HomeAppBarAction.notifications);
+  final ValueNotifier<ProfileDoubleTapAction> profileDoubleTapAction =
+      ValueNotifier<ProfileDoubleTapAction>(ProfileDoubleTapAction.lock);
 
   bool _loaded = false;
 
   Future<void> ensureLoaded() async {
     if (_loaded) return;
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_homeAppBarActionKey);
-    homeAppBarAction.value = _fromStorage(raw);
+    final raw = prefs.getString(_profileDoubleTapActionKey);
+    profileDoubleTapAction.value = _fromStorage(raw);
     _loaded = true;
   }
 
-  Future<void> setHomeAppBarAction(HomeAppBarAction action) async {
+  Future<void> setProfileDoubleTapAction(ProfileDoubleTapAction action) async {
     await ensureLoaded();
-    if (homeAppBarAction.value == action) return;
-    homeAppBarAction.value = action;
+    if (profileDoubleTapAction.value == action) return;
+    profileDoubleTapAction.value = action;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_homeAppBarActionKey, _toStorage(action));
+    await prefs.setString(_profileDoubleTapActionKey, _toStorage(action));
   }
 
-  static HomeAppBarAction _fromStorage(String? raw) {
+  static ProfileDoubleTapAction _fromStorage(String? raw) {
     switch (raw) {
-      case 'quick_cash':
-        return HomeAppBarAction.quickCash;
-      case 'notifications':
+      case 'do_nothing':
+        return ProfileDoubleTapAction.doNothing;
+      case 'lock':
       default:
-        return HomeAppBarAction.notifications;
+        return ProfileDoubleTapAction.lock;
     }
   }
 
-  static String _toStorage(HomeAppBarAction action) {
+  static String _toStorage(ProfileDoubleTapAction action) {
     switch (action) {
-      case HomeAppBarAction.quickCash:
-        return 'quick_cash';
-      case HomeAppBarAction.notifications:
-        return 'notifications';
+      case ProfileDoubleTapAction.lock:
+        return 'lock';
+      case ProfileDoubleTapAction.doNothing:
+        return 'do_nothing';
     }
   }
 }

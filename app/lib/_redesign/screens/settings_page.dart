@@ -7,7 +7,6 @@ import 'package:cross_file/cross_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:totals/_redesign/screens/advanced_settings_page.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/providers/theme_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
@@ -806,19 +805,6 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => const NotificationSettingsPage(),
-                  ),
-                ),
-              ),
-
-              _SettingTile(
-                icon: Icons.tune_rounded,
-                iconColor: AppColors.blue,
-                title: 'Advanced',
-                subtitle: 'Power features and app behavior controls',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const RedesignAdvancedSettingsPage(),
                   ),
                 ),
               ),

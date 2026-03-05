@@ -205,7 +205,7 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                               ),
                               child: const Text('Cash'),
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 0),
                             TextButton(
                               onPressed: _openAllTodayTransactions,
                               style: TextButton.styleFrom(
@@ -244,13 +244,11 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                             provider.getCategoryById(transaction.categoryId);
                         final isSelfTransfer =
                             provider.isSelfTransfer(transaction);
-                        final isMisc =
-                            category?.uncategorized == true;
+                        final isMisc = category?.uncategorized == true;
                         final categoryLabel = isSelfTransfer
                             ? 'Self'
                             : (category?.name ?? 'Categorize');
-                        final isCategorize =
-                            isSelfTransfer || category != null;
+                        final isCategorize = isSelfTransfer || category != null;
                         final isCredit = transaction.type == 'CREDIT';
                         final amountLabel = _amountLabel(
                           transaction.amount,
@@ -1417,7 +1415,8 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
                         final amountColor =
                             isCredit ? AppColors.incomeSuccess : AppColors.red;
                         final name = _transactionCounterparty(txn);
-                        final bank = widget.provider.getBankShortName(txn.bankId);
+                        final bank =
+                            widget.provider.getBankShortName(txn.bankId);
                         final dt = _parseTransactionTime(txn.time);
                         final timeStr = dt != null ? _formatTime(dt) : '';
                         final parsedBalance =

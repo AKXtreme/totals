@@ -12,7 +12,7 @@ class RedesignAdvancedSettingsPage extends StatefulWidget {
 
 class _RedesignAdvancedSettingsPageState
     extends State<RedesignAdvancedSettingsPage> {
-  HomeAppBarAction _selected = HomeAppBarAction.notifications;
+  ProfileDoubleTapAction _selected = ProfileDoubleTapAction.lock;
   bool _loading = true;
 
   @override
@@ -25,13 +25,13 @@ class _RedesignAdvancedSettingsPageState
     await AdvancedSettingsService.instance.ensureLoaded();
     if (!mounted) return;
     setState(() {
-      _selected = AdvancedSettingsService.instance.homeAppBarAction.value;
+      _selected = AdvancedSettingsService.instance.profileDoubleTapAction.value;
       _loading = false;
     });
   }
 
   Future<void> _openActionPicker() async {
-    final picked = await showModalBottomSheet<HomeAppBarAction>(
+    final picked = await showModalBottomSheet<ProfileDoubleTapAction>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
@@ -54,15 +54,16 @@ class _RedesignAdvancedSettingsPageState
                 ),
               ),
               _OptionTile(
-                title: 'Quick cash',
-                selected: _selected == HomeAppBarAction.quickCash,
-                onTap: () => Navigator.pop(ctx, HomeAppBarAction.quickCash),
+                title: 'Lock app',
+                selected: _selected == ProfileDoubleTapAction.lock,
+                onTap: () => Navigator.pop(ctx, ProfileDoubleTapAction.lock),
               ),
               const SizedBox(height: 8),
               _OptionTile(
-                title: 'Notifications',
-                selected: _selected == HomeAppBarAction.notifications,
-                onTap: () => Navigator.pop(ctx, HomeAppBarAction.notifications),
+                title: 'Do nothing',
+                selected: _selected == ProfileDoubleTapAction.doNothing,
+                onTap: () =>
+                    Navigator.pop(ctx, ProfileDoubleTapAction.doNothing),
               ),
             ],
           ),
@@ -71,7 +72,7 @@ class _RedesignAdvancedSettingsPageState
     );
 
     if (picked == null || picked == _selected) return;
-    await AdvancedSettingsService.instance.setHomeAppBarAction(picked);
+    await AdvancedSettingsService.instance.setProfileDoubleTapAction(picked);
     if (!mounted) return;
     setState(() => _selected = picked);
   }
@@ -109,8 +110,8 @@ class _RedesignAdvancedSettingsPageState
                                 AppColors.primaryLight.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(
-                            Icons.tune_rounded,
+                          child: Icon(
+                            Icons.person_outline_rounded,
                             color: AppColors.primaryLight,
                             size: 20,
                           ),
@@ -121,7 +122,7 @@ class _RedesignAdvancedSettingsPageState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'App bar button',
+                                'Profile double tap',
                                 style: TextStyle(
                                   color: AppColors.textPrimary(context),
                                   fontSize: 14,
@@ -130,9 +131,9 @@ class _RedesignAdvancedSettingsPageState
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                _selected == HomeAppBarAction.quickCash
-                                    ? 'Quick cash'
-                                    : 'Notifications',
+                                _selected == ProfileDoubleTapAction.lock
+                                    ? 'Lock app'
+                                    : 'Do nothing',
                                 style: TextStyle(
                                   color: AppColors.textSecondary(context),
                                   fontSize: 12,

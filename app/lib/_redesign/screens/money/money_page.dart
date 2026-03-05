@@ -32,6 +32,8 @@ enum _TopTab { activity, accounts }
 
 enum _SubTab { transactions, analytics, ledger }
 
+enum _AnalyticsHeatmapMode { all, expense, income }
+
 final List<bank_model.Bank> _assetBanks = _buildAssetBanks();
 
 bank_model.Bank _canonicalMpesaBank({int id = 8}) {
@@ -138,6 +140,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
   final ScrollController _activityScrollController = ScrollController();
   int _currentPage = 0;
   static const int _pageSize = 50;
+  _AnalyticsHeatmapMode _analyticsHeatmapMode = _AnalyticsHeatmapMode.all;
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
 
@@ -320,11 +323,27 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
                     monthExpense: monthTotals.expense,
                   ),
                   const SizedBox(height: 16),
-                  _SubTabBar(
-                    selectedTab: _subTab,
-                    onTabChanged: (tab) => setState(() => _subTab = tab),
-                  ),
-                  if (_subTab != _SubTab.ledger) ...[
+                  if (_subTab == _SubTab.analytics)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _SubTabBar(
+                            selectedTab: _subTab,
+                            onTabChanged: (tab) => setState(() => _subTab = tab),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        _AnalyticsFilterButton(
+                          onTap: _openAnalyticsFilterSheet,
+                        ),
+                      ],
+                    )
+                  else
+                    _SubTabBar(
+                      selectedTab: _subTab,
+                      onTabChanged: (tab) => setState(() => _subTab = tab),
+                    ),
+                  if (_subTab == _SubTab.transactions) ...[
                     const SizedBox(height: 12),
                     _SearchFilterRow(
                       controller: _searchController,
@@ -402,22 +421,11 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
                   ),
                 ),
             ],
+          ] else if (_subTab == _SubTab.analytics) ...[
+            ..._buildAnalyticsSlivers(provider),
           ] else if (_subTab == _SubTab.ledger) ...[
             ..._buildLedgerSlivers(provider),
-          ] else
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: Text(
-                  'Analytics',
-                  style: TextStyle(
-                    color: AppColors.textSecondary(context),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
+          ],
           const SliverPadding(padding: EdgeInsets.only(bottom: 96)),
         ],
       ),
@@ -450,6 +458,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
       amount: _amountLabel(transaction.amount, isCredit: isCredit),
       amountColor: isCredit ? AppColors.incomeSuccess : AppColors.red,
       name: _transactionCounterparty(transaction),
+      timestamp: _transactionTimeLabel(transaction),
       selected: selected,
       onTap: _isSelecting
           ? () => _toggleSelection(transaction)
@@ -466,6 +475,223 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
       context: context,
       transaction: transaction,
       provider: provider,
+    );
+  }
+
+  Future<void> _openAnalyticsFilterSheet() async {
+    final picked = await showModalBottomSheet<_AnalyticsHeatmapMode>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          decoration: BoxDecoration(
+            color: AppColors.cardColor(sheetCtx),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.slate400,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              _AnalyticsBottomSheetOption(
+                title: 'All',
+                selected: _analyticsHeatmapMode == _AnalyticsHeatmapMode.all,
+                onTap: () => Navigator.pop(sheetCtx, _AnalyticsHeatmapMode.all),
+              ),
+              const SizedBox(height: 8),
+              _AnalyticsBottomSheetOption(
+                title: 'Expense',
+                selected:
+                    _analyticsHeatmapMode == _AnalyticsHeatmapMode.expense,
+                onTap: () =>
+                    Navigator.pop(sheetCtx, _AnalyticsHeatmapMode.expense),
+              ),
+              const SizedBox(height: 8),
+              _AnalyticsBottomSheetOption(
+                title: 'Income',
+                selected:
+                    _analyticsHeatmapMode == _AnalyticsHeatmapMode.income,
+                onTap: () =>
+                    Navigator.pop(sheetCtx, _AnalyticsHeatmapMode.income),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!mounted || picked == null || picked == _analyticsHeatmapMode) return;
+    setState(() => _analyticsHeatmapMode = picked);
+  }
+
+  List<Widget> _buildAnalyticsSlivers(TransactionProvider provider) {
+    final snapshot = _buildAnalyticsSnapshot(provider);
+    return [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          child: Column(
+            children: [
+              _AnalyticsOverviewGrid(snapshot: snapshot),
+              const SizedBox(height: 14),
+              _AnalyticsHeatmapCard(
+                snapshot: snapshot,
+                mode: _analyticsHeatmapMode,
+                onModeChanged: (mode) {
+                  if (_analyticsHeatmapMode == mode) return;
+                  setState(() => _analyticsHeatmapMode = mode);
+                },
+              ),
+              const SizedBox(height: 14),
+              _AnalyticsExpenseBubbleCard(snapshot: snapshot),
+              const SizedBox(height: 14),
+              _AnalyticsSpendingByDayCard(snapshot: snapshot),
+              const SizedBox(height: 14),
+              _AnalyticsTopRecipientsCard(snapshot: snapshot),
+              const SizedBox(height: 14),
+              _AnalyticsMoneyFlowCard(snapshot: snapshot),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+
+  _AnalyticsSnapshot _buildAnalyticsSnapshot(TransactionProvider provider) {
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month, 1);
+    final nextMonthStart = DateTime(now.year, now.month + 1, 1);
+
+    final byDayIncome = <int, double>{};
+    final byDayExpense = <int, double>{};
+    final byDayNet = <int, double>{};
+    final weekdayExpenseTotals = List<double>.filled(7, 0.0);
+    final categoryTotals = <String, double>{};
+    final recipientTotals = <String, _AnalyticsRecipientAccumulator>{};
+
+    var incomeCount = 0;
+    var expenseCount = 0;
+    var totalFees = 0.0;
+    var largestExpense = 0.0;
+    var largestDeposit = 0.0;
+
+    for (final transaction in provider.allTransactions) {
+      final dt = _parseTransactionTime(transaction.time);
+      if (dt == null) continue;
+      if (dt.isBefore(monthStart) || !dt.isBefore(nextMonthStart)) continue;
+
+      totalFees += (transaction.serviceCharge ?? 0.0) + (transaction.vat ?? 0.0);
+      final day = dt.day;
+      final isCredit = transaction.type == 'CREDIT';
+      final isDebit = transaction.type == 'DEBIT';
+
+      if (isCredit) {
+        incomeCount += 1;
+        byDayIncome[day] = (byDayIncome[day] ?? 0.0) + transaction.amount;
+        byDayNet[day] = (byDayNet[day] ?? 0.0) + transaction.amount;
+        largestDeposit = math.max(largestDeposit, transaction.amount);
+      } else if (isDebit) {
+        expenseCount += 1;
+        byDayExpense[day] = (byDayExpense[day] ?? 0.0) + transaction.amount;
+        byDayNet[day] = (byDayNet[day] ?? 0.0) - transaction.amount;
+        largestExpense = math.max(largestExpense, transaction.amount);
+      }
+
+      if (!isDebit) continue;
+
+      final isSelfTransfer = provider.isSelfTransfer(transaction);
+      final category = provider.getCategoryById(transaction.categoryId);
+      final isMisc = category?.uncategorized == true;
+      if (isSelfTransfer || isMisc) continue;
+
+      final categoryName = (category?.name.trim().isNotEmpty ?? false)
+          ? category!.name.trim()
+          : 'Other';
+      categoryTotals[categoryName] =
+          (categoryTotals[categoryName] ?? 0.0) + transaction.amount;
+
+      final weekdayIndex = dt.weekday % 7; // Sunday = 0 ... Saturday = 6
+      weekdayExpenseTotals[weekdayIndex] += transaction.amount;
+
+      final recipient = _transactionCounterparty(transaction);
+      final existing = recipientTotals.putIfAbsent(
+        recipient,
+        () => _AnalyticsRecipientAccumulator(),
+      );
+      existing.amount += transaction.amount;
+      existing.count += 1;
+    }
+
+    final categoryEntries = categoryTotals.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final categoryStats = <_AnalyticsCategoryStat>[];
+    for (int i = 0; i < categoryEntries.length && i < 8; i++) {
+      final entry = categoryEntries[i];
+      categoryStats.add(
+        _AnalyticsCategoryStat(
+          label: entry.key,
+          amount: entry.value,
+          color: _analyticsPaletteColor(i),
+        ),
+      );
+    }
+
+    final recipientEntries = recipientTotals.entries.toList()
+      ..sort((a, b) => b.value.amount.compareTo(a.value.amount));
+    final topRecipients = recipientEntries
+        .take(5)
+        .map(
+          (entry) => _AnalyticsRecipientStat(
+            name: entry.key,
+            amount: entry.value.amount,
+            count: entry.value.count,
+          ),
+        )
+        .toList(growable: false);
+
+    var peakWeekdayIndex = 0;
+    var peakValue = -1.0;
+    for (int i = 0; i < weekdayExpenseTotals.length; i++) {
+      if (weekdayExpenseTotals[i] > peakValue) {
+        peakValue = weekdayExpenseTotals[i];
+        peakWeekdayIndex = i;
+      }
+    }
+
+    final totalIncome = provider.monthTotals.income;
+    final totalExpense = provider.monthTotals.expense;
+    final netCashFlow = totalIncome - totalExpense;
+    final savingsRate = totalIncome > 0
+        ? ((netCashFlow / totalIncome) * 100).clamp(-999.0, 999.0).toDouble()
+        : 0.0;
+
+    return _AnalyticsSnapshot(
+      monthDate: monthStart,
+      totalIncome: totalIncome,
+      totalExpense: totalExpense,
+      totalFees: totalFees,
+      totalTransactions: provider.monthTransactions.length,
+      incomeCount: incomeCount,
+      expenseCount: expenseCount,
+      incomeByDay: byDayIncome,
+      expenseByDay: byDayExpense,
+      netByDay: byDayNet,
+      weekdayExpenseTotals: weekdayExpenseTotals,
+      peakWeekdayIndex: peakWeekdayIndex,
+      categories: categoryStats,
+      topRecipients: topRecipients,
+      netCashFlow: netCashFlow,
+      savingsRate: savingsRate,
+      largestExpense: largestExpense,
+      largestDeposit: largestDeposit,
     );
   }
 
@@ -1339,6 +1565,14 @@ String _transactionCounterparty(Transaction transaction) {
   return 'UNKNOWN';
 }
 
+String _transactionTimeLabel(Transaction transaction) {
+  final dt = _parseTransactionTime(transaction.time);
+  if (dt == null) return 'Unknown time';
+  final hh = dt.hour.toString().padLeft(2, '0');
+  final mm = dt.minute.toString().padLeft(2, '0');
+  return '$hh:$mm';
+}
+
 String _formatCount(int count) {
   final formatted = formatNumberWithComma(count.toDouble());
   return formatted.replaceFirst(RegExp(r'\.00$'), '');
@@ -1346,6 +1580,35 @@ String _formatCount(int count) {
 
 String _formatEtbAbbrev(double value) {
   return formatNumberAbbreviated(value).replaceAll('k', 'K');
+}
+
+String _formatCompactSignedEtb(double value) {
+  if (value.abs() < 0.001) return '';
+  final sign = value >= 0 ? '+' : '-';
+  return '$sign${_formatEtbAbbrev(value.abs())}';
+}
+
+String _formatMonthYear(DateTime date) {
+  return '${_months[date.month - 1]} ${date.year}';
+}
+
+String _analyticsWeekdayLabel(int index) {
+  const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return labels[index.clamp(0, labels.length - 1)];
+}
+
+Color _analyticsPaletteColor(int index) {
+  const palette = <Color>[
+    Color(0xFF7C83EA),
+    Color(0xFF22C55E),
+    Color(0xFFFB7185),
+    Color(0xFFF59E0B),
+    Color(0xFFA855F7),
+    Color(0xFF06B6D4),
+    Color(0xFF6366F1),
+    Color(0xFF6B7280),
+  ];
+  return palette[index % palette.length];
 }
 
 String _formatLedgerTime(DateTime dt) {
@@ -1728,6 +1991,1191 @@ class _SubTabButton extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _AnalyticsFilterButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AnalyticsFilterButton({
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: IconButton(
+        onPressed: onTap,
+        style: IconButton.styleFrom(
+          backgroundColor: AppColors.cardColor(context),
+          side: BorderSide(color: AppColors.borderColor(context)),
+          foregroundColor: AppColors.textSecondary(context),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        icon: const Icon(Icons.filter_alt_outlined, size: 20),
+      ),
+    );
+  }
+}
+
+class _AnalyticsSnapshot {
+  final DateTime monthDate;
+  final double totalIncome;
+  final double totalExpense;
+  final double totalFees;
+  final int totalTransactions;
+  final int incomeCount;
+  final int expenseCount;
+  final Map<int, double> incomeByDay;
+  final Map<int, double> expenseByDay;
+  final Map<int, double> netByDay;
+  final List<double> weekdayExpenseTotals;
+  final int peakWeekdayIndex;
+  final List<_AnalyticsCategoryStat> categories;
+  final List<_AnalyticsRecipientStat> topRecipients;
+  final double netCashFlow;
+  final double savingsRate;
+  final double largestExpense;
+  final double largestDeposit;
+
+  const _AnalyticsSnapshot({
+    required this.monthDate,
+    required this.totalIncome,
+    required this.totalExpense,
+    required this.totalFees,
+    required this.totalTransactions,
+    required this.incomeCount,
+    required this.expenseCount,
+    required this.incomeByDay,
+    required this.expenseByDay,
+    required this.netByDay,
+    required this.weekdayExpenseTotals,
+    required this.peakWeekdayIndex,
+    required this.categories,
+    required this.topRecipients,
+    required this.netCashFlow,
+    required this.savingsRate,
+    required this.largestExpense,
+    required this.largestDeposit,
+  });
+}
+
+class _AnalyticsCategoryStat {
+  final String label;
+  final double amount;
+  final Color color;
+
+  const _AnalyticsCategoryStat({
+    required this.label,
+    required this.amount,
+    required this.color,
+  });
+}
+
+class _AnalyticsRecipientStat {
+  final String name;
+  final double amount;
+  final int count;
+
+  const _AnalyticsRecipientStat({
+    required this.name,
+    required this.amount,
+    required this.count,
+  });
+}
+
+class _AnalyticsRecipientAccumulator {
+  double amount = 0.0;
+  int count = 0;
+}
+
+class _AnalyticsOverviewGrid extends StatelessWidget {
+  final _AnalyticsSnapshot snapshot;
+
+  const _AnalyticsOverviewGrid({
+    required this.snapshot,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _AnalyticsMetricCard(
+                icon: Icons.trending_up_rounded,
+                iconBg: const Color(0xFFDCFCE7),
+                iconFg: AppColors.incomeSuccess,
+                title: 'TOTAL INCOME',
+                value: 'ETB ${_formatEtbAbbrev(snapshot.totalIncome)}',
+                subtitle: '${snapshot.incomeCount} deposits',
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _AnalyticsMetricCard(
+                icon: Icons.trending_down_rounded,
+                iconBg: const Color(0xFFFEE2E2),
+                iconFg: AppColors.red,
+                title: 'TOTAL EXPENSE',
+                value: 'ETB ${_formatEtbAbbrev(snapshot.totalExpense)}',
+                subtitle: '${snapshot.expenseCount} transactions',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _AnalyticsMetricCard(
+                icon: Icons.receipt_long_rounded,
+                iconBg: const Color(0xFFEDE9FE),
+                iconFg: const Color(0xFF6366F1),
+                title: 'TRANSACTIONS',
+                value: _formatCount(snapshot.totalTransactions),
+                subtitle:
+                    '${snapshot.expenseCount} expense | ${snapshot.incomeCount} income',
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _AnalyticsMetricCard(
+                icon: Icons.schedule_rounded,
+                iconBg: const Color(0xFFFEF3C7),
+                iconFg: const Color(0xFFD97706),
+                title: 'TOTAL FEES',
+                value: 'ETB ${formatNumberWithComma(snapshot.totalFees)}',
+                subtitle: 'Service charges + VAT',
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _AnalyticsMetricCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconBg;
+  final Color iconFg;
+  final String title;
+  final String value;
+  final String subtitle;
+
+  const _AnalyticsMetricCard({
+    required this.icon,
+    required this.iconBg,
+    required this.iconFg,
+    required this.title,
+    required this.value,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Icon(icon, size: 18, color: iconFg),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: TextStyle(
+              color: AppColors.textTertiary(context),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: AppColors.textPrimary(context),
+              fontSize: 34,
+              fontWeight: FontWeight.w800,
+              height: 1.05,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: AppColors.textSecondary(context),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalyticsHeatmapCard extends StatelessWidget {
+  final _AnalyticsSnapshot snapshot;
+  final _AnalyticsHeatmapMode mode;
+  final ValueChanged<_AnalyticsHeatmapMode> onModeChanged;
+
+  const _AnalyticsHeatmapCard({
+    required this.snapshot,
+    required this.mode,
+    required this.onModeChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final monthStart = DateTime(snapshot.monthDate.year, snapshot.monthDate.month, 1);
+    final daysInMonth =
+        DateTime(snapshot.monthDate.year, snapshot.monthDate.month + 1, 0).day;
+    final startOffset = monthStart.weekday - 1; // Monday-first index.
+    final totalCells = ((startOffset + daysInMonth + 6) ~/ 7) * 7;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Heatmap',
+                style: TextStyle(
+                  color: AppColors.textPrimary(context),
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 3),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: AppColors.textTertiary(context),
+              ),
+              const Spacer(),
+              _AnalyticsModeChip(
+                label: 'All',
+                selected: mode == _AnalyticsHeatmapMode.all,
+                onTap: () => onModeChanged(_AnalyticsHeatmapMode.all),
+              ),
+              const SizedBox(width: 6),
+              _AnalyticsModeChip(
+                label: 'Expense',
+                selected: mode == _AnalyticsHeatmapMode.expense,
+                onTap: () => onModeChanged(_AnalyticsHeatmapMode.expense),
+              ),
+              const SizedBox(width: 6),
+              _AnalyticsModeChip(
+                label: 'Income',
+                selected: mode == _AnalyticsHeatmapMode.income,
+                onTap: () => onModeChanged(_AnalyticsHeatmapMode.income),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Text(
+                _formatMonthYear(snapshot.monthDate),
+                style: TextStyle(
+                  color: AppColors.textPrimary(context),
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              _AnalyticsLegendDot(
+                color: AppColors.incomeSuccess,
+                label: 'Income',
+              ),
+              const SizedBox(width: 10),
+              _AnalyticsLegendDot(
+                color: AppColors.red,
+                label: 'Expense',
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const _AnalyticsWeekdayHeader(),
+          const SizedBox(height: 8),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: totalCells,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              crossAxisSpacing: 4,
+              mainAxisSpacing: 4,
+              childAspectRatio: 1.04,
+            ),
+            itemBuilder: (context, index) {
+              final day = index - startOffset + 1;
+              if (index < startOffset || day < 1 || day > daysInMonth) {
+                return const SizedBox.shrink();
+              }
+
+              final value = _heatmapValueForDay(day);
+              final hasValue = value.abs() > 0.001;
+              Color textColor = AppColors.textPrimary(context);
+              Color? bgColor;
+              if (hasValue) {
+                if (value > 0) {
+                  textColor = AppColors.incomeSuccess;
+                  bgColor = AppColors.incomeSuccess.withValues(alpha: 0.18);
+                } else {
+                  textColor = AppColors.red;
+                  bgColor = AppColors.red.withValues(alpha: 0.15);
+                }
+              }
+
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '$day',
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (hasValue)
+                      Text(
+                        _formatCompactSignedEtb(value),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.chevron_left_rounded, color: AppColors.textTertiary(context)),
+              const SizedBox(width: 12),
+              Text(
+                'Today',
+                style: TextStyle(
+                  color: AppColors.textSecondary(context),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Icon(Icons.chevron_right_rounded, color: AppColors.textTertiary(context)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _heatmapValueForDay(int day) {
+    switch (mode) {
+      case _AnalyticsHeatmapMode.all:
+        return snapshot.netByDay[day] ?? 0.0;
+      case _AnalyticsHeatmapMode.expense:
+        return -(snapshot.expenseByDay[day] ?? 0.0);
+      case _AnalyticsHeatmapMode.income:
+        return snapshot.incomeByDay[day] ?? 0.0;
+    }
+  }
+}
+
+class _AnalyticsModeChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _AnalyticsModeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primaryLight : Colors.transparent,
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(
+            color: selected
+                ? AppColors.primaryLight
+                : AppColors.borderColor(context),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? AppColors.white : AppColors.textSecondary(context),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnalyticsBottomSheetOption extends StatelessWidget {
+  final String title;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _AnalyticsBottomSheetOption({
+    required this.title,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected
+          ? AppColors.primaryLight.withValues(alpha: 0.12)
+          : AppColors.surfaceColor(context),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    color: AppColors.textPrimary(context),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (selected)
+                const Icon(
+                  Icons.check_rounded,
+                  color: AppColors.primaryLight,
+                  size: 20,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnalyticsLegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _AnalyticsLegendDot({
+    required this.color,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.75),
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: AppColors.textSecondary(context),
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AnalyticsWeekdayHeader extends StatelessWidget {
+  const _AnalyticsWeekdayHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return Row(
+      children: labels
+          .map(
+            (label) => Expanded(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.textTertiary(context),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+class _AnalyticsExpenseBubbleCard extends StatelessWidget {
+  final _AnalyticsSnapshot snapshot;
+
+  const _AnalyticsExpenseBubbleCard({
+    required this.snapshot,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = snapshot.categories;
+    final total = categories.fold<double>(0.0, (sum, item) => sum + item.amount);
+    final dominantPercent =
+        total > 0 && categories.isNotEmpty ? (categories.first.amount / total) * 100 : 0.0;
+    final today = DateTime.now();
+    final dataRangeLabel =
+        'Data from ${_formatDateHeader(snapshot.monthDate)} - ${_formatDateHeader(today)}';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Expenses',
+                style: TextStyle(
+                  color: AppColors.textPrimary(context),
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'Bubble chart',
+                style: TextStyle(
+                  color: AppColors.textPrimary(context),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: AppColors.textTertiary(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            dataRangeLabel,
+            style: TextStyle(
+              color: AppColors.textSecondary(context),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (categories.isEmpty)
+            SizedBox(
+              height: 170,
+              child: Center(
+                child: Text(
+                  'No categorized expenses this month.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary(context),
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              height: 210,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final centerX = constraints.maxWidth / 2;
+                  final centerY = 100.0;
+                  const offsets = <Offset>[
+                    Offset(-88, -58),
+                    Offset(0, -86),
+                    Offset(86, -54),
+                    Offset(106, 8),
+                    Offset(74, 74),
+                    Offset(-76, 76),
+                    Offset(-108, 10),
+                    Offset(-94, -8),
+                  ];
+                  return Stack(
+                    children: [
+                      Positioned(
+                        left: centerX - 72,
+                        top: centerY - 72,
+                        child: Container(
+                          width: 144,
+                          height: 144,
+                          decoration: BoxDecoration(
+                            color: AppColors.mutedFill(context),
+                            borderRadius: BorderRadius.circular(72),
+                            border: Border.all(color: AppColors.borderColor(context)),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            '${dominantPercent.round()}%',
+                            style: TextStyle(
+                              color: AppColors.textPrimary(context),
+                              fontSize: 34,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                      for (int i = 0; i < categories.length; i++)
+                        _buildBubble(
+                          context: context,
+                          centerX: centerX,
+                          centerY: centerY,
+                          offset: offsets[i % offsets.length],
+                          stat: categories[i],
+                          total: total,
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          if (categories.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ..._buildLegendRows(context, categories),
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildLegendRows(
+    BuildContext context,
+    List<_AnalyticsCategoryStat> categories,
+  ) {
+    final rows = <Widget>[];
+    for (int i = 0; i < categories.length; i += 2) {
+      final left = categories[i];
+      final right = i + 1 < categories.length ? categories[i + 1] : null;
+      rows.add(
+        Padding(
+          padding: EdgeInsets.only(bottom: i + 2 < categories.length ? 8 : 0),
+          child: Row(
+            children: [
+              Expanded(child: _AnalyticsLegendAmountItem(stat: left)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: right == null
+                    ? const SizedBox.shrink()
+                    : _AnalyticsLegendAmountItem(stat: right),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return rows;
+  }
+
+  Widget _buildBubble({
+    required BuildContext context,
+    required double centerX,
+    required double centerY,
+    required Offset offset,
+    required _AnalyticsCategoryStat stat,
+    required double total,
+  }) {
+    final percent = total > 0 ? (stat.amount / total) * 100 : 0.0;
+    final size = 44 + (percent.clamp(0, 14) * 1.2);
+    return Positioned(
+      left: centerX + offset.dx - (size / 2),
+      top: centerY + offset.dy - (size / 2),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: stat.color.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(size / 2),
+          border: Border.all(color: stat.color.withValues(alpha: 0.65)),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          '${percent.round()}%',
+          style: TextStyle(
+            color: stat.color,
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnalyticsLegendAmountItem extends StatelessWidget {
+  final _AnalyticsCategoryStat stat;
+
+  const _AnalyticsLegendAmountItem({
+    required this.stat,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: stat.color,
+            borderRadius: BorderRadius.circular(99),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            stat.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: AppColors.textSecondary(context),
+              fontSize: 12,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          'ETB ${_formatEtbAbbrev(stat.amount)}',
+          style: TextStyle(
+            color: AppColors.textPrimary(context),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AnalyticsSpendingByDayCard extends StatelessWidget {
+  final _AnalyticsSnapshot snapshot;
+
+  const _AnalyticsSpendingByDayCard({
+    required this.snapshot,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final maxValue = snapshot.weekdayExpenseTotals.fold<double>(0.0, math.max);
+    final peakDay = _analyticsWeekdayLabel(snapshot.peakWeekdayIndex);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Spending by Day',
+                style: TextStyle(
+                  color: AppColors.textPrimary(context),
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'Peak: $peakDay',
+                style: TextStyle(
+                  color: AppColors.textTertiary(context),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 84,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: List.generate(7, (index) {
+                final value = snapshot.weekdayExpenseTotals[index];
+                final ratio = maxValue > 0 ? (value / maxValue).clamp(0.0, 1.0) : 0.0;
+                final barHeight = 10 + (ratio * 52);
+                final isPeak = index == snapshot.peakWeekdayIndex && maxValue > 0;
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          height: barHeight,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: isPeak
+                                  ? const [Color(0xFF4ADE80), Color(0xFF22C55E)]
+                                  : const [Color(0xFF7C83EA), Color(0xFF5B60D9)],
+                            ),
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _analyticsWeekdayLabel(index),
+                          style: TextStyle(
+                            color: AppColors.textSecondary(context),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalyticsTopRecipientsCard extends StatelessWidget {
+  final _AnalyticsSnapshot snapshot;
+
+  const _AnalyticsTopRecipientsCard({
+    required this.snapshot,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final maxAmount = snapshot.topRecipients.isEmpty
+        ? 0.0
+        : snapshot.topRecipients.first.amount;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Top Recipients',
+                style: TextStyle(
+                  color: AppColors.textPrimary(context),
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${snapshot.expenseCount} total',
+                style: TextStyle(
+                  color: AppColors.textTertiary(context),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (snapshot.topRecipients.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: Text(
+                  'No expense recipients this month.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary(context),
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            )
+          else
+            ...snapshot.topRecipients.asMap().entries.map((entry) {
+              final index = entry.key;
+              final stat = entry.value;
+              final ratio = maxAmount > 0
+                  ? (stat.amount / maxAmount).clamp(0.0, 1.0)
+                  : 0.0;
+              return Padding(
+                padding: EdgeInsets.only(
+                  top: index == 0 ? 4 : 12,
+                  bottom: index + 1 == snapshot.topRecipients.length ? 0 : 2,
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 22,
+                          child: Text(
+                            '${index + 1}',
+                            style: TextStyle(
+                              color: AppColors.textTertiary(context),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                stat.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: AppColors.textPrimary(context),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: AppColors.mutedFill(context),
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                                child: FractionallySizedBox(
+                                  alignment: Alignment.centerLeft,
+                                  widthFactor: ratio,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF6D7EE8),
+                                      borderRadius: BorderRadius.circular(99),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '-ETB ${_formatEtbAbbrev(stat.amount)}',
+                              style: const TextStyle(
+                                color: AppColors.red,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${stat.count} tx',
+                              style: TextStyle(
+                                color: AppColors.textTertiary(context),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    if (index + 1 != snapshot.topRecipients.length)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Divider(
+                          height: 1,
+                          color: AppColors.borderColor(context),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalyticsMoneyFlowCard extends StatelessWidget {
+  final _AnalyticsSnapshot snapshot;
+
+  const _AnalyticsMoneyFlowCard({
+    required this.snapshot,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final flowColor =
+        snapshot.netCashFlow >= 0 ? AppColors.incomeSuccess : AppColors.red;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Money Flow',
+            style: TextStyle(
+              color: AppColors.textPrimary(context),
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _MoneyFlowRow(
+            label: 'Net Cash Flow',
+            value:
+                '${snapshot.netCashFlow >= 0 ? '+' : '-'}ETB ${_formatEtbAbbrev(snapshot.netCashFlow.abs())}',
+            valueColor: flowColor,
+          ),
+          _MoneyFlowRow(
+            label: 'Savings Rate',
+            value: '${snapshot.savingsRate.toStringAsFixed(1)}%',
+          ),
+          _MoneyFlowRow(
+            label: 'Largest Expense',
+            value: 'ETB ${_formatEtbAbbrev(snapshot.largestExpense)}',
+          ),
+          _MoneyFlowRow(
+            label: 'Largest Deposit',
+            value: 'ETB ${_formatEtbAbbrev(snapshot.largestDeposit)}',
+          ),
+          _MoneyFlowRow(
+            label: 'Total Transactions',
+            value: _formatCount(snapshot.totalTransactions),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MoneyFlowRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _MoneyFlowRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: AppColors.textSecondary(context),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: valueColor ?? AppColors.textPrimary(context),
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
