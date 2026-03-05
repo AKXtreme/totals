@@ -26,12 +26,14 @@ class RedesignShellState extends State<RedesignShell>
   static const int _homeIndex = 0;
   static const int _moneyIndex = 1;
   static const int _budgetIndex = 2;
+  static const int _settingsIndex = 4;
   final PageController _pageController =
       PageController(initialPage: _homeIndex);
   final GlobalKey<RedesignMoneyPageState> _moneyPageKey =
       GlobalKey<RedesignMoneyPageState>();
   final GlobalKey<RedesignBudgetPageState> _budgetPageKey =
       GlobalKey<RedesignBudgetPageState>();
+  DateTime? _lastProfileTabTapAt;
   int _currentIndex = _homeIndex;
   StreamSubscription<WidgetLaunchTarget>? _widgetLaunchIntentSub;
 
@@ -158,7 +160,26 @@ class RedesignShellState extends State<RedesignShell>
     openAccountsWhenReady();
   }
 
+  void openSettingsPage() {
+    _onTabSelected(_settingsIndex);
+  }
+
   void _onTabSelected(int index) {
+    if (index == _settingsIndex) {
+      final now = DateTime.now();
+      final isDoubleTap = _lastProfileTabTapAt != null &&
+          now.difference(_lastProfileTabTapAt!) <=
+              const Duration(milliseconds: 700);
+      _lastProfileTabTapAt = now;
+      if (isDoubleTap) {
+        _lastProfileTabTapAt = null;
+        lockApp();
+        return;
+      }
+    } else {
+      _lastProfileTabTapAt = null;
+    }
+
     setState(() {
       _currentIndex = index;
     });

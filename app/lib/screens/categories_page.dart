@@ -188,13 +188,13 @@ class _CategoriesPageState extends State<CategoriesPage>
                 categories: expenseCategories,
                 emptyLabel: 'No expense categories yet',
                 sections: _buildExpenseSections(expenseCategories),
-                onEdit: (c) => _openEditor(existing: c),
+                onEdit: (c) => _openEditor(existing: c, initialFlow: c.flow),
               ),
               _CategoryList(
                 categories: incomeCategories,
                 emptyLabel: 'No income categories yet',
                 sections: _buildIncomeSections(incomeCategories),
-                onEdit: (c) => _openEditor(existing: c),
+                onEdit: (c) => _openEditor(existing: c, initialFlow: c.flow),
               ),
             ],
           );
@@ -352,7 +352,7 @@ class _CategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = categoryTypeColor(category, context);
+    final color = categoryPaletteColor(category);
     final description = (category.description ?? '').trim();
 
     return Material(
@@ -498,12 +498,16 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
             ? 'income'
             : 'expense';
     _recurring = widget.existing?.recurring ?? false;
-    _colorKey = resolvedCategoryColorKey(widget.existing ?? _draftCategory());
-    _colorKey ??= suggestedCategoryColorKey(
-      flow: _flow,
-      essential: _categoryType == CategoryType.essential,
-      uncategorized: _categoryType == CategoryType.uncategorized,
-    );
+    if (widget.existing != null) {
+      _colorKey = resolvedCategoryColorKey(widget.existing!) ??
+          fallbackCategoryColorKey(widget.existing!);
+    } else {
+      _colorKey = suggestedCategoryColorKey(
+        flow: _flow,
+        essential: _categoryType == CategoryType.essential,
+        uncategorized: _categoryType == CategoryType.uncategorized,
+      );
+    }
   }
 
   @override
@@ -525,18 +529,6 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
         flow: _flow,
         recurring: _recurring,
       ),
-    );
-  }
-
-  Category _draftCategory() {
-    return Category(
-      name: _nameController.text.trim(),
-      essential: _categoryType == CategoryType.essential,
-      uncategorized: _categoryType == CategoryType.uncategorized,
-      iconKey: _iconKey,
-      colorKey: _colorKey,
-      flow: _flow,
-      recurring: _recurring,
     );
   }
 
@@ -648,33 +640,23 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
 
             // Title row
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  isEdit ? 'Edit Category' : 'New Category',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary(context),
+                Expanded(
+                  child: Text(
+                    isEdit ? 'Edit Category' : 'New Category',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary(context),
+                    ),
                   ),
                 ),
-                ElevatedButton(
-                  onPressed: _save,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryDark,
-                    foregroundColor: AppColors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: AppColors.textSecondary(context),
                   ),
-                  child: const Text(
-                    'Save',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
+                  tooltip: 'Close',
                 ),
               ],
             ),
@@ -932,6 +914,26 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
                 ),
               ),
             ],
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryDark,
+                  foregroundColor: AppColors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Save',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
           ],
         ),

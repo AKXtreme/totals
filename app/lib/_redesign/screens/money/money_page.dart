@@ -565,6 +565,11 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
       }
     }
 
+    final derivedCashBalancesByReference = _deriveCashBalancesByReference(
+      allTxns: allTxns,
+      accountSummaries: provider.accountSummaries,
+    );
+
     // Build flat list: date headers (String) + transactions interleaved
     final flatItems = <Object>[];
     String? lastDateKey;
@@ -684,6 +689,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
                         child: _LedgerTransactionEntry(
                           transaction: entry.transaction,
                           showBalance: _showAccountBalances,
+                          derivedBalance:
+                              derivedCashBalancesByReference[entry.transaction.reference],
                         ),
                       ),
                     ),
@@ -1234,6 +1241,60 @@ DateTime? _parseTransactionTime(String? raw) {
   } catch (_) {
     return null;
   }
+}
+
+Map<String, double> _deriveCashBalancesByReference({
+  required List<Transaction> allTxns,
+  required List<AccountSummary> accountSummaries,
+}) {
+  final currentCashTotal = accountSummaries
+      .where((summary) => summary.bankId == CashConstants.bankId)
+      .fold<double>(0.0, (sum, summary) => sum + summary.balance);
+
+  final cashTransactions = allTxns
+      .where((transaction) => transaction.bankId == CashConstants.bankId)
+      .toList(growable: false);
+
+  if (cashTransactions.isEmpty) return const <String, double>{};
+
+  final netCashDelta = cashTransactions.fold<double>(0.0, (sum, transaction) {
+    if (transaction.type == 'DEBIT') return sum - transaction.amount;
+    if (transaction.type == 'CREDIT') return sum + transaction.amount;
+    return sum;
+  });
+
+  // In this codebase, account.balance acts like a base value and transactions
+  // apply deltas on top. Reverse that to get the balance before ledger entries.
+  final baseCashBalance = currentCashTotal - netCashDelta;
+  var rollingBalance = baseCashBalance;
+
+  final byTimeAsc = List<Transaction>.from(cashTransactions)
+    ..sort((a, b) {
+      final aTime = _parseTransactionTime(a.time);
+      final bTime = _parseTransactionTime(b.time);
+      if (aTime == null && bTime == null) return 0;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+      return aTime.compareTo(bTime);
+    });
+
+  final derived = <String, double>{};
+  for (final transaction in byTimeAsc) {
+    if (transaction.type == 'DEBIT') {
+      rollingBalance -= transaction.amount;
+    } else if (transaction.type == 'CREDIT') {
+      rollingBalance += transaction.amount;
+    }
+
+    final parsed = double.tryParse(transaction.currentBalance ?? '');
+    if (parsed != null) {
+      rollingBalance = parsed;
+      derived[transaction.reference] = parsed;
+    } else {
+      derived[transaction.reference] = rollingBalance;
+    }
+  }
+  return derived;
 }
 
 int _computeHealthScore(double income, double expense) {
@@ -2274,10 +2335,12 @@ class _LedgerDateField extends StatelessWidget {
 class _LedgerTransactionEntry extends StatelessWidget {
   final Transaction transaction;
   final bool showBalance;
+  final double? derivedBalance;
 
   const _LedgerTransactionEntry({
     required this.transaction,
     required this.showBalance,
+    this.derivedBalance,
   });
 
   @override
@@ -2297,8 +2360,9 @@ class _LedgerTransactionEntry extends StatelessWidget {
     final timeStr = dt != null ? _formatLedgerTime(dt) : '';
 
     final parsedBalance = double.tryParse(transaction.currentBalance ?? '');
-    final balanceStr = showBalance && parsedBalance != null
-        ? formatNumberAbbreviated(parsedBalance).replaceAll('k', 'K')
+    final effectiveBalance = parsedBalance ?? derivedBalance;
+    final balanceStr = showBalance && effectiveBalance != null
+        ? formatNumberAbbreviated(effectiveBalance).replaceAll('k', 'K')
         : '-';
 
     return Padding(

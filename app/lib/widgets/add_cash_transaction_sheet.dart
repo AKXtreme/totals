@@ -80,6 +80,17 @@ class _AddCashTransactionContentState
     return double.tryParse(cleaned);
   }
 
+  double _currentCashWalletBalance() {
+    final walletSummaries = widget.provider.accountSummaries
+        .where((summary) => summary.bankId == CashConstants.bankId)
+        .toList();
+    if (walletSummaries.isEmpty) return 0.0;
+    return walletSummaries.fold<double>(
+      0.0,
+      (sum, summary) => sum + summary.balance,
+    );
+  }
+
   Future<void> _ensureCashAccount() async {
     final accountRepo = AccountRepository();
     final accounts = await accountRepo.getAccounts();
@@ -115,6 +126,8 @@ class _AddCashTransactionContentState
 
       final now = DateTime.now();
       final note = _noteController.text.trim();
+      final nextCashBalance =
+          _currentCashWalletBalance() + (_isDebit ? -amount : amount);
       final reference = CashConstants.buildManualReference(
         now.microsecondsSinceEpoch,
       );
@@ -126,6 +139,7 @@ class _AddCashTransactionContentState
         time: now.toIso8601String(),
         bankId: CashConstants.bankId,
         type: _isDebit ? 'DEBIT' : 'CREDIT',
+        currentBalance: nextCashBalance.toStringAsFixed(2),
         accountNumber: widget.accountNumber.isNotEmpty
             ? widget.accountNumber
             : CashConstants.defaultAccountNumber,

@@ -60,7 +60,7 @@ class RedesignBottomNav extends StatelessWidget {
               onTap: () => onTap(3),
             ),
             _NavItem(
-              label: 'You',
+              label: 'Profile',
               activeIcon: Icons.person,
               inactiveIcon: Icons.person_outline,
               isActive: currentIndex == 4,

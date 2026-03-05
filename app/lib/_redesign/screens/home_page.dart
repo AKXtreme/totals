@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
+import 'package:totals/constants/cash_constants.dart';
+import 'package:totals/models/summary_models.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/_redesign/screens/redesign_shell.dart';
@@ -9,6 +11,7 @@ import 'package:totals/utils/text_utils.dart';
 import 'package:totals/_redesign/screens/todays_transactions_page.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_tile.dart';
+import 'package:totals/widgets/add_cash_transaction_sheet.dart';
 
 class RedesignHomePage extends StatefulWidget {
   const RedesignHomePage({super.key});
@@ -195,6 +198,15 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             TextButton(
+                              onPressed: _showQuickCashSheet,
+                              style: TextButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                foregroundColor: AppColors.primaryLight,
+                              ),
+                              child: const Text('Cash'),
+                            ),
+                            const SizedBox(width: 10),
+                            TextButton(
                               onPressed: _openAllTodayTransactions,
                               style: TextButton.styleFrom(
                                 padding: EdgeInsets.zero,
@@ -306,6 +318,26 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
     shellState?.openMoneyAccountsPage();
   }
 
+  String _cashAccountNumber() {
+    final provider = Provider.of<TransactionProvider>(context, listen: false);
+    final cashAccounts = provider.accountSummaries
+        .where((a) => a.bankId == CashConstants.bankId)
+        .toList();
+    return cashAccounts.isNotEmpty
+        ? cashAccounts.first.accountNumber
+        : CashConstants.defaultAccountNumber;
+  }
+
+  void _showQuickCashSheet() {
+    final provider = Provider.of<TransactionProvider>(context, listen: false);
+    showAddCashTransactionSheet(
+      context: context,
+      provider: provider,
+      accountNumber: _cashAccountNumber(),
+      initialIsDebit: true,
+    );
+  }
+
   Future<void> _openTransactionCategorySheet({
     required TransactionProvider provider,
     required Transaction transaction,
@@ -353,6 +385,61 @@ DateTime? _parseTransactionTime(String? raw) {
   }
 }
 
+Map<String, double> _deriveCashBalancesForHomeBreakdown({
+  required List<Transaction> allTxns,
+  required List<AccountSummary> accountSummaries,
+}) {
+  final currentCashTotal = accountSummaries
+      .where((summary) => summary.bankId == CashConstants.bankId)
+      .fold<double>(0.0, (sum, summary) => sum + summary.balance);
+
+  final cashTransactions = allTxns
+      .where((transaction) => transaction.bankId == CashConstants.bankId)
+      .toList(growable: false);
+
+  if (cashTransactions.isEmpty) return const <String, double>{};
+
+  final netCashDelta = cashTransactions.fold<double>(0.0, (sum, transaction) {
+    if (transaction.type == 'DEBIT') return sum - transaction.amount;
+    if (transaction.type == 'CREDIT') return sum + transaction.amount;
+    return sum;
+  });
+
+  // Account balances are stored as present totals; reverse the transaction
+  // deltas to estimate the opening point, then roll forward chronologically.
+  final baseCashBalance = currentCashTotal - netCashDelta;
+  var rollingBalance = baseCashBalance;
+
+  final byTimeAsc = List<Transaction>.from(cashTransactions)
+    ..sort((a, b) {
+      final aTime = _parseTransactionTime(a.time);
+      final bTime = _parseTransactionTime(b.time);
+      if (aTime == null && bTime == null) return 0;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+      return aTime.compareTo(bTime);
+    });
+
+  final derived = <String, double>{};
+  for (final transaction in byTimeAsc) {
+    if (transaction.type == 'DEBIT') {
+      rollingBalance -= transaction.amount;
+    } else if (transaction.type == 'CREDIT') {
+      rollingBalance += transaction.amount;
+    }
+
+    final parsed = double.tryParse(transaction.currentBalance ?? '');
+    if (parsed != null) {
+      rollingBalance = parsed;
+      derived[transaction.reference] = parsed;
+    } else {
+      derived[transaction.reference] = rollingBalance;
+    }
+  }
+
+  return derived;
+}
+
 String _formatEtbValue(double value) {
   final rounded = value.roundToDouble();
   final formatted =
@@ -393,8 +480,8 @@ class _TotalBalanceCard extends StatelessWidget {
   final double weekIncome;
   final double weekExpense;
   final bool showBalance;
-  final VoidCallback onCardTap;
   final VoidCallback onToggleBalance;
+  final VoidCallback onCardTap;
   final VoidCallback onBreakdownTap;
 
   const _TotalBalanceCard({
@@ -404,8 +491,8 @@ class _TotalBalanceCard extends StatelessWidget {
     required this.weekIncome,
     required this.weekExpense,
     required this.showBalance,
-    required this.onCardTap,
     required this.onToggleBalance,
+    required this.onCardTap,
     required this.onBreakdownTap,
   });
 
@@ -1069,6 +1156,7 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
   // Precomputed flat list caches
   late List<Object> _weekItems;
   late List<Object> _monthItems;
+  late Map<String, double> _derivedCashBalancesByReference;
   late double? _weekStartingBalance;
   late DateTime? _weekStartingDate;
   late double? _monthStartingBalance;
@@ -1098,12 +1186,25 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
         return bT.compareTo(aT);
       });
 
+    _derivedCashBalancesByReference = _deriveCashBalancesForHomeBreakdown(
+      allTxns: sorted,
+      accountSummaries: widget.provider.accountSummaries,
+    );
+
     _weekItems = _buildFlatItems(sorted, weekStartDay);
     _monthItems = _buildFlatItems(sorted, monthStartDay);
 
-    _weekStartingBalance = _computeStartingBalance(sorted, weekStartDay);
+    _weekStartingBalance = _computeStartingBalance(
+      sorted,
+      weekStartDay,
+      _derivedCashBalancesByReference,
+    );
     _weekStartingDate = weekStartDay;
-    _monthStartingBalance = _computeStartingBalance(sorted, monthStartDay);
+    _monthStartingBalance = _computeStartingBalance(
+      sorted,
+      monthStartDay,
+      _derivedCashBalancesByReference,
+    );
     _monthStartingDate = monthStartDay;
   }
 
@@ -1123,13 +1224,22 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
     return items;
   }
 
-  double? _computeStartingBalance(List<Transaction> sorted, DateTime startDay) {
+  double? _computeStartingBalance(
+    List<Transaction> sorted,
+    DateTime startDay,
+    Map<String, double> derivedCashBalancesByReference,
+  ) {
     // sorted is descending; walk backwards (ascending) to find
     // the last transaction before startDay
     for (int i = sorted.length - 1; i >= 0; i--) {
       final dt = _parseTransactionTime(sorted[i].time);
       if (dt != null && dt.isBefore(startDay)) {
-        return double.tryParse(sorted[i].currentBalance ?? '');
+        final parsed = double.tryParse(sorted[i].currentBalance ?? '');
+        if (parsed != null) return parsed;
+        if (sorted[i].bankId == CashConstants.bankId) {
+          return derivedCashBalancesByReference[sorted[i].reference];
+        }
+        return null;
       }
     }
     return null;
@@ -1310,9 +1420,15 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
                         final bank = widget.provider.getBankShortName(txn.bankId);
                         final dt = _parseTransactionTime(txn.time);
                         final timeStr = dt != null ? _formatTime(dt) : '';
-                        final bal = double.tryParse(txn.currentBalance ?? '');
-                        final balStr = bal != null
-                            ? formatNumberAbbreviated(bal).replaceAll('k', 'K')
+                        final parsedBalance =
+                            double.tryParse(txn.currentBalance ?? '');
+                        final effectiveBalance = parsedBalance ??
+                            (txn.bankId == CashConstants.bankId
+                                ? _derivedCashBalancesByReference[txn.reference]
+                                : null);
+                        final balStr = effectiveBalance != null
+                            ? formatNumberAbbreviated(effectiveBalance)
+                                .replaceAll('k', 'K')
                             : '-';
 
                         return Padding(

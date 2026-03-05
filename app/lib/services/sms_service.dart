@@ -342,6 +342,8 @@ class SmsService {
     }
 
     await _ensureCashAccount();
+    final currentCashBalance =
+        await _currentCashWalletBalance(existingTransactions);
 
     final cashTransaction = Transaction(
       amount: withdrawal.amount,
@@ -350,11 +352,32 @@ class SmsService {
       time: withdrawal.time ?? DateTime.now().toIso8601String(),
       bankId: CashConstants.bankId,
       type: 'CREDIT',
+      currentBalance: (currentCashBalance + withdrawal.amount).toStringAsFixed(2),
       transactionLink: withdrawal.reference,
       accountNumber: CashConstants.defaultAccountNumber,
     );
 
     await TransactionRepository().saveTransaction(cashTransaction);
+  }
+
+  static Future<double> _currentCashWalletBalance(
+    List<Transaction> existingTransactions,
+  ) async {
+    final accountRepo = AccountRepository();
+    final accounts = await accountRepo.getAccounts();
+    final accountBase = accounts
+        .where((a) => a.bank == CashConstants.bankId)
+        .fold<double>(0.0, (sum, account) => sum + account.balance);
+
+    final txDelta = existingTransactions
+        .where((t) => t.bankId == CashConstants.bankId)
+        .fold<double>(0.0, (sum, transaction) {
+      if (transaction.type == 'DEBIT') return sum - transaction.amount;
+      if (transaction.type == 'CREDIT') return sum + transaction.amount;
+      return sum;
+    });
+
+    return accountBase + txDelta;
   }
 
   static Future<bool> _isWithdrawalBeforeCashCutoff(Transaction withdrawal) async {

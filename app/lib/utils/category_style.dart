@@ -85,8 +85,27 @@ Color? customCategoryColor(Category category) {
   return _categoryColorByKey[key];
 }
 
+String fallbackCategoryColorKey(Category category) {
+  if (categoryColorOptions.isEmpty) return 'blue';
+  final seed = '${category.flow.toLowerCase()}:${category.name.toLowerCase()}';
+  int hash = 0;
+  for (final code in seed.codeUnits) {
+    hash = (hash + code) & 0x7fffffff;
+  }
+  return categoryColorOptions[hash % categoryColorOptions.length].key;
+}
+
 Color categoryColorFromKey(String key, {Color? fallback}) {
   return _categoryColorByKey[key] ?? fallback ?? const Color(0xFF3B82F6);
+}
+
+Color categoryPaletteColor(Category category, {Color? fallback}) {
+  final custom = customCategoryColor(category);
+  if (custom != null) return custom;
+  return categoryColorFromKey(
+    fallbackCategoryColorKey(category),
+    fallback: fallback,
+  );
 }
 
 String suggestedCategoryColorKey({

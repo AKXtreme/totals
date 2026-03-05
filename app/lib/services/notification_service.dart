@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:totals/data/consts.dart';
 import 'package:totals/models/category.dart' as models;
 import 'package:totals/models/transaction.dart';
@@ -26,6 +28,8 @@ class NotificationService {
   static const String _dailySpendingChannelId = 'daily_spending';
   static const String _accountSyncChannelId = 'account_sync';
   static const String _budgetChannelId = 'budgets';
+  static const String _historyPrefsKey = 'notification_history_v1';
+  static const int _maxHistoryEntries = 200;
   static const int dailySpendingNotificationId = 9001;
   static const int dailySpendingTestNotificationId = 9002;
 
@@ -320,6 +324,11 @@ class NotificationService {
         ),
         payload: payload,
       );
+      await _recordHistory(
+        channel: _transactionChannelId,
+        title: title,
+        body: body,
+      );
     } catch (e) {
       if (kDebugMode) {
         print('debug: Failed to show transaction notification: $e');
@@ -399,6 +408,11 @@ class NotificationService {
           ),
           iOS: DarwinNotificationDetails(),
         ),
+      );
+      await _recordHistory(
+        channel: _dailySpendingChannelId,
+        title: title,
+        body: body,
       );
       return true;
     } catch (e) {
@@ -504,6 +518,11 @@ class NotificationService {
           iOS: const DarwinNotificationDetails(),
         ),
       );
+      await _recordHistory(
+        channel: _accountSyncChannelId,
+        title: title,
+        body: body,
+      );
     } catch (e) {
       if (kDebugMode) {
         print('debug: Failed to show account sync completion: $e');
@@ -551,6 +570,11 @@ class NotificationService {
           ),
           iOS: DarwinNotificationDetails(),
         ),
+      );
+      await _recordHistory(
+        channel: _budgetChannelId,
+        title: title,
+        body: body,
       );
     } catch (e) {
       if (kDebugMode) {
@@ -641,6 +665,90 @@ class NotificationService {
       return '$percent%';
     }
     return '$normalizedStage ($percent%)';
+  }
+
+  Future<List<NotificationHistoryEntry>> getNotificationHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rawEntries = prefs.getStringList(_historyPrefsKey) ?? <String>[];
+      final entries = <NotificationHistoryEntry>[];
+      for (final raw in rawEntries) {
+        try {
+          final jsonMap = jsonDecode(raw) as Map<String, dynamic>;
+          entries.add(NotificationHistoryEntry.fromJson(jsonMap));
+        } catch (_) {
+          // Ignore malformed entries
+        }
+      }
+      return entries;
+    } catch (_) {
+      return <NotificationHistoryEntry>[];
+    }
+  }
+
+  Future<void> clearNotificationHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_historyPrefsKey);
+  }
+
+  Future<void> _recordHistory({
+    required String channel,
+    required String title,
+    required String body,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rawEntries = prefs.getStringList(_historyPrefsKey) ?? <String>[];
+      final entry = NotificationHistoryEntry(
+        channel: channel,
+        title: title,
+        body: body,
+        sentAt: DateTime.now(),
+      );
+      rawEntries.insert(0, jsonEncode(entry.toJson()));
+      if (rawEntries.length > _maxHistoryEntries) {
+        rawEntries.removeRange(_maxHistoryEntries, rawEntries.length);
+      }
+      await prefs.setStringList(_historyPrefsKey, rawEntries);
+    } catch (_) {
+      // Ignore persistence failures for notification history.
+    }
+  }
+}
+
+class NotificationHistoryEntry {
+  final String channel;
+  final String title;
+  final String body;
+  final DateTime sentAt;
+
+  const NotificationHistoryEntry({
+    required this.channel,
+    required this.title,
+    required this.body,
+    required this.sentAt,
+  });
+
+  factory NotificationHistoryEntry.fromJson(Map<String, dynamic> json) {
+    final channel = (json['channel'] as String?)?.trim();
+    final title = (json['title'] as String?)?.trim();
+    final body = (json['body'] as String?)?.trim();
+    final sentAtRaw = json['sentAt'] as String?;
+    return NotificationHistoryEntry(
+      channel: (channel == null || channel.isEmpty) ? 'unknown' : channel,
+      title: (title == null || title.isEmpty) ? 'Notification' : title,
+      body: body ?? '',
+      sentAt: DateTime.tryParse(sentAtRaw ?? '') ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'channel': channel,
+      'title': title,
+      'body': body,
+      'sentAt': sentAt.toIso8601String(),
+    };
   }
 }
 
