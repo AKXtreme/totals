@@ -324,26 +324,10 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
                     monthExpense: monthTotals.expense,
                   ),
                   const SizedBox(height: 16),
-                  if (_subTab == _SubTab.analytics)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _SubTabBar(
-                            selectedTab: _subTab,
-                            onTabChanged: (tab) => setState(() => _subTab = tab),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        _AnalyticsFilterButton(
-                          onTap: _openAnalyticsFilterSheet,
-                        ),
-                      ],
-                    )
-                  else
-                    _SubTabBar(
-                      selectedTab: _subTab,
-                      onTabChanged: (tab) => setState(() => _subTab = tab),
-                    ),
+                  _SubTabBar(
+                    selectedTab: _subTab,
+                    onTabChanged: (tab) => setState(() => _subTab = tab),
+                  ),
                   if (_subTab == _SubTab.transactions) ...[
                     const SizedBox(height: 12),
                     _SearchFilterRow(
@@ -477,60 +461,6 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
       transaction: transaction,
       provider: provider,
     );
-  }
-
-  Future<void> _openAnalyticsFilterSheet() async {
-    final picked = await showModalBottomSheet<_AnalyticsHeatmapMode>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) {
-        return Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-          decoration: BoxDecoration(
-            color: AppColors.cardColor(sheetCtx),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.slate400,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-              _AnalyticsBottomSheetOption(
-                title: 'All',
-                selected: _analyticsHeatmapMode == _AnalyticsHeatmapMode.all,
-                onTap: () => Navigator.pop(sheetCtx, _AnalyticsHeatmapMode.all),
-              ),
-              const SizedBox(height: 8),
-              _AnalyticsBottomSheetOption(
-                title: 'Expense',
-                selected:
-                    _analyticsHeatmapMode == _AnalyticsHeatmapMode.expense,
-                onTap: () =>
-                    Navigator.pop(sheetCtx, _AnalyticsHeatmapMode.expense),
-              ),
-              const SizedBox(height: 8),
-              _AnalyticsBottomSheetOption(
-                title: 'Income',
-                selected:
-                    _analyticsHeatmapMode == _AnalyticsHeatmapMode.income,
-                onTap: () =>
-                    Navigator.pop(sheetCtx, _AnalyticsHeatmapMode.income),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (!mounted || picked == null || picked == _analyticsHeatmapMode) return;
-    setState(() => _analyticsHeatmapMode = picked);
   }
 
   List<Widget> _buildAnalyticsSlivers(TransactionProvider provider) {
@@ -1992,34 +1922,6 @@ class _SubTabButton extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _AnalyticsFilterButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _AnalyticsFilterButton({
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 44,
-      height: 44,
-      child: IconButton(
-        onPressed: onTap,
-        style: IconButton.styleFrom(
-          backgroundColor: AppColors.cardColor(context),
-          side: BorderSide(color: AppColors.borderColor(context)),
-          foregroundColor: AppColors.textSecondary(context),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        icon: const Icon(AppIcons.filter_alt_outlined, size: 20),
       ),
     );
   }
