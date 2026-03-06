@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/constants/cash_constants.dart';
@@ -471,8 +472,6 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
           child: Column(
             children: [
-              _AnalyticsOverviewGrid(snapshot: snapshot),
-              const SizedBox(height: 14),
               _AnalyticsHeatmapCard(
                 snapshot: snapshot,
                 mode: _analyticsHeatmapMode,
@@ -486,6 +485,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
               const SizedBox(height: 14),
               _AnalyticsSpendingByDayCard(snapshot: snapshot),
               const SizedBox(height: 14),
+              _AnalyticsOverviewGrid(snapshot: snapshot),
+              const SizedBox(height: 14),
               _AnalyticsTopRecipientsCard(snapshot: snapshot),
               const SizedBox(height: 14),
               _AnalyticsMoneyFlowCard(snapshot: snapshot),
@@ -497,9 +498,18 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
   }
 
   _AnalyticsSnapshot _buildAnalyticsSnapshot(TransactionProvider provider) {
-    final now = DateTime.now();
-    final monthStart = DateTime(now.year, now.month, 1);
-    final nextMonthStart = DateTime(now.year, now.month + 1, 1);
+    DateTime? latestTransactionTime;
+    for (final transaction in provider.allTransactions) {
+      final dt = _parseTransactionTime(transaction.time);
+      if (dt == null) continue;
+      if (latestTransactionTime == null || dt.isAfter(latestTransactionTime)) {
+        latestTransactionTime = dt;
+      }
+    }
+
+    final anchor = latestTransactionTime ?? DateTime.now();
+    final monthStart = DateTime(anchor.year, anchor.month, 1);
+    final nextMonthStart = DateTime(anchor.year, anchor.month + 1, 1);
 
     final byDayIncome = <int, double>{};
     final byDayExpense = <int, double>{};
@@ -511,36 +521,62 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
     var incomeCount = 0;
     var expenseCount = 0;
     var totalFees = 0.0;
+    var totalTransactions = 0;
+    var totalIncome = 0.0;
+    var totalExpense = 0.0;
+    var recipientExpenseCount = 0;
     var largestExpense = 0.0;
     var largestDeposit = 0.0;
 
     for (final transaction in provider.allTransactions) {
-      final dt = _parseTransactionTime(transaction.time);
-      if (dt == null) continue;
-      if (dt.isBefore(monthStart) || !dt.isBefore(nextMonthStart)) continue;
-
-      totalFees += (transaction.serviceCharge ?? 0.0) + (transaction.vat ?? 0.0);
-      final day = dt.day;
+      totalTransactions += 1;
+      totalFees +=
+          (transaction.serviceCharge ?? 0.0) + (transaction.vat ?? 0.0);
       final isCredit = transaction.type == 'CREDIT';
       final isDebit = transaction.type == 'DEBIT';
+      final dt = _parseTransactionTime(transaction.time);
+
+      final isSelfTransfer =
+          isDebit ? provider.isSelfTransfer(transaction) : false;
+      final category =
+          isDebit ? provider.getCategoryById(transaction.categoryId) : null;
+      final isMisc = category?.uncategorized == true;
 
       if (isCredit) {
+        totalIncome += transaction.amount;
         incomeCount += 1;
-        byDayIncome[day] = (byDayIncome[day] ?? 0.0) + transaction.amount;
-        byDayNet[day] = (byDayNet[day] ?? 0.0) + transaction.amount;
         largestDeposit = math.max(largestDeposit, transaction.amount);
       } else if (isDebit) {
+        totalExpense += transaction.amount;
         expenseCount += 1;
+        largestExpense = math.max(largestExpense, transaction.amount);
+      }
+
+      if (isDebit && !isSelfTransfer && !isMisc) {
+        recipientExpenseCount += 1;
+        final recipient = _transactionCounterparty(transaction);
+        final existing = recipientTotals.putIfAbsent(
+          recipient,
+          () => _AnalyticsRecipientAccumulator(),
+        );
+        existing.amount += transaction.amount;
+        existing.count += 1;
+      }
+
+      if (dt == null) continue;
+      if (dt.isBefore(monthStart) || !dt.isBefore(nextMonthStart)) continue;
+      final day = dt.day;
+
+      if (isCredit) {
+        byDayIncome[day] = (byDayIncome[day] ?? 0.0) + transaction.amount;
+        byDayNet[day] = (byDayNet[day] ?? 0.0) + transaction.amount;
+      } else if (isDebit) {
         byDayExpense[day] = (byDayExpense[day] ?? 0.0) + transaction.amount;
         byDayNet[day] = (byDayNet[day] ?? 0.0) - transaction.amount;
-        largestExpense = math.max(largestExpense, transaction.amount);
       }
 
       if (!isDebit) continue;
 
-      final isSelfTransfer = provider.isSelfTransfer(transaction);
-      final category = provider.getCategoryById(transaction.categoryId);
-      final isMisc = category?.uncategorized == true;
       if (isSelfTransfer || isMisc) continue;
 
       final categoryName = (category?.name.trim().isNotEmpty ?? false)
@@ -551,14 +587,6 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
 
       final weekdayIndex = dt.weekday % 7; // Sunday = 0 ... Saturday = 6
       weekdayExpenseTotals[weekdayIndex] += transaction.amount;
-
-      final recipient = _transactionCounterparty(transaction);
-      final existing = recipientTotals.putIfAbsent(
-        recipient,
-        () => _AnalyticsRecipientAccumulator(),
-      );
-      existing.amount += transaction.amount;
-      existing.count += 1;
     }
 
     final categoryEntries = categoryTotals.entries.toList()
@@ -597,8 +625,6 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
       }
     }
 
-    final totalIncome = provider.monthTotals.income;
-    final totalExpense = provider.monthTotals.expense;
     final netCashFlow = totalIncome - totalExpense;
     final savingsRate = totalIncome > 0
         ? ((netCashFlow / totalIncome) * 100).clamp(-999.0, 999.0).toDouble()
@@ -609,9 +635,10 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
       totalIncome: totalIncome,
       totalExpense: totalExpense,
       totalFees: totalFees,
-      totalTransactions: provider.monthTransactions.length,
+      totalTransactions: totalTransactions,
       incomeCount: incomeCount,
       expenseCount: expenseCount,
+      recipientExpenseCount: recipientExpenseCount,
       incomeByDay: byDayIncome,
       expenseByDay: byDayExpense,
       netByDay: byDayNet,
@@ -1391,11 +1418,61 @@ String _formatDateHeader(DateTime date) {
   return '${_months[date.month - 1]} ${date.day}, ${date.year}';
 }
 
+final List<DateFormat> _fallbackTransactionTimeParsers = <DateFormat>[
+  DateFormat('yyyy-MM-dd HH:mm:ss'),
+  DateFormat('yyyy-MM-dd HH:mm'),
+  DateFormat('yyyy/MM/dd HH:mm:ss'),
+  DateFormat('yyyy/MM/dd HH:mm'),
+  DateFormat('dd-MM-yyyy HH:mm:ss'),
+  DateFormat('dd-MM-yyyy HH:mm'),
+  DateFormat('dd/MM/yyyy HH:mm:ss'),
+  DateFormat('dd/MM/yyyy HH:mm'),
+  DateFormat('MM-dd-yyyy HH:mm:ss'),
+  DateFormat('MM-dd-yyyy HH:mm'),
+  DateFormat('MM/dd/yyyy HH:mm:ss'),
+  DateFormat('MM/dd/yyyy HH:mm'),
+  DateFormat('yyyy-MM-dd'),
+  DateFormat('yyyy/MM/dd'),
+  DateFormat('dd-MM-yyyy'),
+  DateFormat('dd/MM/yyyy'),
+  DateFormat('MM-dd-yyyy'),
+  DateFormat('MM/dd/yyyy'),
+  DateFormat('dd MMM yyyy HH:mm:ss'),
+  DateFormat('dd MMM yyyy HH:mm'),
+  DateFormat('dd MMM yyyy hh:mm a'),
+  DateFormat('MMM dd yyyy HH:mm:ss'),
+  DateFormat('MMM dd yyyy HH:mm'),
+  DateFormat('MMM dd yyyy hh:mm a'),
+  DateFormat('MMM dd, yyyy HH:mm:ss'),
+  DateFormat('MMM dd, yyyy HH:mm'),
+  DateFormat('MMM dd, yyyy hh:mm a'),
+  DateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ"),
+  DateFormat("yyyy-MM-dd'T'HH:mm:ssZ"),
+  DateFormat('yyyy-MM-dd HH:mm:ssZ'),
+];
+
 DateTime? _parseTransactionTime(String? raw) {
   if (raw == null || raw.isEmpty) return null;
+  final value = raw.trim();
+  if (value.isEmpty) return null;
+
+  final unix = int.tryParse(value);
+  if (unix != null) {
+    try {
+      final millis = value.length <= 10 ? unix * 1000 : unix;
+      return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true).toLocal();
+    } catch (_) {}
+  }
+
   try {
-    return DateTime.parse(raw).toLocal();
+    return DateTime.parse(value).toLocal();
   } catch (_) {
+    final normalized = value.replaceAll(RegExp(r'\s+'), ' ');
+    for (final parser in _fallbackTransactionTimeParsers) {
+      try {
+        return parser.parseLoose(normalized).toLocal();
+      } catch (_) {}
+    }
     return null;
   }
 }
@@ -1935,6 +2012,7 @@ class _AnalyticsSnapshot {
   final int totalTransactions;
   final int incomeCount;
   final int expenseCount;
+  final int recipientExpenseCount;
   final Map<int, double> incomeByDay;
   final Map<int, double> expenseByDay;
   final Map<int, double> netByDay;
@@ -1955,6 +2033,7 @@ class _AnalyticsSnapshot {
     required this.totalTransactions,
     required this.incomeCount,
     required this.expenseCount,
+    required this.recipientExpenseCount,
     required this.incomeByDay,
     required this.expenseByDay,
     required this.netByDay,
@@ -2055,7 +2134,7 @@ class _AnalyticsOverviewGrid extends StatelessWidget {
                 iconBg: const Color(0xFFFEF3C7),
                 iconFg: const Color(0xFFD97706),
                 title: 'TOTAL FEES',
-                value: 'ETB ${formatNumberWithComma(snapshot.totalFees)}',
+                value: 'ETB ${_formatEtbAbbrev(snapshot.totalFees)}',
                 subtitle: 'Service charges + VAT',
               ),
             ),
@@ -2491,9 +2570,10 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
     final total = categories.fold<double>(0.0, (sum, item) => sum + item.amount);
     final dominantPercent =
         total > 0 && categories.isNotEmpty ? (categories.first.amount / total) * 100 : 0.0;
-    final today = DateTime.now();
+    final monthEnd =
+        DateTime(snapshot.monthDate.year, snapshot.monthDate.month + 1, 0);
     final dataRangeLabel =
-        'Data from ${_formatDateHeader(snapshot.monthDate)} - ${_formatDateHeader(today)}';
+        'Data from ${_formatDateHeader(snapshot.monthDate)} - ${_formatDateHeader(monthEnd)}';
 
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
@@ -2854,7 +2934,7 @@ class _AnalyticsTopRecipientsCard extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                '${snapshot.expenseCount} total',
+                '${snapshot.recipientExpenseCount} total',
                 style: TextStyle(
                   color: AppColors.textTertiary(context),
                   fontSize: 13,
@@ -2869,7 +2949,7 @@ class _AnalyticsTopRecipientsCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Center(
                 child: Text(
-                  'No expense recipients this month.',
+                  'No expense recipients yet.',
                   style: TextStyle(
                     color: AppColors.textSecondary(context),
                     fontSize: 13,
