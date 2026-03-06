@@ -1587,7 +1587,7 @@ String _formatCount(int count) {
 }
 
 String _formatEtbAbbrev(double value) {
-  return formatNumberAbbreviated(value).replaceAll('k', 'K');
+  return formatNumberAbbreviated(value).replaceAll(' ', '');
 }
 
 String _formatCompactSignedEtb(double value) {
@@ -2558,6 +2558,20 @@ class _AnalyticsWeekdayHeader extends StatelessWidget {
 }
 
 class _AnalyticsExpenseBubbleCard extends StatelessWidget {
+  static const double _chartMinHeight = 210.0;
+  static const double _chartEdgePadding = 10.0;
+  static const double _bubbleMinDiameter = 42.0;
+  static const double _bubbleMaxDiameter = 136.0;
+  static const List<Offset> _defaultOrbitOffsets = <Offset>[
+    Offset(-36, 86),
+    Offset(86, 72),
+    Offset(-102, -8),
+    Offset(8, -96),
+    Offset(102, -6),
+    Offset(-72, -78),
+    Offset(-104, 42),
+  ];
+
   final _AnalyticsSnapshot snapshot;
 
   const _AnalyticsExpenseBubbleCard({
@@ -2567,9 +2581,11 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final categories = snapshot.categories;
-    final total = categories.fold<double>(0.0, (sum, item) => sum + item.amount);
-    final dominantPercent =
-        total > 0 && categories.isNotEmpty ? (categories.first.amount / total) * 100 : 0.0;
+    final total =
+        categories.fold<double>(0.0, (sum, item) => sum + item.amount);
+    final bubbleNodes = _buildBubbleNodes(categories: categories, total: total);
+    final bubbleChartExtents = _bubbleChartExtents(bubbleNodes);
+    final bubbleChartHeight = _bubbleChartHeight(bubbleChartExtents);
     final monthEnd =
         DateTime(snapshot.monthDate.year, snapshot.monthDate.month + 1, 0);
     final dataRangeLabel =
@@ -2634,53 +2650,21 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
             )
           else
             SizedBox(
-              height: 210,
+              height: bubbleChartHeight,
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final centerX = constraints.maxWidth / 2;
-                  final centerY = 100.0;
-                  const offsets = <Offset>[
-                    Offset(-88, -58),
-                    Offset(0, -86),
-                    Offset(86, -54),
-                    Offset(106, 8),
-                    Offset(74, 74),
-                    Offset(-76, 76),
-                    Offset(-108, 10),
-                    Offset(-94, -8),
-                  ];
+                  final chartCenter = _bubbleChartCenter(
+                    extents: bubbleChartExtents,
+                    chartWidth: constraints.maxWidth,
+                    chartHeight: bubbleChartHeight,
+                  );
                   return Stack(
                     children: [
-                      Positioned(
-                        left: centerX - 72,
-                        top: centerY - 72,
-                        child: Container(
-                          width: 144,
-                          height: 144,
-                          decoration: BoxDecoration(
-                            color: AppColors.mutedFill(context),
-                            borderRadius: BorderRadius.circular(72),
-                            border: Border.all(color: AppColors.borderColor(context)),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            '${dominantPercent.round()}%',
-                            style: TextStyle(
-                              color: AppColors.textPrimary(context),
-                              fontSize: 34,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
-                      for (int i = 0; i < categories.length; i++)
+                      for (final bubble in bubbleNodes)
                         _buildBubble(
                           context: context,
-                          centerX: centerX,
-                          centerY: centerY,
-                          offset: offsets[i % offsets.length],
-                          stat: categories[i],
-                          total: total,
+                          chartCenter: chartCenter,
+                          bubble: bubble,
                         ),
                     ],
                   );
@@ -2724,39 +2708,233 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
     return rows;
   }
 
-  Widget _buildBubble({
-    required BuildContext context,
-    required double centerX,
-    required double centerY,
-    required Offset offset,
-    required _AnalyticsCategoryStat stat,
+  List<_AnalyticsBubbleNode> _buildBubbleNodes({
+    required List<_AnalyticsCategoryStat> categories,
     required double total,
   }) {
-    final percent = total > 0 ? (stat.amount / total) * 100 : 0.0;
-    final size = 44 + (percent.clamp(0, 14) * 1.2);
+    if (categories.isEmpty) return const <_AnalyticsBubbleNode>[];
+
+    final bubbles = <_AnalyticsBubbleNode>[];
+    final centerStat = categories.first;
+    final centerPercent = total > 0 ? (centerStat.amount / total) * 100 : 0.0;
+    final centerDiameter = _bubbleDiameter(centerPercent);
+    bubbles.add(
+      _AnalyticsBubbleNode(
+        stat: centerStat,
+        percent: centerPercent,
+        diameter: centerDiameter,
+        offset: Offset.zero,
+        isCenter: true,
+      ),
+    );
+
+    final outerOffsets = _orbitOffsetsForCount(categories.length - 1);
+    final orbitScale = (centerDiameter / 128.0).clamp(0.84, 1.08);
+
+    for (int i = 1; i < categories.length; i++) {
+      final stat = categories[i];
+      final percent = total > 0 ? (stat.amount / total) * 100 : 0.0;
+      final diameter = _bubbleDiameter(percent);
+      final baseOffset = outerOffsets[i - 1];
+      final radiusAdjustment = (diameter - _bubbleMinDiameter) / 2;
+      final offset = Offset(
+        (baseOffset.dx * orbitScale) +
+            (baseOffset.dx == 0 ? 0 : baseOffset.dx.sign * radiusAdjustment),
+        (baseOffset.dy * orbitScale) +
+            (baseOffset.dy == 0 ? 0 : baseOffset.dy.sign * radiusAdjustment),
+      );
+
+      bubbles.add(
+        _AnalyticsBubbleNode(
+          stat: stat,
+          percent: percent,
+          diameter: diameter,
+          offset: offset,
+        ),
+      );
+    }
+
+    return bubbles;
+  }
+
+  List<Offset> _orbitOffsetsForCount(int outerCount) {
+    switch (outerCount) {
+      case 0:
+        return const <Offset>[];
+      case 1:
+        return const <Offset>[Offset(0, -96)];
+      case 2:
+        return const <Offset>[
+          Offset(-78, -54),
+          Offset(78, -54),
+        ];
+      case 3:
+        return const <Offset>[
+          Offset(-96, -10),
+          Offset(0, -96),
+          Offset(88, 70),
+        ];
+      case 4:
+        return const <Offset>[
+          Offset(-34, 86),
+          Offset(86, 72),
+          Offset(-96, -10),
+          Offset(0, -96),
+        ];
+      case 5:
+        return const <Offset>[
+          Offset(-34, 86),
+          Offset(86, 72),
+          Offset(-102, -8),
+          Offset(8, -96),
+          Offset(102, -6),
+        ];
+      default:
+        return _defaultOrbitOffsets;
+    }
+  }
+
+  _BubbleChartExtents _bubbleChartExtents(List<_AnalyticsBubbleNode> bubbles) {
+    if (bubbles.isEmpty) {
+      return const _BubbleChartExtents(
+        minX: 0,
+        maxX: 0,
+        minY: 0,
+        maxY: 0,
+      );
+    }
+
+    double minX = double.infinity;
+    double maxX = double.negativeInfinity;
+    double minY = double.infinity;
+    double maxY = double.negativeInfinity;
+
+    for (final bubble in bubbles) {
+      final radius = bubble.diameter / 2;
+      minX = math.min(minX, bubble.offset.dx - radius);
+      maxX = math.max(maxX, bubble.offset.dx + radius);
+      minY = math.min(minY, bubble.offset.dy - radius);
+      maxY = math.max(maxY, bubble.offset.dy + radius);
+    }
+
+    return _BubbleChartExtents(
+      minX: minX,
+      maxX: maxX,
+      minY: minY,
+      maxY: maxY,
+    );
+  }
+
+  double _bubbleChartHeight(_BubbleChartExtents extents) {
+    return math.max(_chartMinHeight, extents.height + (_chartEdgePadding * 2));
+  }
+
+  Offset _bubbleChartCenter({
+    required _BubbleChartExtents extents,
+    required double chartWidth,
+    required double chartHeight,
+  }) {
+    final leftInset = math.max(0.0, (chartWidth - extents.width) / 2);
+    final topInset = _chartEdgePadding +
+        math.max(
+          0.0,
+          (chartHeight - extents.height - (_chartEdgePadding * 2)) / 2,
+        );
+    return Offset(
+      leftInset - extents.minX,
+      topInset - extents.minY,
+    );
+  }
+
+  Widget _buildBubble({
+    required BuildContext context,
+    required Offset chartCenter,
+    required _AnalyticsBubbleNode bubble,
+  }) {
+    final size = bubble.diameter;
+    final radius = size / 2;
+    final bubbleCenter = chartCenter + bubble.offset;
+    final tintedFill =
+        bubble.stat.color.withValues(alpha: bubble.isCenter ? 0.1 : 0.14);
+    final tintedBorder =
+        bubble.stat.color.withValues(alpha: bubble.isCenter ? 0.28 : 0.5);
+    final fillColor = bubble.isCenter
+        ? Color.lerp(AppColors.mutedFill(context), tintedFill, 0.35) ??
+            AppColors.mutedFill(context)
+        : tintedFill;
+    final borderColor = bubble.isCenter
+        ? Color.lerp(AppColors.borderColor(context), tintedBorder, 0.4) ??
+            AppColors.borderColor(context)
+        : tintedBorder;
+    final textColor =
+        bubble.isCenter ? AppColors.textPrimary(context) : bubble.stat.color;
+    final fontSize = bubble.isCenter
+        ? (size * 0.24).clamp(24.0, 34.0).toDouble()
+        : (size * 0.24).clamp(12.0, 18.0).toDouble();
+
     return Positioned(
-      left: centerX + offset.dx - (size / 2),
-      top: centerY + offset.dy - (size / 2),
+      left: bubbleCenter.dx - radius,
+      top: bubbleCenter.dy - radius,
       child: Container(
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: stat.color.withValues(alpha: 0.2),
+          color: fillColor,
           borderRadius: BorderRadius.circular(size / 2),
-          border: Border.all(color: stat.color.withValues(alpha: 0.65)),
+          border: Border.all(color: borderColor),
         ),
         alignment: Alignment.center,
         child: Text(
-          '${percent.round()}%',
+          '${bubble.percent.round()}%',
           style: TextStyle(
-            color: stat.color,
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
+            color: textColor,
+            fontWeight: bubble.isCenter ? FontWeight.w800 : FontWeight.w700,
+            fontSize: fontSize,
           ),
         ),
       ),
     );
   }
+
+  double _bubbleDiameter(double percent) {
+    final ratio = (percent / 100).clamp(0.0, 1.0);
+    final easedRatio = math.sqrt(ratio);
+    return _bubbleMinDiameter +
+        ((_bubbleMaxDiameter - _bubbleMinDiameter) * easedRatio);
+  }
+}
+
+class _AnalyticsBubbleNode {
+  final _AnalyticsCategoryStat stat;
+  final double percent;
+  final double diameter;
+  final Offset offset;
+  final bool isCenter;
+
+  const _AnalyticsBubbleNode({
+    required this.stat,
+    required this.percent,
+    required this.diameter,
+    required this.offset,
+    this.isCenter = false,
+  });
+}
+
+class _BubbleChartExtents {
+  final double minX;
+  final double maxX;
+  final double minY;
+  final double maxY;
+
+  const _BubbleChartExtents({
+    required this.minX,
+    required this.maxX,
+    required this.minY,
+    required this.maxY,
+  });
+
+  double get width => maxX - minX;
+  double get height => maxY - minY;
 }
 
 class _AnalyticsLegendAmountItem extends StatelessWidget {
