@@ -5,12 +5,14 @@ import 'package:totals/_redesign/theme/app_icons.dart';
 class RedesignBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
+  final VoidCallback? onMoneyLongPress;
   final ValueChanged<Offset>? onProfileLongPressAt;
 
   const RedesignBottomNav({
     super.key,
     required this.currentIndex,
     required this.onTap,
+    this.onMoneyLongPress,
     this.onProfileLongPressAt,
   });
 
@@ -47,6 +49,7 @@ class RedesignBottomNav extends StatelessWidget {
               inactiveIcon: AppIcons.account_balance_wallet_outlined,
               isActive: currentIndex == 1,
               onTap: () => onTap(1),
+              onLongPress: onMoneyLongPress,
             ),
             _NavItem(
               label: 'Budget',
@@ -83,6 +86,7 @@ class _NavItem extends StatelessWidget {
   final IconData inactiveIcon;
   final bool isActive;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final ValueChanged<Offset>? onLongPressAt;
 
   const _NavItem({
@@ -91,6 +95,7 @@ class _NavItem extends StatelessWidget {
     required this.inactiveIcon,
     required this.isActive,
     required this.onTap,
+    this.onLongPress,
     this.onLongPressAt,
   });
 
@@ -103,16 +108,17 @@ class _NavItem extends StatelessWidget {
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        onLongPress: onLongPressAt == null
-            ? null
-            : () {
+        onLongPress: onLongPress ??
+            (onLongPressAt == null
+                ? null
+                : () {
                 final box = context.findRenderObject() as RenderBox?;
                 if (box == null) return;
                 final anchor = box.localToGlobal(
                   Offset(box.size.width * 0.8, 0),
                 );
                 onLongPressAt!(anchor);
-              },
+              }),
         borderRadius: BorderRadius.circular(10),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),

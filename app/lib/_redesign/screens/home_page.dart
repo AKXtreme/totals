@@ -199,15 +199,6 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             TextButton(
-                              onPressed: _showQuickCashSheet,
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                foregroundColor: AppColors.primaryLight,
-                              ),
-                              child: const Text('Cash'),
-                            ),
-                            const SizedBox(width: 0),
-                            TextButton(
                               onPressed: _openAllTodayTransactions,
                               style: TextButton.styleFrom(
                                 padding: EdgeInsets.zero,
@@ -544,7 +535,7 @@ class _TotalBalanceCard extends StatelessWidget {
                     showBalance
                         ? AppIcons.visibility_outlined
                         : AppIcons.visibility_off_outlined,
-                    size: 20,
+                    size: 24,
                   ),
                 ),
               ],

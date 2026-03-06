@@ -14,12 +14,14 @@ import 'package:totals/_redesign/screens/budget_page.dart';
 import 'package:totals/_redesign/screens/settings_page.dart';
 import 'package:totals/_redesign/screens/tools_page.dart';
 import 'package:totals/_redesign/widgets/redesign_bottom_nav.dart';
+import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/models/profile.dart';
 import 'package:totals/providers/budget_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/repositories/profile_repository.dart';
 import 'package:totals/services/bank_detection_startup_service.dart';
 import 'package:totals/services/widget_launch_intent_service.dart';
+import 'package:totals/widgets/add_cash_transaction_sheet.dart';
 
 class RedesignShell extends StatefulWidget {
   const RedesignShell({super.key});
@@ -42,6 +44,7 @@ class RedesignShellState extends State<RedesignShell>
       GlobalKey<RedesignBudgetPageState>();
   DateTime? _lastProfileTabTapAt;
   int _currentIndex = _homeIndex;
+  int? _activeProfileId;
   StreamSubscription<WidgetLaunchTarget>? _widgetLaunchIntentSub;
   final ProfileRepository _profileRepo = ProfileRepository();
 
@@ -55,6 +58,7 @@ class RedesignShellState extends State<RedesignShell>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(BankDetectionStartupService.runOnAppOpen());
+    unawaited(_loadActiveProfileId());
 
     _widgetLaunchIntentSub = WidgetLaunchIntentService.instance.stream.listen(
       (target) {
@@ -172,6 +176,14 @@ class RedesignShellState extends State<RedesignShell>
     _onTabSelected(_settingsIndex);
   }
 
+  Future<void> _loadActiveProfileId() async {
+    final activeProfileId = await _profileRepo.getActiveProfileId();
+    if (!mounted) return;
+    setState(() {
+      _activeProfileId = activeProfileId;
+    });
+  }
+
   void _onTabSelected(int index) {
     if (index == _settingsIndex) {
       final now = DateTime.now();
@@ -208,6 +220,25 @@ class RedesignShellState extends State<RedesignShell>
     return list.first[0].toUpperCase();
   }
 
+  String _cashAccountNumber(TransactionProvider provider) {
+    final cashAccounts = provider.accountSummaries
+        .where((summary) => summary.bankId == CashConstants.bankId)
+        .toList();
+    return cashAccounts.isNotEmpty
+        ? cashAccounts.first.accountNumber
+        : CashConstants.defaultAccountNumber;
+  }
+
+  void _showQuickCashSheet() {
+    final provider = Provider.of<TransactionProvider>(context, listen: false);
+    showAddCashTransactionSheet(
+      context: context,
+      provider: provider,
+      accountNumber: _cashAccountNumber(provider),
+      initialIsDebit: true,
+    );
+  }
+
   Future<void> _onProfileLongPressAt(Offset anchor) async {
     final profiles = await _profileRepo.getProfiles();
     final activeProfileId = await _profileRepo.getActiveProfileId();
@@ -233,7 +264,9 @@ class RedesignShellState extends State<RedesignShell>
     await budgetProvider.loadBudgets();
 
     if (!mounted) return;
-    setState(() {});
+    setState(() {
+      _activeProfileId = selectedProfileId;
+    });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -359,12 +392,15 @@ class RedesignShellState extends State<RedesignShell>
             RedesignMoneyPage(key: _moneyPageKey),
             RedesignBudgetPage(key: _budgetPageKey),
             const RedesignToolsPage(),
-            const RedesignSettingsPage(),
+            RedesignSettingsPage(
+              key: ValueKey('settings-${_activeProfileId ?? 'none'}'),
+            ),
           ],
         ),
         bottomNavigationBar: RedesignBottomNav(
           currentIndex: _currentIndex,
           onTap: _onTabSelected,
+          onMoneyLongPress: _showQuickCashSheet,
           onProfileLongPressAt: _onProfileLongPressAt,
         ),
       ),
