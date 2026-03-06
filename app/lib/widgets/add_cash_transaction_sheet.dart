@@ -167,6 +167,7 @@ class _AddCashTransactionContentState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final hintColor = colorScheme.onSurfaceVariant;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -259,10 +260,16 @@ class _AddCashTransactionContentState
             decoration: InputDecoration(
               labelText: 'Amount',
               hintText: '0.00',
+              hintStyle: TextStyle(color: hintColor),
+              labelStyle: TextStyle(color: hintColor),
+              floatingLabelStyle: TextStyle(
+                color: hintColor,
+                fontWeight: FontWeight.w500,
+              ),
               prefixText: 'ETB ',
               prefixStyle: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: colorScheme.onSurfaceVariant,
+                color: hintColor,
               ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -294,6 +301,12 @@ class _AddCashTransactionContentState
             decoration: InputDecoration(
               labelText: _isDebit ? 'To' : 'From',
               hintText: _isDebit ? 'Where did you spend?' : 'Who paid you?',
+              hintStyle: TextStyle(color: hintColor),
+              labelStyle: TextStyle(color: hintColor),
+              floatingLabelStyle: TextStyle(
+                color: hintColor,
+                fontWeight: FontWeight.w500,
+              ),
               prefixIcon: Icon(
                 _isDebit ? Icons.call_made : Icons.call_received,
                 size: 20,
@@ -367,6 +380,7 @@ class _AddCashTransactionContentState
                 child: OutlinedButton(
                   onPressed: _isLoading ? null : () => Navigator.pop(context),
                   style: OutlinedButton.styleFrom(
+                    foregroundColor: hintColor,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

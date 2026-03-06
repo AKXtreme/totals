@@ -36,6 +36,8 @@ enum _SubTab { transactions, analytics, ledger }
 
 enum _AnalyticsHeatmapMode { all, expense, income }
 
+enum _AnalyticsHeatmapView { daily, monthly }
+
 final List<bank_model.Bank> _assetBanks = _buildAssetBanks();
 
 bank_model.Bank _canonicalMpesaBank({int id = 8}) {
@@ -143,8 +145,47 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
   int _currentPage = 0;
   static const int _pageSize = 50;
   _AnalyticsHeatmapMode _analyticsHeatmapMode = _AnalyticsHeatmapMode.all;
+  _AnalyticsHeatmapView _analyticsHeatmapView = _AnalyticsHeatmapView.daily;
+  DateTime? _analyticsHeatmapFocusMonth;
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
+
+  DateTime _normalizeAnalyticsHeatmapMonth(DateTime date) {
+    return DateTime(date.year, date.month, 1);
+  }
+
+  DateTime _resolveAnalyticsHeatmapFocusMonth(DateTime fallbackMonth) {
+    return _normalizeAnalyticsHeatmapMonth(
+      _analyticsHeatmapFocusMonth ?? fallbackMonth,
+    );
+  }
+
+  void _shiftAnalyticsHeatmapPeriod(DateTime currentFocusMonth, int delta) {
+    final nextFocus = _analyticsHeatmapView == _AnalyticsHeatmapView.daily
+        ? DateTime(currentFocusMonth.year, currentFocusMonth.month + delta, 1)
+        : DateTime(currentFocusMonth.year + delta, currentFocusMonth.month, 1);
+    setState(() {
+      _analyticsHeatmapFocusMonth = nextFocus;
+    });
+  }
+
+  void _toggleAnalyticsHeatmapView(DateTime currentFocusMonth) {
+    setState(() {
+      _analyticsHeatmapFocusMonth =
+          _normalizeAnalyticsHeatmapMonth(currentFocusMonth);
+      _analyticsHeatmapView =
+          _analyticsHeatmapView == _AnalyticsHeatmapView.daily
+              ? _AnalyticsHeatmapView.monthly
+              : _AnalyticsHeatmapView.daily;
+    });
+  }
+
+  void _selectAnalyticsHeatmapMonth(DateTime month) {
+    setState(() {
+      _analyticsHeatmapFocusMonth = _normalizeAnalyticsHeatmapMonth(month);
+      _analyticsHeatmapView = _AnalyticsHeatmapView.daily;
+    });
+  }
 
   void openAccountsTab() {
     if (_topTab == _TopTab.accounts) return;
@@ -466,6 +507,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
 
   List<Widget> _buildAnalyticsSlivers(TransactionProvider provider) {
     final snapshot = _buildAnalyticsSnapshot(provider);
+    final heatmapFocusMonth =
+        _resolveAnalyticsHeatmapFocusMonth(snapshot.monthDate);
     return [
       SliverToBoxAdapter(
         child: Padding(
@@ -473,12 +516,21 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
           child: Column(
             children: [
               _AnalyticsHeatmapCard(
-                snapshot: snapshot,
+                transactions: provider.allTransactions,
+                focusMonth: heatmapFocusMonth,
+                view: _analyticsHeatmapView,
                 mode: _analyticsHeatmapMode,
                 onModeChanged: (mode) {
                   if (_analyticsHeatmapMode == mode) return;
                   setState(() => _analyticsHeatmapMode = mode);
                 },
+                onPrevious: () =>
+                    _shiftAnalyticsHeatmapPeriod(heatmapFocusMonth, -1),
+                onNext: () =>
+                    _shiftAnalyticsHeatmapPeriod(heatmapFocusMonth, 1),
+                onToggleView: () =>
+                    _toggleAnalyticsHeatmapView(heatmapFocusMonth),
+                onMonthSelected: _selectAnalyticsHeatmapMonth,
               ),
               const SizedBox(height: 14),
               _AnalyticsExpenseBubbleCard(snapshot: snapshot),
@@ -1600,6 +1652,10 @@ String _formatMonthYear(DateTime date) {
   return '${_months[date.month - 1]} ${date.year}';
 }
 
+String _formatFullMonthName(DateTime date) {
+  return DateFormat('MMMM').format(date);
+}
+
 String _analyticsWeekdayLabel(int index) {
   const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   return labels[index.clamp(0, labels.length - 1)];
@@ -2222,23 +2278,39 @@ class _AnalyticsMetricCard extends StatelessWidget {
 }
 
 class _AnalyticsHeatmapCard extends StatelessWidget {
-  final _AnalyticsSnapshot snapshot;
+  final List<Transaction> transactions;
+  final DateTime focusMonth;
+  final _AnalyticsHeatmapView view;
   final _AnalyticsHeatmapMode mode;
   final ValueChanged<_AnalyticsHeatmapMode> onModeChanged;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+  final VoidCallback onToggleView;
+  final ValueChanged<DateTime> onMonthSelected;
 
   const _AnalyticsHeatmapCard({
-    required this.snapshot,
+    required this.transactions,
+    required this.focusMonth,
+    required this.view,
     required this.mode,
     required this.onModeChanged,
+    required this.onPrevious,
+    required this.onNext,
+    required this.onToggleView,
+    required this.onMonthSelected,
   });
 
   @override
   Widget build(BuildContext context) {
-    final monthStart = DateTime(snapshot.monthDate.year, snapshot.monthDate.month, 1);
-    final daysInMonth =
-        DateTime(snapshot.monthDate.year, snapshot.monthDate.month + 1, 0).day;
-    final startOffset = monthStart.weekday - 1; // Monday-first index.
-    final totalCells = ((startOffset + daysInMonth + 6) ~/ 7) * 7;
+    final visibleMonth = DateTime(focusMonth.year, focusMonth.month, 1);
+    final now = DateTime.now();
+    final valuesByBucket = view == _AnalyticsHeatmapView.daily
+        ? _buildDailyValues(visibleMonth)
+        : _buildMonthlyValues(visibleMonth.year);
+    final maxMagnitude = valuesByBucket.values.fold<double>(
+      0.0,
+      (currentMax, value) => math.max(currentMax, value.abs()),
+    );
 
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
@@ -2288,12 +2360,18 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              Text(
-                _formatMonthYear(snapshot.monthDate),
-                style: TextStyle(
-                  color: AppColors.textPrimary(context),
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
+              GestureDetector(
+                onTap: onToggleView,
+                behavior: HitTestBehavior.opaque,
+                child: Text(
+                  view == _AnalyticsHeatmapView.daily
+                      ? _formatMonthYear(visibleMonth)
+                      : '${visibleMonth.year}',
+                  style: TextStyle(
+                    color: AppColors.textPrimary(context),
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               const Spacer(),
@@ -2309,87 +2387,49 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          const _AnalyticsWeekdayHeader(),
-          const SizedBox(height: 8),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: totalCells,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              crossAxisSpacing: 4,
-              mainAxisSpacing: 4,
-              childAspectRatio: 1.04,
+          if (view == _AnalyticsHeatmapView.daily) ...[
+            const _AnalyticsWeekdayHeader(),
+            const SizedBox(height: 8),
+            _buildDailyGrid(
+              context: context,
+              visibleMonth: visibleMonth,
+              now: now,
+              valuesByDay: valuesByBucket,
+              maxMagnitude: maxMagnitude,
             ),
-            itemBuilder: (context, index) {
-              final day = index - startOffset + 1;
-              if (index < startOffset || day < 1 || day > daysInMonth) {
-                return const SizedBox.shrink();
-              }
-
-              final value = _heatmapValueForDay(day);
-              final hasValue = value.abs() > 0.001;
-              Color textColor = AppColors.textPrimary(context);
-              Color? bgColor;
-              if (hasValue) {
-                if (value > 0) {
-                  textColor = AppColors.incomeSuccess;
-                  bgColor = AppColors.incomeSuccess.withValues(alpha: 0.18);
-                } else {
-                  textColor = AppColors.red;
-                  bgColor = AppColors.red.withValues(alpha: 0.15);
-                }
-              }
-
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-                decoration: BoxDecoration(
-                  color: bgColor,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      '$day',
-                      style: TextStyle(
-                        color: textColor,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (hasValue)
-                      Text(
-                        _formatCompactSignedEtb(value),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: textColor,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
+          ] else ...[
+            _buildMonthlyGrid(
+              context: context,
+              visibleMonth: visibleMonth,
+              now: now,
+              valuesByMonth: valuesByBucket,
+              maxMagnitude: maxMagnitude,
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(AppIcons.chevron_left_rounded, color: AppColors.textTertiary(context)),
+              _AnalyticsHeatmapNavButton(
+                icon: AppIcons.chevron_left_rounded,
+                onTap: onPrevious,
+              ),
               const SizedBox(width: 12),
               Text(
-                'Today',
+                view == _AnalyticsHeatmapView.daily
+                    ? _formatFullMonthName(visibleMonth)
+                    : '${visibleMonth.year}',
                 style: TextStyle(
                   color: AppColors.textSecondary(context),
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(width: 12),
-              Icon(AppIcons.chevron_right_rounded, color: AppColors.textTertiary(context)),
+              _AnalyticsHeatmapNavButton(
+                icon: AppIcons.chevron_right_rounded,
+                onTap: onNext,
+              ),
             ],
           ),
         ],
@@ -2397,15 +2437,271 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
     );
   }
 
-  double _heatmapValueForDay(int day) {
+  Map<int, double> _buildDailyValues(DateTime month) {
+    final values = <int, double>{};
+    for (final transaction in transactions) {
+      final dt = _parseTransactionTime(transaction.time);
+      if (dt == null || dt.year != month.year || dt.month != month.month) {
+        continue;
+      }
+      final delta = _heatmapDelta(transaction);
+      if (delta.abs() < 0.001) continue;
+      values[dt.day] = (values[dt.day] ?? 0.0) + delta;
+    }
+    return values;
+  }
+
+  Map<int, double> _buildMonthlyValues(int year) {
+    final values = <int, double>{};
+    for (final transaction in transactions) {
+      final dt = _parseTransactionTime(transaction.time);
+      if (dt == null || dt.year != year) continue;
+      final delta = _heatmapDelta(transaction);
+      if (delta.abs() < 0.001) continue;
+      values[dt.month] = (values[dt.month] ?? 0.0) + delta;
+    }
+    return values;
+  }
+
+  Widget _buildDailyGrid({
+    required BuildContext context,
+    required DateTime visibleMonth,
+    required DateTime now,
+    required Map<int, double> valuesByDay,
+    required double maxMagnitude,
+  }) {
+    final daysInMonth =
+        DateTime(visibleMonth.year, visibleMonth.month + 1, 0).day;
+    final startOffset = visibleMonth.weekday - 1;
+    final totalCells = ((startOffset + daysInMonth + 6) ~/ 7) * 7;
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: totalCells,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 7,
+        crossAxisSpacing: 4,
+        mainAxisSpacing: 4,
+        childAspectRatio: 1.04,
+      ),
+      itemBuilder: (context, index) {
+        final day = index - startOffset + 1;
+        if (index < startOffset || day < 1 || day > daysInMonth) {
+          return const SizedBox.shrink();
+        }
+
+        final value = valuesByDay[day] ?? 0.0;
+        final isCurrentDay = visibleMonth.year == now.year &&
+            visibleMonth.month == now.month &&
+            day == now.day;
+
+        return _buildHeatmapCell(
+          context: context,
+          label: '$day',
+          value: value,
+          maxMagnitude: maxMagnitude,
+          isCurrent: isCurrentDay,
+        );
+      },
+    );
+  }
+
+  Widget _buildMonthlyGrid({
+    required BuildContext context,
+    required DateTime visibleMonth,
+    required DateTime now,
+    required Map<int, double> valuesByMonth,
+    required double maxMagnitude,
+  }) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 12,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 6,
+        childAspectRatio: 1.35,
+      ),
+      itemBuilder: (context, index) {
+        final monthNumber = index + 1;
+        final monthDate = DateTime(visibleMonth.year, monthNumber, 1);
+        final value = valuesByMonth[monthNumber] ?? 0.0;
+        final isCurrentMonth =
+            visibleMonth.year == now.year && monthNumber == now.month;
+        final isSelectedMonth = monthNumber == visibleMonth.month;
+
+        return _buildHeatmapCell(
+          context: context,
+          label: _months[monthNumber - 1],
+          value: value,
+          maxMagnitude: maxMagnitude,
+          isCurrent: isCurrentMonth,
+          isSelected: isSelectedMonth,
+          labelFontSize: 14,
+          valueFontSize: 10,
+          onTap: () => onMonthSelected(monthDate),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeatmapCell({
+    required BuildContext context,
+    required String label,
+    required double value,
+    required double maxMagnitude,
+    required bool isCurrent,
+    bool isSelected = false,
+    double labelFontSize = 15,
+    double valueFontSize = 11,
+    VoidCallback? onTap,
+  }) {
+    final hasValue = value.abs() > 0.001;
+    final intensity =
+        maxMagnitude > 0 ? (value.abs() / maxMagnitude).clamp(0.0, 1.0) : 0.0;
+    final baseValueColor =
+        value >= 0 ? AppColors.incomeSuccess : AppColors.red;
+
+    var backgroundColor = Colors.transparent;
+    if (isSelected) {
+      backgroundColor = AppColors.mutedFill(context).withValues(
+        alpha: AppColors.isDark(context) ? 0.32 : 0.52,
+      );
+    }
+    if (hasValue) {
+      final heatColor =
+          baseValueColor.withValues(alpha: 0.12 + (0.24 * intensity));
+      backgroundColor = isSelected
+          ? Color.lerp(backgroundColor, heatColor, 0.75) ?? heatColor
+          : heatColor;
+    }
+
+    final borderColor = isCurrent
+        ? AppColors.primaryLight
+        : (isSelected ? AppColors.borderColor(context) : Colors.transparent);
+    final primaryTextColor = hasValue
+        ? baseValueColor
+        : (isCurrent
+              ? AppColors.primaryLight
+              : AppColors.textPrimary(context));
+
+    final cell = LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact =
+            constraints.maxHeight < 32 || constraints.maxWidth < 36;
+        final isVeryCompact =
+            constraints.maxHeight < 28 || constraints.maxWidth < 32;
+        final showValue =
+            hasValue && constraints.maxHeight >= 30 && constraints.maxWidth >= 34;
+        final effectiveHorizontalPadding = isVeryCompact ? 2.0 : 4.0;
+        final effectiveVerticalPadding = isCompact ? 3.0 : 6.0;
+        final effectiveLabelFontSize = isVeryCompact
+            ? math.max(11.0, labelFontSize - 2.0)
+            : labelFontSize;
+
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: EdgeInsets.symmetric(
+            horizontal: effectiveHorizontalPadding,
+            vertical: effectiveVerticalPadding,
+          ),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: borderColor,
+              width: isCurrent ? 1.6 : (isSelected ? 1.1 : 1),
+            ),
+          ),
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: primaryTextColor,
+                      fontSize: effectiveLabelFontSize,
+                      fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w700,
+                    ),
+                  ),
+                  if (showValue)
+                    Text(
+                      _formatCompactSignedEtb(value),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: baseValueColor,
+                        fontSize: valueFontSize,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (onTap == null) return cell;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: cell,
+    );
+  }
+
+  double _heatmapDelta(Transaction transaction) {
     switch (mode) {
       case _AnalyticsHeatmapMode.all:
-        return snapshot.netByDay[day] ?? 0.0;
+        if (transaction.type == 'CREDIT') return transaction.amount;
+        if (transaction.type == 'DEBIT') return -transaction.amount;
+        return 0.0;
       case _AnalyticsHeatmapMode.expense:
-        return -(snapshot.expenseByDay[day] ?? 0.0);
+        return transaction.type == 'DEBIT' ? -transaction.amount : 0.0;
       case _AnalyticsHeatmapMode.income:
-        return snapshot.incomeByDay[day] ?? 0.0;
+        return transaction.type == 'CREDIT' ? transaction.amount : 0.0;
     }
+  }
+}
+
+class _AnalyticsHeatmapNavButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _AnalyticsHeatmapNavButton({
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: AppColors.surfaceColor(context),
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(color: AppColors.borderColor(context)),
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          icon,
+          size: 14,
+          color: AppColors.textTertiary(context),
+        ),
+      ),
+    );
   }
 }
 
