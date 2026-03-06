@@ -6,7 +6,7 @@ class RedesignBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
   final VoidCallback? onMoneyLongPress;
-  final ValueChanged<Offset>? onProfileLongPressAt;
+  final ValueChanged<Rect>? onProfileLongPressAt;
 
   const RedesignBottomNav({
     super.key,
@@ -87,7 +87,7 @@ class _NavItem extends StatelessWidget {
   final bool isActive;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
-  final ValueChanged<Offset>? onLongPressAt;
+  final ValueChanged<Rect>? onLongPressAt;
 
   const _NavItem({
     required this.label,
@@ -112,13 +112,17 @@ class _NavItem extends StatelessWidget {
             (onLongPressAt == null
                 ? null
                 : () {
-                final box = context.findRenderObject() as RenderBox?;
-                if (box == null) return;
-                final anchor = box.localToGlobal(
-                  Offset(box.size.width * 0.8, 0),
-                );
-                onLongPressAt!(anchor);
-              }),
+                    final box = context.findRenderObject() as RenderBox?;
+                    if (box == null) return;
+                    final topLeft = box.localToGlobal(Offset.zero);
+                    final anchorRect = Rect.fromLTWH(
+                      topLeft.dx,
+                      topLeft.dy,
+                      box.size.width,
+                      box.size.height,
+                    );
+                    onLongPressAt!(anchorRect);
+                  }),
         borderRadius: BorderRadius.circular(10),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),

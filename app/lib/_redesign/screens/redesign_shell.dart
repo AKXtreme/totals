@@ -20,6 +20,7 @@ import 'package:totals/providers/budget_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/repositories/profile_repository.dart';
 import 'package:totals/services/bank_detection_startup_service.dart';
+import 'package:totals/services/sms_service.dart';
 import 'package:totals/services/widget_launch_intent_service.dart';
 import 'package:totals/widgets/add_cash_transaction_sheet.dart';
 
@@ -47,11 +48,13 @@ class RedesignShellState extends State<RedesignShell>
   int? _activeProfileId;
   StreamSubscription<WidgetLaunchTarget>? _widgetLaunchIntentSub;
   final ProfileRepository _profileRepo = ProfileRepository();
+  final SmsService _smsService = SmsService();
 
   // Auth state
   final LocalAuthentication _auth = LocalAuthentication();
   bool _isAuthenticated = false;
   bool _isAuthenticating = false;
+  bool _hasInitializedSmsPermissions = false;
 
   @override
   void initState() {
@@ -74,7 +77,8 @@ class RedesignShellState extends State<RedesignShell>
       _onTabSelected(_budgetIndex);
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _initSmsPermissions();
       if (mounted) _authenticateIfAvailable();
     });
   }
@@ -100,6 +104,19 @@ class RedesignShellState extends State<RedesignShell>
         code.contains('passcode_not_set') ||
         code.contains('not_enrolled') ||
         code.contains('not_available');
+  }
+
+  Future<void> _initSmsPermissions() async {
+    if (_hasInitializedSmsPermissions) return;
+    _hasInitializedSmsPermissions = true;
+
+    try {
+      await _smsService.init();
+    } catch (e) {
+      if (kDebugMode) {
+        print('debug: SMS permission init failed: $e');
+      }
+    }
   }
 
   Future<void> _authenticateIfAvailable() async {
@@ -239,13 +256,13 @@ class RedesignShellState extends State<RedesignShell>
     );
   }
 
-  Future<void> _onProfileLongPressAt(Offset anchor) async {
+  Future<void> _onProfileLongPressAt(Rect anchorRect) async {
     final profiles = await _profileRepo.getProfiles();
     final activeProfileId = await _profileRepo.getActiveProfileId();
     if (!mounted || profiles.isEmpty) return;
 
     final selectedProfileId = await _showProfilePickerMenu(
-      anchor: anchor,
+      anchorRect: anchorRect,
       profiles: profiles,
       activeProfileId: activeProfileId,
     );
@@ -280,7 +297,7 @@ class RedesignShellState extends State<RedesignShell>
   }
 
   Future<int?> _showProfilePickerMenu({
-    required Offset anchor,
+    required Rect anchorRect,
     required List<Profile> profiles,
     required int? activeProfileId,
   }) async {
@@ -288,27 +305,33 @@ class RedesignShellState extends State<RedesignShell>
         Overlay.maybeOf(context)?.context.findRenderObject() as RenderBox?;
     if (overlayBox == null) return null;
 
-    const menuWidth = 220.0;
     const rowHeight = 48.0;
+    const menuVerticalGap = 8.0;
     final visibleProfiles = profiles.where((p) => p.id != null).toList();
-    final menuHeight = (visibleProfiles.length * rowHeight) + 16;
-
-    final left = (anchor.dx - menuWidth + 24)
-        .clamp(8.0, overlayBox.size.width - menuWidth - 8.0)
+    final anchorTopLeft = overlayBox.globalToLocal(anchorRect.topLeft);
+    final anchorBottomRight = overlayBox.globalToLocal(anchorRect.bottomRight);
+    final anchorRectInOverlay = Rect.fromPoints(
+      anchorTopLeft,
+      anchorBottomRight,
+    ).inflate(4);
+    final estimatedMenuHeight = (visibleProfiles.length * rowHeight) + 16.0;
+    final menuTop = (anchorRectInOverlay.top - estimatedMenuHeight - menuVerticalGap)
+        .clamp(8.0, overlayBox.size.height - estimatedMenuHeight - 8.0)
         .toDouble();
-    final top = (anchor.dy - menuHeight - 10)
-        .clamp(8.0, overlayBox.size.height - menuHeight - 8.0)
-        .toDouble();
+    final menuAnchorRect = Rect.fromLTWH(
+      anchorRectInOverlay.left,
+      menuTop,
+      anchorRectInOverlay.width,
+      0,
+    );
 
     final selected = await showMenu<int>(
       context: context,
       color: AppColors.cardColor(context),
       elevation: 10,
-      position: RelativeRect.fromLTRB(
-        left,
-        top,
-        overlayBox.size.width - left - menuWidth,
-        overlayBox.size.height - top - menuHeight,
+      position: RelativeRect.fromRect(
+        menuAnchorRect,
+        Offset.zero & overlayBox.size,
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       items: visibleProfiles.map((profile) {

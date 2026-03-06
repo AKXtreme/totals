@@ -83,9 +83,12 @@ onBackgroundMessage(SmsMessage message) async {
     print("debug: BG: Checking if relevant...");
     if (await SmsService.isRelevantMessage(address)) {
       print("debug: BG: Message IS relevant. Processing...");
+      final receivedAt = message.date == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(message.date!);
       await SmsService.processMessage(body, address!,
           notifyUser: true,
-          messageDate: DateTime.fromMillisecondsSinceEpoch(message.date!));
+          messageDate: receivedAt);
       print("debug: BG: Processing finished.");
     } else {
       print("debug: BG: Message NOT relevant.");
@@ -106,13 +109,17 @@ class SmsService {
   // Callback for foreground-only UI updates.
   ValueChanged<Transaction>? onTransactionSaved;
 
+  void _registerIncomingSmsListener() {
+    _telephony.listenIncomingSms(
+      onNewMessage: _handleForegroundMessage,
+      onBackgroundMessage: onBackgroundMessage,
+    );
+  }
+
   Future<void> init() async {
     final bool? result = await _telephony.requestSmsPermissions;
     if (result != null && result) {
-      _telephony.listenIncomingSms(
-        onNewMessage: _handleForegroundMessage,
-        onBackgroundMessage: onBackgroundMessage,
-      );
+      _registerIncomingSmsListener();
     } else {
       print("debug: SMS Permission denied");
     }
@@ -124,10 +131,13 @@ class SmsService {
 
     try {
       if (await SmsService.isRelevantMessage(message.address)) {
+        final receivedAt = message.date == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(message.date!);
         final tx = await SmsService.processMessage(
             message.body!, message.address!,
             notifyUser: true,
-            messageDate: DateTime.fromMillisecondsSinceEpoch(message.date!));
+            messageDate: receivedAt);
         if (tx != null && onTransactionSaved != null) {
           onTransactionSaved!(tx);
         }
@@ -143,6 +153,7 @@ class SmsService {
       return const TodaySmsSyncResult(permissionDenied: true);
     }
 
+    _registerIncomingSmsListener();
     await _getAtmCashTransferCutoff();
 
     final now = DateTime.now();
@@ -288,6 +299,60 @@ class SmsService {
 
     // Safe parse
     return double.tryParse(cleaned) ?? 0.0;
+  }
+
+  static Bank? _bankById(List<Bank> banks, int bankId) {
+    for (final bank in banks) {
+      if (bank.id == bankId) return bank;
+    }
+    return null;
+  }
+
+  static Account? _accountForBank(List<Account> accounts, int bankId) {
+    for (final account in accounts) {
+      if (account.bank == bankId) return account;
+    }
+    return null;
+  }
+
+  static Account? _maskedAccountMatch(
+    List<Account> accounts, {
+    required int bankId,
+    required String extractedAccount,
+    required int? maskPattern,
+  }) {
+    final trimmedAccount = extractedAccount.trim();
+    if (trimmedAccount.isEmpty) return null;
+
+    final suffix = maskPattern != null &&
+            maskPattern > 0 &&
+            trimmedAccount.length > maskPattern
+        ? trimmedAccount.substring(trimmedAccount.length - maskPattern)
+        : trimmedAccount;
+
+    for (final account in accounts) {
+      if (account.bank != bankId) continue;
+      if (account.accountNumber.endsWith(suffix)) return account;
+    }
+    return null;
+  }
+
+  static Future<void> _saveUpdatedAccountBalance(
+    AccountRepository accRepo,
+    Account account,
+    double newBalance,
+  ) async {
+    final updated = Account(
+      accountNumber: account.accountNumber,
+      bank: account.bank,
+      balance: newBalance,
+      accountHolderName: account.accountHolderName,
+      settledBalance: account.settledBalance,
+      pendingCredit: account.pendingCredit,
+      profileId: account.profileId,
+    );
+    await accRepo.saveAccount(updated);
+    print("debug: Account balance updated for ${account.accountHolderName}");
   }
 
   static bool _isAtmWithdrawal(
@@ -556,60 +621,40 @@ class SmsService {
     // We need to match the Bank ID from the pattern, not just assume 1 (CBE)
     int bankId = details['bankId'] ?? bank.id;
     final banks = await _bankConfigService.getBanks();
-    final currentBank = banks.firstWhere((b) => b.id == bankId);
-    if (currentBank.uniformMasking == false) {
+    final currentBank = _bankById(banks, bankId);
+    if (currentBank == null) {
+      print("debug: No bank config found for bank $bankId");
+    } else if (currentBank.uniformMasking == false) {
       AccountRepository accRepo = AccountRepository();
       List<Account> accounts = await accRepo.getAccounts();
-      int index = accounts.indexWhere((a) {
-        return a.bank == bankId;
-      });
-      Account old = accounts[index];
-      double newBalance = details['currentBalance'] != null
-          ? sanitizeAmount(details['currentBalance'])
-          : old.balance;
-
-      Account updated = Account(
-          accountNumber: old.accountNumber,
-          bank: old.bank,
-          balance: newBalance,
-          accountHolderName: old.accountHolderName,
-          settledBalance: old.settledBalance,
-          pendingCredit: old.pendingCredit);
-      await accRepo.saveAccount(updated);
-      print("debug: Account balance updated for ${old.accountHolderName}");
+      final account = _accountForBank(accounts, bankId);
+      if (account == null) {
+        print("debug: No matching account found for bank $bankId");
+      } else {
+        final newBalance = details['currentBalance'] != null
+            ? sanitizeAmount(details['currentBalance'])
+            : account.balance;
+        await _saveUpdatedAccountBalance(accRepo, account, newBalance);
+      }
     } else if (details['accountNumber'] != null) {
       AccountRepository accRepo = AccountRepository();
       List<Account> accounts = await accRepo.getAccounts();
 
-      String extractedAccount = details['accountNumber'];
+      final extractedAccount = details['accountNumber'].toString();
+      final account = currentBank.uniformMasking == true
+          ? _maskedAccountMatch(
+              accounts,
+              bankId: bankId,
+              extractedAccount: extractedAccount,
+              maskPattern: currentBank.maskPattern,
+            )
+          : null;
 
-      int index = -1;
-      final banks = await _bankConfigService.getBanks();
-      final bank = banks.firstWhere((b) => b.id == bankId);
-      if (bank.uniformMasking == true) {
-        index = accounts.indexWhere((a) {
-          if (a.bank != bankId) return false;
-          return a.accountNumber.endsWith(extractedAccount
-              .substring(extractedAccount.length - bank.maskPattern!));
-        });
-      }
-
-      if (index != -1) {
-        Account old = accounts[index];
-        double newBalance = details['currentBalance'] != null
+      if (account != null) {
+        final newBalance = details['currentBalance'] != null
             ? sanitizeAmount(details['currentBalance'])
-            : old.balance;
-
-        // Update balance
-        Account updated = Account(
-            accountNumber: old.accountNumber,
-            bank: old.bank,
-            balance: newBalance,
-            accountHolderName: old.accountHolderName,
-            settledBalance: old.settledBalance,
-            pendingCredit: old.pendingCredit);
-        await accRepo.saveAccount(updated);
-        print("debug: Account balance updated for ${old.accountHolderName}");
+            : account.balance;
+        await _saveUpdatedAccountBalance(accRepo, account, newBalance);
       } else {
         print(
             "No matching account found for bank $bankId and account $extractedAccount");
