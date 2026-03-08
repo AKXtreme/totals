@@ -23,7 +23,11 @@ class RedesignHomePage extends StatefulWidget {
 
 enum _ChartRange { week, month }
 
-class _RedesignHomePageState extends State<RedesignHomePage> {
+class _RedesignHomePageState extends State<RedesignHomePage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   final SmsService _smsService = SmsService();
   bool _showBalance = false;
   _ChartRange _chartRange = _ChartRange.week;
@@ -129,6 +133,7 @@ class _RedesignHomePageState extends State<RedesignHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
 
     return Consumer<TransactionProvider>(

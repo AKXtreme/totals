@@ -128,7 +128,11 @@ class _TransactionFilter {
   }
 }
 
-class RedesignMoneyPageState extends State<RedesignMoneyPage> {
+class RedesignMoneyPageState extends State<RedesignMoneyPage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   _TopTab _topTab = _TopTab.activity;
   _SubTab _subTab = _SubTab.transactions;
   final TextEditingController _searchController = TextEditingController();
@@ -282,6 +286,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Consumer<TransactionProvider>(
       builder: (context, provider, child) {
         return Scaffold(

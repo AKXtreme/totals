@@ -289,7 +289,12 @@ class NotificationService {
 
       final enabled = await NotificationSettingsService.instance
           .isTransactionNotificationsEnabled();
-      if (!enabled) return;
+      if (!enabled) {
+        if (kDebugMode) {
+          print('debug: Transaction notification skipped — disabled in settings');
+        }
+        return;
+      }
 
       final bank = _findBank(bankId);
       final title = _buildTitle(bank, transaction);

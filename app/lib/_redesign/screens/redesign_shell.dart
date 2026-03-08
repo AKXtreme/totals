@@ -20,8 +20,13 @@ import 'package:totals/providers/budget_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/repositories/profile_repository.dart';
 import 'package:totals/services/bank_detection_startup_service.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:totals/services/notification_service.dart';
+import 'package:totals/services/notification_intent_bus.dart';
 import 'package:totals/services/sms_service.dart';
 import 'package:totals/services/widget_launch_intent_service.dart';
+import 'package:totals/utils/text_utils.dart';
 import 'package:totals/widgets/add_cash_transaction_sheet.dart';
 
 class RedesignShell extends StatefulWidget {
@@ -47,6 +52,7 @@ class RedesignShellState extends State<RedesignShell>
   int _currentIndex = _homeIndex;
   int? _activeProfileId;
   StreamSubscription<WidgetLaunchTarget>? _widgetLaunchIntentSub;
+  StreamSubscription<NotificationIntent>? _notificationIntentSub;
   final ProfileRepository _profileRepo = ProfileRepository();
   final SmsService _smsService = SmsService();
 
@@ -55,6 +61,7 @@ class RedesignShellState extends State<RedesignShell>
   bool _isAuthenticated = false;
   bool _isAuthenticating = false;
   bool _hasInitializedSmsPermissions = false;
+  bool _hasCheckedNotificationPermissions = false;
 
   @override
   void initState() {
@@ -70,6 +77,43 @@ class RedesignShellState extends State<RedesignShell>
       },
     );
 
+    _notificationIntentSub = NotificationIntentBus.instance.stream.listen(
+      (intent) {
+        if (!mounted) return;
+        if (intent is CategorizeTransactionIntent) {
+          if (kDebugMode) {
+            print('debug: Redesign: notification categorize intent for ${intent.reference}');
+          }
+        }
+      },
+    );
+
+    // Set up callback to refresh UI when a foreground SMS transaction is saved
+    _smsService.onTransactionSaved = (tx) {
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Provider.of<TransactionProvider>(context, listen: false).loadData();
+        Provider.of<BudgetProvider>(context, listen: false).loadBudgets();
+        final provider =
+            Provider.of<TransactionProvider>(context, listen: false);
+        final bankLabel = provider.getBankShortName(tx.bankId);
+        final sign = tx.type == 'CREDIT'
+            ? '+'
+            : tx.type == 'DEBIT'
+                ? '-'
+                : '';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$bankLabel: $sign ETB ${formatNumberWithComma(tx.amount)}',
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      });
+    };
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final initialTarget =
           WidgetLaunchIntentService.instance.consumePendingTarget();
@@ -78,7 +122,12 @@ class RedesignShellState extends State<RedesignShell>
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await NotificationService.instance.emitLaunchIntentIfAny();
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _initSmsPermissions();
+      await _checkNotificationPermissions();
       if (mounted) _authenticateIfAvailable();
     });
   }
@@ -87,6 +136,7 @@ class RedesignShellState extends State<RedesignShell>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _widgetLaunchIntentSub?.cancel();
+    _notificationIntentSub?.cancel();
     _pageController.dispose();
     super.dispose();
   }
@@ -119,11 +169,84 @@ class RedesignShellState extends State<RedesignShell>
     }
   }
 
+  Future<void> _checkNotificationPermissions() async {
+    if (kIsWeb) return;
+    if (_hasCheckedNotificationPermissions) return;
+    _hasCheckedNotificationPermissions = true;
+
+    final permissionsGranted =
+        await NotificationService.instance.arePermissionsGranted();
+    if (!permissionsGranted && mounted) {
+      await NotificationService.instance.requestPermissionsIfNeeded();
+    }
+  }
+
+  static const String _batteryOptDismissedKey =
+      'battery_optimization_prompt_dismissed';
+
+  Future<void> _checkBatteryOptimization() async {
+    if (kIsWeb) return;
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    if (!mounted) return;
+
+    try {
+      final status = await Permission.ignoreBatteryOptimizations.status;
+      if (status.isGranted) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_batteryOptDismissedKey) == true) return;
+
+      if (!mounted) return;
+
+      final shouldRequest = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Keep transaction alerts active'),
+          content: const Text(
+            'To make sure you get notified instantly when a transaction '
+            'happens, Totals needs to be excluded from battery optimization. '
+            'Without this, your phone may stop delivering notifications '
+            'in the background.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                prefs.setBool(_batteryOptDismissedKey, true);
+                Navigator.pop(ctx, false);
+              },
+              child: const Text('Not now'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Allow'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldRequest == true) {
+        await Permission.ignoreBatteryOptimizations.request();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('debug: Battery optimization check failed: $e');
+      }
+    }
+  }
+
+  void _onAuthSuccess() {
+    if (!mounted) return;
+    setState(() => _isAuthenticated = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkBatteryOptimization();
+    });
+  }
+
   Future<void> _authenticateIfAvailable() async {
     if (_isAuthenticated || _isAuthenticating) return;
 
     if (kIsWeb) {
-      setState(() => _isAuthenticated = true);
+      _onAuthSuccess();
       return;
     }
 
@@ -134,7 +257,7 @@ class RedesignShellState extends State<RedesignShell>
       final isDeviceSupported = await _auth.isDeviceSupported();
 
       if (!canCheckBiometrics && !isDeviceSupported) {
-        if (mounted) setState(() => _isAuthenticated = true);
+        _onAuthSuccess();
         return;
       }
 
@@ -148,11 +271,11 @@ class RedesignShellState extends State<RedesignShell>
 
       if (!mounted) return;
       if (didAuthenticate) {
-        setState(() => _isAuthenticated = true);
+        _onAuthSuccess();
       }
     } on PlatformException catch (e) {
       if (_shouldBypassSecurity(e)) {
-        if (mounted) setState(() => _isAuthenticated = true);
+        _onAuthSuccess();
       } else {
         if (kDebugMode) print('debug: Auth error: $e');
       }
@@ -401,34 +524,37 @@ class RedesignShellState extends State<RedesignShell>
       return RedesignLockScreen(onUnlock: _authenticateIfAvailable);
     }
 
-    return WillPopScope(
-      onWillPop: () async {
-        if (_currentIndex == _budgetIndex) {
-          final handled = _budgetPageKey.currentState?.handleSystemBack() ?? false;
-          if (handled) return false;
-        }
-        return true;
-      },
-      child: Scaffold(
-        extendBody: true,
-        body: PageView(
-          controller: _pageController,
-          physics: const NeverScrollableScrollPhysics(),
-          children: [
-            const RedesignHomePage(),
-            RedesignMoneyPage(key: _moneyPageKey),
-            RedesignBudgetPage(key: _budgetPageKey),
-            const RedesignToolsPage(),
-            RedesignSettingsPage(
-              key: ValueKey('settings-${_activeProfileId ?? 'none'}'),
-            ),
-          ],
-        ),
-        bottomNavigationBar: RedesignBottomNav(
-          currentIndex: _currentIndex,
-          onTap: _onTabSelected,
-          onMoneyLongPress: _showQuickCashSheet,
-          onProfileLongPressAt: _onProfileLongPressAt,
+    return SafeArea(
+      bottom: false,
+      child: WillPopScope(
+        onWillPop: () async {
+          if (_currentIndex == _budgetIndex) {
+            final handled = _budgetPageKey.currentState?.handleSystemBack() ?? false;
+            if (handled) return false;
+          }
+          return true;
+        },
+        child: Scaffold(
+          extendBody: true,
+          body: PageView(
+            controller: _pageController,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              const RedesignHomePage(),
+              RedesignMoneyPage(key: _moneyPageKey),
+              RedesignBudgetPage(key: _budgetPageKey),
+              const RedesignToolsPage(),
+              RedesignSettingsPage(
+                key: ValueKey('settings-${_activeProfileId ?? 'none'}'),
+              ),
+            ],
+          ),
+          bottomNavigationBar: RedesignBottomNav(
+            currentIndex: _currentIndex,
+            onTap: _onTabSelected,
+            onMoneyLongPress: _showQuickCashSheet,
+            onProfileLongPressAt: _onProfileLongPressAt,
+          ),
         ),
       ),
     );

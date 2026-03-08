@@ -445,6 +445,25 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     }
   }
 
+  Future<void> _requestBatteryOptimizationExemption() async {
+    final status = await Permission.ignoreBatteryOptimizations.status;
+    if (!mounted) return;
+
+    if (status.isGranted) {
+      _showSnack('Already excluded from battery optimization');
+      return;
+    }
+
+    final result = await Permission.ignoreBatteryOptimizations.request();
+    if (!mounted) return;
+
+    if (result.isGranted) {
+      _showSnack('Battery optimization disabled for Totals');
+    } else {
+      _showSnack('Battery optimization exemption denied');
+    }
+  }
+
   // ── Quick category chips ────────────────────────────────────────────────
 
   Widget _buildQuickCategoryChips(String flow) {
@@ -653,19 +672,14 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     onTap: _requestNotificationPermission,
                   ),
 
-                  const SizedBox(height: 16),
-
-                  // Note
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      "Note: delivery time depends on your phone's battery optimization.",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textTertiary(context),
-                        height: 1.4,
-                      ),
-                    ),
+                  _SettingTile(
+                    icon: Icons.battery_saver_rounded,
+                    iconColor: AppColors.incomeSuccess,
+                    title: 'Battery optimization',
+                    subtitle:
+                        'Exclude from battery optimization to ensure '
+                        'background notifications are delivered',
+                    onTap: _requestBatteryOptimizationExemption,
                   ),
                 ],
               ),
