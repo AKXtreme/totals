@@ -96,7 +96,7 @@ class _RedesignPlaceholderPageState extends State<RedesignPlaceholderPage> {
               20,
               0,
               20,
-              20 + MediaQuery.of(sheetContext).viewInsets.bottom,
+              20 + MediaQuery.of(sheetContext).viewInsets.bottom + MediaQuery.of(sheetContext).padding.bottom,
             ),
             decoration: BoxDecoration(
               color: AppColors.cardColor(sheetContext),

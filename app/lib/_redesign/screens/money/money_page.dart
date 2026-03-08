@@ -5418,9 +5418,10 @@ class _SetCashAmountSheetState extends State<_SetCashAmountSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final navBarInset = MediaQuery.of(context).padding.bottom;
 
     return Container(
-      padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + 20),
+      padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + navBarInset + 20),
       decoration: BoxDecoration(
         color: AppColors.cardColor(context),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
@@ -5698,10 +5699,11 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final navBarInset = MediaQuery.of(context).padding.bottom;
     final selectedBank = _selectedBank();
 
     return Container(
-      padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + 20),
+      padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + navBarInset + 20),
       decoration: BoxDecoration(
         color: AppColors.background(context),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
@@ -6054,7 +6056,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
             ),
             Expanded(
               child: GridView.builder(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(sheetContext).padding.bottom),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3,
                   crossAxisSpacing: 14,
@@ -6224,6 +6226,7 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomPadding = MediaQuery.of(context).viewInsets.bottom;
+    final navBarPadding = MediaQuery.of(context).padding.bottom;
 
     return Container(
       constraints: BoxConstraints(
@@ -6275,7 +6278,7 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
           // Scrollable content
           Flexible(
             child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottomPadding),
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottomPadding + navBarPadding),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

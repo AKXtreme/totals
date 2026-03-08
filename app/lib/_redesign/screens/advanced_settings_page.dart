@@ -37,7 +37,7 @@ class _RedesignAdvancedSettingsPageState
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         return Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 20 + MediaQuery.of(ctx).padding.bottom),
           decoration: BoxDecoration(
             color: AppColors.cardColor(ctx),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),

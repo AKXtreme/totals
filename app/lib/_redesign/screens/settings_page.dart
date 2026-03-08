@@ -230,7 +230,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               20,
               0,
               20,
-              20 + MediaQuery.of(sheetCtx).viewInsets.bottom,
+              20 + MediaQuery.of(sheetCtx).viewInsets.bottom + MediaQuery.of(sheetCtx).padding.bottom,
             ),
             decoration: BoxDecoration(
               color: AppColors.cardColor(sheetCtx),
