@@ -41,6 +41,8 @@ class RedesignShellState extends State<RedesignShell>
       GlobalKey<RedesignMoneyPageState>();
   final GlobalKey<RedesignBudgetPageState> _budgetPageKey =
       GlobalKey<RedesignBudgetPageState>();
+  final PageController _pageController =
+      PageController(initialPage: _homeIndex);
   DateTime? _lastProfileTabTapAt;
   int _currentIndex = _homeIndex;
   int? _activeProfileId;
@@ -85,6 +87,7 @@ class RedesignShellState extends State<RedesignShell>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _widgetLaunchIntentSub?.cancel();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -217,6 +220,11 @@ class RedesignShellState extends State<RedesignShell>
     setState(() {
       _currentIndex = index;
     });
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   String _profileInitials(String name) {
@@ -403,8 +411,9 @@ class RedesignShellState extends State<RedesignShell>
       },
       child: Scaffold(
         extendBody: true,
-        body: _AnimatedIndexedStack(
-          index: _currentIndex,
+        body: PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(),
           children: [
             const RedesignHomePage(),
             RedesignMoneyPage(key: _moneyPageKey),
@@ -422,109 +431,6 @@ class RedesignShellState extends State<RedesignShell>
           onProfileLongPressAt: _onProfileLongPressAt,
         ),
       ),
-    );
-  }
-}
-
-class _AnimatedIndexedStack extends StatefulWidget {
-  final int index;
-  final List<Widget> children;
-
-  const _AnimatedIndexedStack({required this.index, required this.children});
-
-  @override
-  State<_AnimatedIndexedStack> createState() => _AnimatedIndexedStackState();
-}
-
-class _AnimatedIndexedStackState extends State<_AnimatedIndexedStack>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  int _previousIndex = 0;
-  bool _movingRight = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _previousIndex = widget.index;
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    _controller.value = 1.0;
-  }
-
-  @override
-  void didUpdateWidget(_AnimatedIndexedStack oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.index != widget.index) {
-      _previousIndex = oldWidget.index;
-      _movingRight = widget.index > oldWidget.index;
-      _controller.forward(from: 0);
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        final animating = _controller.isAnimating || _controller.value < 1.0;
-        final t = Curves.easeOutCubic.transform(_controller.value);
-        final screenWidth = MediaQuery.of(context).size.width;
-        final direction = _movingRight ? 1.0 : -1.0;
-
-        return ClipRect(
-          child: Stack(
-            children: List.generate(widget.children.length, (i) {
-              final isActive = i == widget.index;
-              final isOldPage =
-                  animating && i == _previousIndex && !isActive;
-              final shouldPaint = isActive || isOldPage;
-
-              Widget child = widget.children[i];
-
-              if (animating) {
-                if (isActive) {
-                  // New page slides in from the direction of navigation
-                  child = Transform.translate(
-                    offset: Offset(
-                      screenWidth * direction * (1 - t),
-                      0,
-                    ),
-                    child: child,
-                  );
-                } else if (isOldPage) {
-                  // Old page slides out in the opposite direction
-                  child = Transform.translate(
-                    offset: Offset(
-                      screenWidth * -direction * t,
-                      0,
-                    ),
-                    child: child,
-                  );
-                }
-              }
-
-              return Offstage(
-                offstage: !shouldPaint,
-                child: TickerMode(
-                  enabled: isActive,
-                  child: IgnorePointer(
-                    ignoring: !isActive,
-                    child: child,
-                  ),
-                ),
-              );
-            }),
-          ),
-        );
-      },
     );
   }
 }

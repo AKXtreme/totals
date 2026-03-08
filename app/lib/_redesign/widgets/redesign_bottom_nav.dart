@@ -112,24 +112,18 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 380),
+      duration: const Duration(milliseconds: 250),
     );
-    // Compress → overshoot → settle
     _scale = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 0.78)
+        tween: Tween(begin: 1.0, end: 0.90)
             .chain(CurveTween(curve: Curves.easeIn)),
-        weight: 25,
+        weight: 35,
       ),
       TweenSequenceItem(
-        tween: Tween(begin: 0.78, end: 1.10)
+        tween: Tween(begin: 0.90, end: 1.0)
             .chain(CurveTween(curve: Curves.easeOut)),
-        weight: 45,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 1.10, end: 1.0)
-            .chain(CurveTween(curve: Curves.easeInOut)),
-        weight: 30,
+        weight: 65,
       ),
     ]).animate(_controller);
   }
@@ -176,13 +170,10 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Cross-fade between outline and filled icon
                 AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  transitionBuilder: (child, anim) => ScaleTransition(
-                    scale: anim,
-                    child: FadeTransition(opacity: anim, child: child),
-                  ),
+                  duration: const Duration(milliseconds: 200),
+                  transitionBuilder: (child, anim) =>
+                      FadeTransition(opacity: anim, child: child),
                   child: Icon(
                     widget.isActive ? widget.activeIcon : widget.inactiveIcon,
                     key: ValueKey(widget.isActive),
@@ -202,17 +193,16 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
                   child: Text(widget.label),
                 ),
                 const SizedBox(height: 3),
-                // Active indicator pill
                 AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeInOutCubic,
-                  width: widget.isActive ? 16 : 0,
-                  height: 3,
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  width: widget.isActive ? 4 : 0,
+                  height: widget.isActive ? 4 : 0,
                   decoration: BoxDecoration(
+                    shape: BoxShape.circle,
                     color: widget.isActive
                         ? AppColors.primaryLight
                         : Colors.transparent,
-                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ],
