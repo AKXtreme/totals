@@ -80,7 +80,7 @@ class RedesignBottomNav extends StatelessWidget {
   }
 }
 
-class _NavItem extends StatelessWidget {
+class _NavItem extends StatefulWidget {
   final String label;
   final IconData activeIcon;
   final IconData inactiveIcon;
@@ -100,46 +100,123 @@ class _NavItem extends StatelessWidget {
   });
 
   @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+    );
+    // Compress → overshoot → settle
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 0.78)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 25,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.78, end: 1.10)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 45,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.10, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 30,
+      ),
+    ]).animate(_controller);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    _controller.forward(from: 0);
+    widget.onTap();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final color = isActive
+    final color = widget.isActive
         ? AppColors.primaryLight
         : AppColors.textTertiary(context);
 
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onLongPress ??
-            (onLongPressAt == null
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _handleTap,
+        onLongPress: widget.onLongPress ??
+            (widget.onLongPressAt == null
                 ? null
                 : () {
                     final box = context.findRenderObject() as RenderBox?;
                     if (box == null) return;
                     final topLeft = box.localToGlobal(Offset.zero);
-                    final anchorRect = Rect.fromLTWH(
+                    widget.onLongPressAt!(Rect.fromLTWH(
                       topLeft.dx,
                       topLeft.dy,
                       box.size.width,
                       box.size.height,
-                    );
-                    onLongPressAt!(anchorRect);
+                    ));
                   }),
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(isActive ? activeIcon : inactiveIcon, size: 22, color: color),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                  color: color,
+        child: ScaleTransition(
+          scale: _scale,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Cross-fade between outline and filled icon
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  transitionBuilder: (child, anim) => ScaleTransition(
+                    scale: anim,
+                    child: FadeTransition(opacity: anim, child: child),
+                  ),
+                  child: Icon(
+                    widget.isActive ? widget.activeIcon : widget.inactiveIcon,
+                    key: ValueKey(widget.isActive),
+                    size: 22,
+                    color: color,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 4),
+                AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 200),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight:
+                        widget.isActive ? FontWeight.w600 : FontWeight.w500,
+                    color: color,
+                  ),
+                  child: Text(widget.label),
+                ),
+                const SizedBox(height: 3),
+                // Active indicator pill
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeInOutCubic,
+                  width: widget.isActive ? 16 : 0,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: widget.isActive
+                        ? AppColors.primaryLight
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
