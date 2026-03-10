@@ -66,6 +66,7 @@ dependencies:
     ^1.1.2
   google_fonts: 6.3.0
   pretty_qr_code: ^3.6.0
+  phosphor_flutter: ^2.1.0
     # background_sms: ^0.0.4
   # background_sms:
   #   git:
@@ -109,6 +110,7 @@ flutter:
     - assets/webapp/
     - assets/webapp/assets/
     - assets/icon/totals_icon.png
+    - redesign_screenshots/onboarding/
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:

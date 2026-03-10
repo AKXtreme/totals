@@ -376,7 +376,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final category = _currentCategory;
-    final isSelfTransfer = _provider.isSelfTransfer(_tx);
+    final isLockedSelfTransfer = _provider.isDetectedSelfTransfer(_tx);
     final selfTransferLabel = _provider.getSelfTransferLabel(_tx);
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
     final keyboardScrollBuffer = keyboardInset > 0 ? 88.0 : 24.0;
@@ -496,7 +496,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                         _DetailRow(label: 'VAT', value: _formattedVat!),
 
                       // Category row
-                      if (isSelfTransfer)
+                      if (isLockedSelfTransfer)
                         _DetailRow(
                           label: 'Category',
                           value: selfTransferLabel ?? 'Self transfer',
@@ -505,7 +505,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                         _buildCategoryRow(category),
 
                       // Category picker chips
-                      if (_categoryExpanded && !isSelfTransfer)
+                      if (_categoryExpanded && !isLockedSelfTransfer)
                         _buildCategoryPicker(category),
 
                       const SizedBox(height: 20),
@@ -650,7 +650,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
               _CategoryPickerChip(
                 label: 'Self',
                 color: _colorFromKey('gray'),
-                isSelected: false,
+                isSelected: current?.name.trim().toLowerCase() == 'self',
                 showColorDot: false,
                 onTap: _setSelfCategory,
               ),

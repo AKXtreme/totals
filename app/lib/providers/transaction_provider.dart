@@ -159,8 +159,12 @@ class TransactionProvider with ChangeNotifier {
     return _isSelfTransfer(transaction);
   }
 
+  bool isDetectedSelfTransfer(Transaction transaction) {
+    return _selfTransferLabelByReference.containsKey(transaction.reference);
+  }
+
   bool _isSelfTransfer(Transaction transaction) {
-    return _selfTransferLabelByReference.containsKey(transaction.reference) ||
+    return isDetectedSelfTransfer(transaction) ||
         _isManualSelfCategory(transaction);
   }
 
