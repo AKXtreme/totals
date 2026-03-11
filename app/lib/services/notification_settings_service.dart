@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:totals/repositories/category_repository.dart';
 
 class NotificationSettingsService {
   NotificationSettingsService._();
@@ -16,6 +17,16 @@ class NotificationSettingsService {
   static const _kAutoCategorizeReceiverEnabled = 'auto_categorize_receiver_enabled';
   static const _kQuickCategorizeIncomeIds = 'quick_categorize_income_ids';
   static const _kQuickCategorizeExpenseIds = 'quick_categorize_expense_ids';
+  static const List<String> _kDefaultQuickIncomeBuiltInKeys = [
+    'income_salary',
+    'income_business',
+    'income_side_hustle',
+  ];
+  static const List<String> _kDefaultQuickExpenseBuiltInKeys = [
+    'expense_groceries',
+    'expense_transport',
+    'expense_airtime',
+  ];
 
   Future<bool> isTransactionNotificationsEnabled() async {
     final prefs = await SharedPreferences.getInstance();
@@ -90,7 +101,15 @@ class NotificationSettingsService {
   Future<List<int>> getQuickCategorizeIncomeIds() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_kQuickCategorizeIncomeIds);
-    if (raw == null) return [];
+    if (raw == null) {
+      final defaults =
+          await _resolveDefaultQuickCategorizeIds(flow: 'income');
+      await prefs.setStringList(
+        _kQuickCategorizeIncomeIds,
+        defaults.map((id) => id.toString()).toList(),
+      );
+      return defaults;
+    }
     return raw.map((s) => int.tryParse(s)).whereType<int>().toList();
   }
 
@@ -106,7 +125,15 @@ class NotificationSettingsService {
   Future<List<int>> getQuickCategorizeExpenseIds() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_kQuickCategorizeExpenseIds);
-    if (raw == null) return [];
+    if (raw == null) {
+      final defaults =
+          await _resolveDefaultQuickCategorizeIds(flow: 'expense');
+      await prefs.setStringList(
+        _kQuickCategorizeExpenseIds,
+        defaults.map((id) => id.toString()).toList(),
+      );
+      return defaults;
+    }
     return raw.map((s) => int.tryParse(s)).whereType<int>().toList();
   }
 
@@ -117,5 +144,44 @@ class NotificationSettingsService {
       _kQuickCategorizeExpenseIds,
       limited.map((id) => id.toString()).toList(),
     );
+  }
+
+  Future<List<int>> _resolveDefaultQuickCategorizeIds({
+    required String flow,
+  }) async {
+    final preferredKeys = flow == 'income'
+        ? _kDefaultQuickIncomeBuiltInKeys
+        : _kDefaultQuickExpenseBuiltInKeys;
+    final categories = await CategoryRepository().getCategories();
+    final eligible = categories
+        .where(
+          (category) =>
+              category.id != null &&
+              category.flow.toLowerCase() == flow &&
+              !category.uncategorized,
+        )
+        .toList(growable: false);
+
+    final defaults = <int>[];
+    for (final builtInKey in preferredKeys) {
+      final match = eligible
+          .where((category) => category.builtInKey == builtInKey)
+          .firstOrNull;
+      final id = match?.id;
+      if (id != null && !defaults.contains(id)) {
+        defaults.add(id);
+      }
+    }
+
+    if (defaults.length < 3) {
+      for (final category in eligible) {
+        final id = category.id;
+        if (id == null || defaults.contains(id)) continue;
+        defaults.add(id);
+        if (defaults.length >= 3) break;
+      }
+    }
+
+    return defaults.take(3).toList(growable: false);
   }
 }
