@@ -529,12 +529,14 @@ class SmsService {
     String senderAddress, {
     DateTime? messageDate,
     bool notifyUser = false,
+    bool skipDashenExpenseDuplicates = true,
   }) async {
     final result = await _processMessageInternal(
       messageBody,
       senderAddress,
       messageDate: messageDate,
       notifyUser: notifyUser,
+      skipDashenExpenseDuplicates: skipDashenExpenseDuplicates,
       recordFailure: true,
     );
     return result.transaction;
@@ -544,12 +546,14 @@ class SmsService {
     String messageBody,
     String senderAddress, {
     DateTime? messageDate,
+    bool skipDashenExpenseDuplicates = true,
   }) async {
     return _processMessageInternal(
       messageBody,
       senderAddress,
       messageDate: messageDate,
       notifyUser: false,
+      skipDashenExpenseDuplicates: skipDashenExpenseDuplicates,
       recordFailure: false,
     );
   }
@@ -559,6 +563,7 @@ class SmsService {
     String senderAddress, {
     DateTime? messageDate,
     bool notifyUser = false,
+    bool skipDashenExpenseDuplicates = true,
     bool recordFailure = true,
   }) async {
     print("debug: Processing message: $messageBody");
@@ -640,7 +645,8 @@ class SmsService {
       );
     }
 
-    if (_isDashenExpenseDuplicate(details, existingTx)) {
+    if (skipDashenExpenseDuplicates &&
+        _isDashenExpenseDuplicate(details, existingTx)) {
       print("debug: Duplicate Dashen debit skipped by amount and balance");
       if (recordFailure) {
         await FailedParseRepository().add(FailedParse(
