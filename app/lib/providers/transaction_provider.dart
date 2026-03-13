@@ -15,6 +15,7 @@ import 'package:totals/services/receiver_category_service.dart';
 import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/telebirr_bank_transfer_service.dart';
 import 'package:totals/services/widget_service.dart';
+import 'package:totals/utils/account_balance_resolver.dart';
 import 'package:totals/utils/text_utils.dart';
 
 class TransactionTotals {
@@ -285,55 +286,7 @@ class TransactionProvider with ChangeNotifier {
       groupedAccounts[account.bank]!.add(account);
     }
 
-    // Calculate Bank Summaries
-    _bankSummaries = groupedAccounts.entries.map((entry) {
-      final bankId = entry.key;
-      final accounts = entry.value;
-
-      // Filter transactions for this bank (using valid transactions only)
-      var bankTransactions =
-          validTransactions.where((t) => t.bankId == bankId).toList();
-
-      double totalDebit = 0.0;
-      double totalCredit = 0.0;
-      double cashBalance = 0.0;
-
-      for (var t in bankTransactions) {
-        double amount = t.amount;
-        final skip = _isSelfTransfer(t) ||
-            _categoryById[t.categoryId]?.uncategorized == true;
-        if (t.type == "DEBIT") {
-          cashBalance -= amount;
-          if (!skip) {
-            totalDebit += amount;
-          }
-        } else if (t.type == "CREDIT") {
-          cashBalance += amount;
-          if (!skip) {
-            totalCredit += amount;
-          }
-        }
-      }
-
-      double settledBalance =
-          accounts.fold(0.0, (sum, a) => sum + (a.settledBalance ?? 0.0));
-      double pendingCredit =
-          accounts.fold(0.0, (sum, a) => sum + (a.pendingCredit ?? 0.0));
-      final isCashBank = bankId == CashConstants.bankId;
-      double totalBalance = isCashBank
-          ? accounts.fold(0.0, (sum, a) => sum + a.balance) + cashBalance
-          : accounts.fold(0.0, (sum, a) => sum + a.balance);
-
-      return BankSummary(
-        bankId: bankId,
-        totalCredit: totalCredit,
-        totalDebit: totalDebit,
-        settledBalance: settledBalance,
-        pendingCredit: pendingCredit,
-        totalBalance: totalBalance,
-        accountCount: accounts.length,
-      );
-    }).toList();
+    final resolvedAccountBalances = <String, double>{};
 
     // Calculate Account Summaries
     _accountSummaries = _accounts.map((account) {
@@ -411,8 +364,16 @@ class TransactionProvider with ChangeNotifier {
       }
 
       final isCashAccount = account.bank == CashConstants.bankId;
-      final accountBalance =
-          isCashAccount ? account.balance + cashBalance : account.balance;
+      final bankAccountCount = groupedAccounts[account.bank]?.length ?? 0;
+      final accountBalance = resolveDisplayedAccountBalance(
+        account: account,
+        accountTransactions: accountTransactions,
+        bankAccountCount: bankAccountCount,
+        cashBalanceDelta: cashBalance,
+        isCashAccount: isCashAccount,
+      );
+      resolvedAccountBalances[accountBalanceResolverKey(account)] =
+          accountBalance;
 
       return AccountSummary(
         bankId: account.bank,
@@ -424,6 +385,61 @@ class TransactionProvider with ChangeNotifier {
         settledBalance: account.settledBalance ?? 0.0,
         balance: accountBalance,
         pendingCredit: account.pendingCredit ?? 0.0,
+      );
+    }).toList();
+
+    // Calculate Bank Summaries
+    _bankSummaries = groupedAccounts.entries.map((entry) {
+      final bankId = entry.key;
+      final accounts = entry.value;
+
+      // Filter transactions for this bank (using valid transactions only)
+      final bankTransactions =
+          validTransactions.where((t) => t.bankId == bankId).toList();
+
+      double totalDebit = 0.0;
+      double totalCredit = 0.0;
+      double cashBalance = 0.0;
+
+      for (var t in bankTransactions) {
+        double amount = t.amount;
+        final skip = _isSelfTransfer(t) ||
+            _categoryById[t.categoryId]?.uncategorized == true;
+        if (t.type == "DEBIT") {
+          cashBalance -= amount;
+          if (!skip) {
+            totalDebit += amount;
+          }
+        } else if (t.type == "CREDIT") {
+          cashBalance += amount;
+          if (!skip) {
+            totalCredit += amount;
+          }
+        }
+      }
+
+      double settledBalance =
+          accounts.fold(0.0, (sum, a) => sum + (a.settledBalance ?? 0.0));
+      double pendingCredit =
+          accounts.fold(0.0, (sum, a) => sum + (a.pendingCredit ?? 0.0));
+      final isCashBank = bankId == CashConstants.bankId;
+      final hasSingleNonCashAccount = !isCashBank && accounts.length == 1;
+      final totalBalance = isCashBank
+          ? accounts.fold(0.0, (sum, a) => sum + a.balance) + cashBalance
+          : hasSingleNonCashAccount
+              ? resolvedAccountBalances[
+                      accountBalanceResolverKey(accounts.first)] ??
+                  accounts.first.balance
+              : accounts.fold(0.0, (sum, a) => sum + a.balance);
+
+      return BankSummary(
+        bankId: bankId,
+        totalCredit: totalCredit,
+        totalDebit: totalDebit,
+        settledBalance: settledBalance,
+        pendingCredit: pendingCredit,
+        totalBalance: totalBalance,
+        accountCount: accounts.length,
       );
     }).toList();
 

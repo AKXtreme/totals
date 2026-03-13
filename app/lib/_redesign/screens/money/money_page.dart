@@ -472,9 +472,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     final category = provider.getCategoryById(transaction.categoryId);
     final isSelfTransfer = provider.isSelfTransfer(transaction);
     final isMisc = category?.uncategorized == true;
-    final categoryLabel = isSelfTransfer
-        ? 'Self'
-        : (category?.name ?? 'Categorize');
+    final categoryLabel =
+        isSelfTransfer ? 'Self' : (category?.name ?? 'Categorize');
     final isCategorized = isSelfTransfer || category != null;
     final isCredit = transaction.type == 'CREDIT';
 
@@ -510,6 +509,57 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     );
   }
 
+  List<Transaction> _transactionsForHeatmapDay(
+    DateTime day,
+    TransactionProvider provider,
+  ) {
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    final transactions = provider.allTransactions.where((transaction) {
+      final dt = _parseTransactionTime(transaction.time);
+      if (dt == null) return false;
+      return !dt.isBefore(start) && dt.isBefore(end);
+    }).toList()
+      ..sort((a, b) {
+        final aTime = _parseTransactionTime(a.time);
+        final bTime = _parseTransactionTime(b.time);
+        if (aTime == null && bTime == null) return 0;
+        if (aTime == null) return 1;
+        if (bTime == null) return -1;
+        return bTime.compareTo(aTime);
+      });
+    return transactions;
+  }
+
+  Future<void> _openHeatmapDayLedger(
+    DateTime day,
+    TransactionProvider provider,
+  ) async {
+    final transactions = _transactionsForHeatmapDay(day, provider);
+    final derivedBalancesByReference = _deriveCashBalancesByReference(
+      allTxns: provider.allTransactions,
+      accountSummaries: provider.accountSummaries,
+    );
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => FractionallySizedBox(
+        heightFactor: 0.86,
+        child: _HeatmapDayLedgerSheet(
+          date: day,
+          transactions: transactions,
+          showBalance: _showAccountBalances,
+          derivedBalancesByReference: derivedBalancesByReference,
+          mode: _analyticsHeatmapMode,
+          onTransactionTap: (transaction) =>
+              _openTransactionCategorySheet(provider, transaction),
+        ),
+      ),
+    );
+  }
+
   List<Widget> _buildAnalyticsSlivers(TransactionProvider provider) {
     final snapshot = _buildAnalyticsSnapshot(provider);
     final heatmapFocusMonth =
@@ -535,6 +585,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                     _shiftAnalyticsHeatmapPeriod(heatmapFocusMonth, 1),
                 onToggleView: () =>
                     _toggleAnalyticsHeatmapView(heatmapFocusMonth),
+                onDaySelected: (date) => _openHeatmapDayLedger(date, provider),
                 onMonthSelected: _selectAnalyticsHeatmapMonth,
               ),
               const SizedBox(height: 14),
@@ -930,8 +981,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                         child: _LedgerTransactionEntry(
                           transaction: entry.transaction,
                           showBalance: _showAccountBalances,
-                          derivedBalance:
-                              derivedCashBalancesByReference[entry.transaction.reference],
+                          derivedBalance: derivedCashBalancesByReference[
+                              entry.transaction.reference],
                         ),
                       ),
                     ),
@@ -2291,6 +2342,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
   final VoidCallback onPrevious;
   final VoidCallback onNext;
   final VoidCallback onToggleView;
+  final ValueChanged<DateTime>? onDaySelected;
   final ValueChanged<DateTime> onMonthSelected;
 
   const _AnalyticsHeatmapCard({
@@ -2302,6 +2354,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
     required this.onPrevious,
     required this.onNext,
     required this.onToggleView,
+    this.onDaySelected,
     required this.onMonthSelected,
   });
 
@@ -2401,6 +2454,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
               now: now,
               valuesByDay: valuesByBucket,
               maxMagnitude: maxMagnitude,
+              onDaySelected: onDaySelected,
             ),
           ] else ...[
             _buildMonthlyGrid(
@@ -2474,6 +2528,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
     required DateTime now,
     required Map<int, double> valuesByDay,
     required double maxMagnitude,
+    ValueChanged<DateTime>? onDaySelected,
   }) {
     final daysInMonth =
         DateTime(visibleMonth.year, visibleMonth.month + 1, 0).day;
@@ -2507,6 +2562,11 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
           value: value,
           maxMagnitude: maxMagnitude,
           isCurrent: isCurrentDay,
+          onTap: onDaySelected == null
+              ? null
+              : () => onDaySelected(
+                    DateTime(visibleMonth.year, visibleMonth.month, day),
+                  ),
         );
       },
     );
@@ -2566,8 +2626,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
     final hasValue = value.abs() > 0.001;
     final intensity =
         maxMagnitude > 0 ? (value.abs() / maxMagnitude).clamp(0.0, 1.0) : 0.0;
-    final baseValueColor =
-        value >= 0 ? AppColors.incomeSuccess : AppColors.red;
+    final baseValueColor = value >= 0 ? AppColors.incomeSuccess : AppColors.red;
 
     var backgroundColor = Colors.transparent;
     if (isSelected) {
@@ -2588,9 +2647,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
         : (isSelected ? AppColors.borderColor(context) : Colors.transparent);
     final primaryTextColor = hasValue
         ? baseValueColor
-        : (isCurrent
-              ? AppColors.primaryLight
-              : AppColors.textPrimary(context));
+        : (isCurrent ? AppColors.primaryLight : AppColors.textPrimary(context));
 
     final cell = LayoutBuilder(
       builder: (context, constraints) {
@@ -2598,13 +2655,13 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
             constraints.maxHeight < 32 || constraints.maxWidth < 36;
         final isVeryCompact =
             constraints.maxHeight < 28 || constraints.maxWidth < 32;
-        final showValue =
-            hasValue && constraints.maxHeight >= 30 && constraints.maxWidth >= 34;
+        final showValue = hasValue &&
+            constraints.maxHeight >= 30 &&
+            constraints.maxWidth >= 34;
         final effectiveHorizontalPadding = isVeryCompact ? 2.0 : 4.0;
         final effectiveVerticalPadding = isCompact ? 3.0 : 6.0;
-        final effectiveLabelFontSize = isVeryCompact
-            ? math.max(11.0, labelFontSize - 2.0)
-            : labelFontSize;
+        final effectiveLabelFontSize =
+            isVeryCompact ? math.max(11.0, labelFontSize - 2.0) : labelFontSize;
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 180),
@@ -2740,7 +2797,8 @@ class _AnalyticsModeChip extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? AppColors.white : AppColors.textSecondary(context),
+            color:
+                selected ? AppColors.white : AppColors.textSecondary(context),
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
@@ -3333,9 +3391,11 @@ class _AnalyticsSpendingByDayCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: List.generate(7, (index) {
                 final value = snapshot.weekdayExpenseTotals[index];
-                final ratio = maxValue > 0 ? (value / maxValue).clamp(0.0, 1.0) : 0.0;
+                final ratio =
+                    maxValue > 0 ? (value / maxValue).clamp(0.0, 1.0) : 0.0;
                 final barHeight = 10 + (ratio * 52);
-                final isPeak = index == snapshot.peakWeekdayIndex && maxValue > 0;
+                final isPeak =
+                    index == snapshot.peakWeekdayIndex && maxValue > 0;
                 return Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 3),
@@ -3351,7 +3411,10 @@ class _AnalyticsSpendingByDayCard extends StatelessWidget {
                               end: Alignment.bottomCenter,
                               colors: isPeak
                                   ? const [Color(0xFF4ADE80), Color(0xFF22C55E)]
-                                  : const [Color(0xFF7C83EA), Color(0xFF5B60D9)],
+                                  : const [
+                                      Color(0xFF7C83EA),
+                                      Color(0xFF5B60D9)
+                                    ],
                             ),
                             borderRadius: BorderRadius.circular(7),
                           ),
@@ -3800,8 +3863,8 @@ class _SelectionBar extends StatelessWidget {
           const SizedBox(width: 16),
           GestureDetector(
             onTap: onClear,
-            child:
-                Icon(AppIcons.close_rounded, size: 20, color: AppColors.slate600),
+            child: Icon(AppIcons.close_rounded,
+                size: 20, color: AppColors.slate600),
           ),
         ],
       ),
@@ -4091,6 +4154,282 @@ class _EmptyTransactions extends StatelessWidget {
 class _LedgerFlatItem {
   final Transaction transaction;
   const _LedgerFlatItem(this.transaction);
+}
+
+class _HeatmapDayLedgerSheet extends StatelessWidget {
+  final DateTime date;
+  final List<Transaction> transactions;
+  final bool showBalance;
+  final Map<String, double> derivedBalancesByReference;
+  final _AnalyticsHeatmapMode mode;
+  final ValueChanged<Transaction> onTransactionTap;
+
+  const _HeatmapDayLedgerSheet({
+    required this.date,
+    required this.transactions,
+    required this.showBalance,
+    required this.derivedBalancesByReference,
+    required this.mode,
+    required this.onTransactionTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final weekdayLabel = DateFormat('EEEE').format(date);
+    var incomeTotal = 0.0;
+    var expenseTotal = 0.0;
+    for (final transaction in transactions) {
+      if (transaction.type == 'CREDIT') {
+        incomeTotal += transaction.amount;
+      } else if (transaction.type == 'DEBIT') {
+        expenseTotal += transaction.amount;
+      }
+    }
+    final netTotal = incomeTotal - expenseTotal;
+    final transactionLabel =
+        '${_formatCount(transactions.length)} transaction${transactions.length == 1 ? '' : 's'}';
+    final modeLabel = switch (mode) {
+      _AnalyticsHeatmapMode.all => 'All',
+      _AnalyticsHeatmapMode.expense => 'Expense',
+      _AnalyticsHeatmapMode.income => 'Income',
+    };
+    final netPrefix = netTotal >= 0 ? '+' : '-';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.background(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: SafeArea(
+        top: false,
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color:
+                      AppColors.textTertiary(context).withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _formatDateHeader(date),
+                          style: TextStyle(
+                            color: AppColors.textPrimary(context),
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$weekdayLabel • $transactionLabel',
+                          style: TextStyle(
+                            color: AppColors.textSecondary(context),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardColor(context),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: AppColors.borderColor(context)),
+                    ),
+                    child: Text(
+                      'Heatmap: $modeLabel',
+                      style: TextStyle(
+                        color: AppColors.textSecondary(context),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _HeatmapDaySummaryStat(
+                      label: 'Income',
+                      value: '+ETB ${_formatEtbAbbrev(incomeTotal)}',
+                      valueColor: AppColors.incomeSuccess,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _HeatmapDaySummaryStat(
+                      label: 'Expense',
+                      value: '-ETB ${_formatEtbAbbrev(expenseTotal)}',
+                      valueColor: AppColors.red,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _HeatmapDaySummaryStat(
+                      label: 'Net',
+                      value:
+                          '${netPrefix}ETB ${_formatEtbAbbrev(netTotal.abs())}',
+                      valueColor: netTotal >= 0
+                          ? AppColors.incomeSuccess
+                          : AppColors.red,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Ledger',
+                style: TextStyle(
+                  color: AppColors.textPrimary(context),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              height: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              color: AppColors.borderColor(context),
+            ),
+            const SizedBox(height: 4),
+            if (transactions.isEmpty)
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(20, 16, 20, bottomPadding + 16),
+                  child: const Align(
+                    alignment: Alignment.topCenter,
+                    child: _EmptyTransactions(),
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  padding: EdgeInsets.fromLTRB(0, 4, 0, bottomPadding + 12),
+                  itemCount: transactions.length,
+                  itemBuilder: (context, index) {
+                    final transaction = transactions[index];
+                    final lineColor = AppColors.borderColor(context);
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(
+                              width: 10,
+                              child: Center(
+                                child: Container(
+                                  width: 1.5,
+                                  color: lineColor,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () => onTransactionTap(transaction),
+                                  child: _LedgerTransactionEntry(
+                                    transaction: transaction,
+                                    showBalance: showBalance,
+                                    derivedBalance: derivedBalancesByReference[
+                                        transaction.reference],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeatmapDaySummaryStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color valueColor;
+
+  const _HeatmapDaySummaryStat({
+    required this.label,
+    required this.value,
+    required this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: AppColors.textTertiary(context),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: valueColor,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ─── Ledger Widgets ───────────────────────────────────────────────
@@ -5595,7 +5934,8 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     final banks = List<bank_model.Bank>.from(_assetBanks);
     final initialBank = widget.initialBank;
     if (initialBank != null) {
-      final existingIndex = banks.indexWhere((bank) => bank.id == initialBank.id);
+      final existingIndex =
+          banks.indexWhere((bank) => bank.id == initialBank.id);
       if (existingIndex >= 0) {
         banks[existingIndex] = initialBank;
       } else {
@@ -6056,7 +6396,8 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
             ),
             Expanded(
               child: GridView.builder(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(sheetContext).padding.bottom),
+                padding: EdgeInsets.fromLTRB(16, 16, 16,
+                    16 + MediaQuery.of(sheetContext).padding.bottom),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3,
                   crossAxisSpacing: 14,
@@ -6278,7 +6619,8 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
           // Scrollable content
           Flexible(
             child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottomPadding + navBarPadding),
+              padding: EdgeInsets.fromLTRB(
+                  20, 12, 20, 16 + bottomPadding + navBarPadding),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
