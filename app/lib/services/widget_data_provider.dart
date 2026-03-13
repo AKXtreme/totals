@@ -254,6 +254,14 @@ class WidgetDataProvider {
     return getSpendingForRange(lastWeekStart, lastWeekEnd);
   }
 
+  Future<double> getCurrentWeekSpending({DateTime? now}) async {
+    final anchor = now ?? DateTime.now();
+    return getSpendingForRange(
+      _startOfWeek(anchor),
+      _endOfDay(anchor),
+    );
+  }
+
   Future<double> getLastCompletedMonthSpending({DateTime? now}) async {
     final anchor = now ?? DateTime.now();
     final currentMonthStart = _startOfMonth(anchor);
@@ -261,6 +269,14 @@ class WidgetDataProvider {
     final lastMonthStart = _startOfMonth(lastMonthDate);
     final lastMonthEnd = _endOfDay(lastMonthDate);
     return getSpendingForRange(lastMonthStart, lastMonthEnd);
+  }
+
+  Future<double> getCurrentMonthSpending({DateTime? now}) async {
+    final anchor = now ?? DateTime.now();
+    return getSpendingForRange(
+      _startOfMonth(anchor),
+      _endOfDay(anchor),
+    );
   }
 
   /// Get today's total income (CREDIT transactions only)
@@ -296,4 +312,3 @@ class WidgetDataProvider {
     return '$month/$day, $hour:$minute';
   }
 }
-

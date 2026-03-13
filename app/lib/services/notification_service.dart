@@ -461,8 +461,8 @@ class NotificationService {
     bool ignoreEnabledCheck = false,
   }) async {
     return _showSpendingSummaryNotification(
-      title: "Last week's spending",
-      body: "You spent ${formatNumberWithComma(amount)} ETB last week.",
+      title: "This week's spending",
+      body: "You've spent ${formatNumberWithComma(amount)} ETB this week.",
       id: id,
       ignoreEnabledCheck: ignoreEnabledCheck,
       isEnabled: NotificationSettingsService.instance.isWeeklySummaryEnabled,
@@ -485,8 +485,8 @@ class NotificationService {
     bool ignoreEnabledCheck = false,
   }) async {
     return _showSpendingSummaryNotification(
-      title: "Last month's spending",
-      body: "You spent ${formatNumberWithComma(amount)} ETB last month.",
+      title: "This month's spending",
+      body: "You've spent ${formatNumberWithComma(amount)} ETB this month.",
       id: id,
       ignoreEnabledCheck: ignoreEnabledCheck,
       isEnabled: NotificationSettingsService.instance.isMonthlySummaryEnabled,

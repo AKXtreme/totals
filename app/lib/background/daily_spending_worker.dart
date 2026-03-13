@@ -64,15 +64,16 @@ void callbackDispatcher() {
         }
       }
 
-      final currentWeekStart = _startOfWeek(now);
       final weeklyEnabled = await settings.isWeeklySummaryEnabled();
-      if (weeklyEnabled) {
+      if (weeklyEnabled && isWeeklySummarySendDay(now)) {
+        final currentWeekStart = _startOfWeek(now);
         final lastWeeklySent = await settings.getWeeklySummaryLastSentAt();
         final alreadySentThisWeek = lastWeeklySent != null &&
             !lastWeeklySent.isBefore(currentWeekStart);
         if (!alreadySentThisWeek) {
-          final totalSpent =
-              await spendingProvider.getLastCompletedWeekSpending(now: now);
+          final totalSpent = await spendingProvider.getCurrentWeekSpending(
+            now: now,
+          );
           final shown =
               await NotificationService.instance.showWeeklySpendingNotification(
             amount: totalSpent,
@@ -83,15 +84,16 @@ void callbackDispatcher() {
         }
       }
 
-      final currentMonthStart = DateTime(now.year, now.month, 1);
       final monthlyEnabled = await settings.isMonthlySummaryEnabled();
-      if (monthlyEnabled) {
+      if (monthlyEnabled && isMonthlySummarySendDay(now)) {
+        final currentMonthStart = DateTime(now.year, now.month, 1);
         final lastMonthlySent = await settings.getMonthlySummaryLastSentAt();
         final alreadySentThisMonth = lastMonthlySent != null &&
             !lastMonthlySent.isBefore(currentMonthStart);
         if (!alreadySentThisMonth) {
-          final totalSpent =
-              await spendingProvider.getLastCompletedMonthSpending(now: now);
+          final totalSpent = await spendingProvider.getCurrentMonthSpending(
+            now: now,
+          );
           final shown =
               await NotificationService.instance.showMonthlySpendingNotification(
             amount: totalSpent,
@@ -122,7 +124,21 @@ bool _isAfterOrEqualTimeOfDay(DateTime now, TimeOfDay time) {
   return now.minute >= time.minute;
 }
 
+@visibleForTesting
+bool isWeeklySummarySendDay(DateTime date) {
+  return date.weekday == DateTime.sunday;
+}
+
+@visibleForTesting
+bool isMonthlySummarySendDay(DateTime date) {
+  return date.day == _lastDayOfMonth(date).day;
+}
+
 DateTime _startOfWeek(DateTime date) {
   final startOfDay = DateTime(date.year, date.month, date.day);
   return startOfDay.subtract(Duration(days: date.weekday - DateTime.monday));
+}
+
+DateTime _lastDayOfMonth(DateTime date) {
+  return DateTime(date.year, date.month + 1, 0);
 }
