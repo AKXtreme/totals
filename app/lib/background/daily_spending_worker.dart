@@ -4,10 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:workmanager/workmanager.dart';
-import 'package:totals/repositories/transaction_repository.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/widget_service.dart';
+import 'package:totals/services/widget_data_provider.dart';
 import 'package:totals/services/widget_refresh_settings_service.dart';
 import 'package:totals/services/widget_refresh_state_service.dart';
 
@@ -55,17 +55,7 @@ void callbackDispatcher() {
       final lastSent = await settings.getDailySummaryLastSentAt();
       if (lastSent != null && _isSameDay(lastSent, now)) return true;
 
-      final start = DateTime(now.year, now.month, now.day);
-      final end = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
-
-      final txRepo = TransactionRepository();
-      final debits = await txRepo.getTransactionsByDateRange(
-        start,
-        end,
-        type: 'DEBIT',
-      );
-
-      final totalSpent = debits.fold<double>(0.0, (sum, t) => sum + t.amount);
+      final totalSpent = await WidgetDataProvider().getTodaySpending();
       final shown = await NotificationService.instance.showDailySpendingNotification(
         amount: totalSpent,
       );

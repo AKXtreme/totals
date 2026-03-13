@@ -82,12 +82,19 @@ class WidgetDataProvider {
     final allTransactions = await _transactionRepository.getTransactions();
     final toSelfReferences =
         await _buildSelfTransferToReferences(allTransactions);
-    if (toSelfReferences.isEmpty) return transactions;
+    final manualSelfCategoryIds = await _loadManualSelfCategoryIds();
+    if (toSelfReferences.isEmpty && manualSelfCategoryIds.isEmpty) {
+      return transactions;
+    }
 
     return transactions
         .where((transaction) =>
-            _shouldKeepForWidgetTotals(transaction) ||
-            !toSelfReferences.contains(transaction.reference))
+            (_shouldKeepForWidgetTotals(transaction) ||
+                !toSelfReferences.contains(transaction.reference)) &&
+            !_isManualSelfTransfer(
+              transaction,
+              manualSelfCategoryIds,
+            ))
         .toList();
   }
 
@@ -134,6 +141,24 @@ class WidgetDataProvider {
     }
 
     return toSelfReferences;
+  }
+
+  Future<Set<int>> _loadManualSelfCategoryIds() async {
+    final categories = await _categoryRepository.getCategories();
+    return categories
+        .where((category) => category.name.trim().toLowerCase() == 'self')
+        .map((category) => category.id)
+        .whereType<int>()
+        .toSet();
+  }
+
+  bool _isManualSelfTransfer(
+    Transaction transaction,
+    Set<int> manualSelfCategoryIds,
+  ) {
+    final categoryId = transaction.categoryId;
+    if (categoryId == null) return false;
+    return manualSelfCategoryIds.contains(categoryId);
   }
 
   Future<List<CategoryExpense>> _buildCategoryBreakdown(
@@ -219,6 +244,5 @@ class WidgetDataProvider {
     return '$month/$day, $hour:$minute';
   }
 }
-
 
 

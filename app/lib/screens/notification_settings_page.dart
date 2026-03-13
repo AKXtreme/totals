@@ -4,10 +4,10 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/models/category.dart';
 import 'package:totals/repositories/category_repository.dart';
-import 'package:totals/repositories/transaction_repository.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/notification_scheduler.dart';
 import 'package:totals/services/notification_settings_service.dart';
+import 'package:totals/services/widget_data_provider.dart';
 import 'package:totals/services/widget_refresh_scheduler.dart';
 import 'package:totals/services/widget_refresh_settings_service.dart';
 import 'package:totals/services/widget_refresh_state_service.dart';
@@ -113,17 +113,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
 
   Future<void> _sendTestDailySummary() async {
     try {
-      final now = DateTime.now();
-      final start = DateTime(now.year, now.month, now.day);
-      final end = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
-
-      final txRepo = TransactionRepository();
-      final debits = await txRepo.getTransactionsByDateRange(
-        start,
-        end,
-        type: 'DEBIT',
-      );
-      final totalSpent = debits.fold<double>(0.0, (sum, t) => sum + t.amount);
+      final totalSpent = await WidgetDataProvider().getTodaySpending();
       final shown =
           await NotificationService.instance.showDailySpendingTestNotification(
         amount: totalSpent,
