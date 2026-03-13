@@ -18,6 +18,7 @@ import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/services/widget_service.dart';
 import 'package:totals/repositories/profile_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:totals/utils/transaction_duplicate_detector.dart';
 
 enum ParseStatus {
   success,
@@ -105,6 +106,7 @@ class SmsService {
   static List<Bank>? _cachedBanks;
   static const String _atmCashCutoffPrefPrefix =
       'atm_cash_transfer_cutoff_iso_profile_';
+  static const int _dashenBankId = 4;
 
   // Callback for foreground-only UI updates.
   ValueChanged<Transaction>? onTransactionSaved;
@@ -500,6 +502,27 @@ class SmsService {
         "debug: Removed ${staleReferences.length} historical ATM cash transfer(s) before cutoff");
   }
 
+  static bool _isDashenExpenseDuplicate(
+    Map<String, dynamic> details,
+    List<Transaction> existingTransactions,
+  ) {
+    final bankId = details['bankId'];
+    final type = (details['type'] ?? '').toString().toUpperCase();
+    final amount = details['amount'];
+    if (bankId != _dashenBankId || type != 'DEBIT' || amount is! num) {
+      return false;
+    }
+
+    return hasExactAmountAndBalanceDuplicate(
+      bankId: bankId,
+      type: type,
+      amount: amount.toDouble(),
+      currentBalance: details['currentBalance']?.toString(),
+      accountNumber: details['accountNumber']?.toString(),
+      existingTransactions: existingTransactions,
+    );
+  }
+
   // Static processing logic so it can be used by background handler too.
   static Future<Transaction?> processMessage(
     String messageBody,
@@ -614,6 +637,21 @@ class SmsService {
       return ParseResult(
         status: ParseStatus.duplicate,
         reason: "Duplicate transaction $newRef",
+      );
+    }
+
+    if (_isDashenExpenseDuplicate(details, existingTx)) {
+      print("debug: Duplicate Dashen debit skipped by amount and balance");
+      if (recordFailure) {
+        await FailedParseRepository().add(FailedParse(
+            address: senderAddress,
+            body: messageBody,
+            reason: "Duplicate Dashen debit by amount and balance",
+            timestamp: DateTime.now().toIso8601String()));
+      }
+      return const ParseResult(
+        status: ParseStatus.duplicate,
+        reason: "Duplicate Dashen debit by amount and balance",
       );
     }
 
