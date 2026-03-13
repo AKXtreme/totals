@@ -16,6 +16,7 @@ import 'package:totals/_redesign/screens/tools_page.dart';
 import 'package:totals/_redesign/widgets/redesign_bottom_nav.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/models/profile.dart';
+import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/budget_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/repositories/profile_repository.dart';
@@ -27,6 +28,7 @@ import 'package:totals/services/notification_intent_bus.dart';
 import 'package:totals/services/sms_service.dart';
 import 'package:totals/services/widget_launch_intent_service.dart';
 import 'package:totals/utils/text_utils.dart';
+import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
 import 'package:totals/widgets/add_cash_transaction_sheet.dart';
 
 class RedesignShell extends StatefulWidget {
@@ -62,6 +64,7 @@ class RedesignShellState extends State<RedesignShell>
   bool _isAuthenticating = false;
   bool _hasInitializedSmsPermissions = false;
   bool _hasCheckedNotificationPermissions = false;
+  String? _pendingNotificationReference;
 
   @override
   void initState() {
@@ -81,9 +84,7 @@ class RedesignShellState extends State<RedesignShell>
       (intent) {
         if (!mounted) return;
         if (intent is CategorizeTransactionIntent) {
-          if (kDebugMode) {
-            print('debug: Redesign: notification categorize intent for ${intent.reference}');
-          }
+          unawaited(_handleNotificationCategorize(intent.reference));
         }
       },
     );
@@ -143,7 +144,11 @@ class RedesignShellState extends State<RedesignShell>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Don't auto-lock on pause — only lock on startup or via manual lockApp().
+    if (state == AppLifecycleState.resumed && _isAuthenticated) {
+      unawaited(
+        Provider.of<TransactionProvider>(context, listen: false).loadData(),
+      );
+    }
   }
 
   bool _shouldBypassSecurity(PlatformException error) {
@@ -237,9 +242,64 @@ class RedesignShellState extends State<RedesignShell>
   void _onAuthSuccess() {
     if (!mounted) return;
     setState(() => _isAuthenticated = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _checkBatteryOptimization();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final pendingReference = _pendingNotificationReference;
+      if (pendingReference != null) {
+        _pendingNotificationReference = null;
+        await _openTransactionFromNotification(pendingReference);
+      }
+
+      if (mounted) {
+        unawaited(_checkBatteryOptimization());
+      }
     });
+  }
+
+  Future<void> _handleNotificationCategorize(String reference) async {
+    if (!_isAuthenticated) {
+      _pendingNotificationReference = reference;
+      await _authenticateIfAvailable();
+      return;
+    }
+
+    await _openTransactionFromNotification(reference);
+  }
+
+  Future<void> _openTransactionFromNotification(String reference) async {
+    if (!mounted) return;
+
+    if (_currentIndex != _homeIndex) {
+      _onTabSelected(_homeIndex);
+    }
+
+    final provider = Provider.of<TransactionProvider>(context, listen: false);
+    await provider.loadData();
+    if (!mounted) return;
+
+    Transaction? match;
+    for (final transaction in provider.allTransactions) {
+      if (transaction.reference == reference) {
+        match = transaction;
+        break;
+      }
+    }
+
+    if (match == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Transaction not found'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    await showTransactionDetailsSheet(
+      context: context,
+      transaction: match,
+      provider: provider,
+    );
   }
 
   Future<void> _authenticateIfAvailable() async {
