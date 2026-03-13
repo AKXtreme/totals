@@ -43,26 +43,65 @@ void callbackDispatcher() {
       if (task != dailySpendingSummaryTask) return true;
 
       final settings = NotificationSettingsService.instance;
-
-      final enabled = await settings.isDailySummaryEnabled();
-      if (!enabled) return true;
+      final spendingProvider = WidgetDataProvider();
+      final scheduledTime = await settings.getDailySummaryTime();
 
       final now = DateTime.now();
-
-      final scheduledTime = await settings.getDailySummaryTime();
       if (!_isAfterOrEqualTimeOfDay(now, scheduledTime)) return true;
 
-      final lastSent = await settings.getDailySummaryLastSentAt();
-      if (lastSent != null && _isSameDay(lastSent, now)) return true;
-
-      final totalSpent = await WidgetDataProvider().getTodaySpending();
-      final shown = await NotificationService.instance.showDailySpendingNotification(
-        amount: totalSpent,
-      );
-
-      if (shown) {
-        await settings.setDailySummaryLastSentAt(now);
+      final dailyEnabled = await settings.isDailySummaryEnabled();
+      if (dailyEnabled) {
+        final lastDailySent = await settings.getDailySummaryLastSentAt();
+        if (lastDailySent == null || !_isSameDay(lastDailySent, now)) {
+          final totalSpent = await spendingProvider.getTodaySpending();
+          final shown =
+              await NotificationService.instance.showDailySpendingNotification(
+            amount: totalSpent,
+          );
+          if (shown) {
+            await settings.setDailySummaryLastSentAt(now);
+          }
+        }
       }
+
+      final currentWeekStart = _startOfWeek(now);
+      final weeklyEnabled = await settings.isWeeklySummaryEnabled();
+      if (weeklyEnabled) {
+        final lastWeeklySent = await settings.getWeeklySummaryLastSentAt();
+        final alreadySentThisWeek = lastWeeklySent != null &&
+            !lastWeeklySent.isBefore(currentWeekStart);
+        if (!alreadySentThisWeek) {
+          final totalSpent =
+              await spendingProvider.getLastCompletedWeekSpending(now: now);
+          final shown =
+              await NotificationService.instance.showWeeklySpendingNotification(
+            amount: totalSpent,
+          );
+          if (shown) {
+            await settings.setWeeklySummaryLastSentAt(now);
+          }
+        }
+      }
+
+      final currentMonthStart = DateTime(now.year, now.month, 1);
+      final monthlyEnabled = await settings.isMonthlySummaryEnabled();
+      if (monthlyEnabled) {
+        final lastMonthlySent = await settings.getMonthlySummaryLastSentAt();
+        final alreadySentThisMonth = lastMonthlySent != null &&
+            !lastMonthlySent.isBefore(currentMonthStart);
+        if (!alreadySentThisMonth) {
+          final totalSpent =
+              await spendingProvider.getLastCompletedMonthSpending(now: now);
+          final shown =
+              await NotificationService.instance.showMonthlySpendingNotification(
+            amount: totalSpent,
+          );
+          if (shown) {
+            await settings.setMonthlySummaryLastSentAt(now);
+          }
+        }
+      }
+
       return true;
     } catch (e) {
       if (kDebugMode) {
@@ -81,4 +120,9 @@ bool _isAfterOrEqualTimeOfDay(DateTime now, TimeOfDay time) {
   if (now.hour > time.hour) return true;
   if (now.hour < time.hour) return false;
   return now.minute >= time.minute;
+}
+
+DateTime _startOfWeek(DateTime date) {
+  final startOfDay = DateTime(date.year, date.month, date.day);
+  return startOfDay.subtract(Duration(days: date.weekday - DateTime.monday));
 }

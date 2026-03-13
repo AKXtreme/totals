@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/models/category.dart';
@@ -26,9 +25,10 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   bool _transactionEnabled = true;
   bool _budgetEnabled = true;
   bool _dailyEnabled = true;
+  bool _weeklyEnabled = false;
+  bool _monthlyEnabled = false;
   TimeOfDay _dailyTime = const TimeOfDay(hour: 20, minute: 0);
   TimeOfDay _widgetRefreshTime = const TimeOfDay(hour: 0, minute: 0);
-  DateTime? _lastDailySummarySentAt;
   List<Category> _allCategories = [];
   List<int> _quickIncomeIds = [];
   List<int> _quickExpenseIds = [];
@@ -44,10 +44,11 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     final tx = await settings.isTransactionNotificationsEnabled();
     final budget = await settings.isBudgetAlertsEnabled();
     final daily = await settings.isDailySummaryEnabled();
+    final weekly = await settings.isWeeklySummaryEnabled();
+    final monthly = await settings.isMonthlySummaryEnabled();
     final time = await settings.getDailySummaryTime();
     final widgetTime =
         await WidgetRefreshSettingsService.instance.getWidgetRefreshTime();
-    final lastSent = await settings.getDailySummaryLastSentAt();
     final categories = await CategoryRepository().getCategories();
     final incomeIds = await settings.getQuickCategorizeIncomeIds();
     final expenseIds = await settings.getQuickCategorizeExpenseIds();
@@ -56,9 +57,10 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       _transactionEnabled = tx;
       _budgetEnabled = budget;
       _dailyEnabled = daily;
+      _weeklyEnabled = weekly;
+      _monthlyEnabled = monthly;
       _dailyTime = time;
       _widgetRefreshTime = widgetTime;
-      _lastDailySummarySentAt = lastSent;
       _allCategories = categories;
       _quickIncomeIds = incomeIds;
       _quickExpenseIds = expenseIds;
@@ -82,7 +84,21 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   Future<void> _setDailyEnabled(bool value) async {
     setState(() => _dailyEnabled = value);
     await NotificationSettingsService.instance.setDailySummaryEnabled(value);
-    await NotificationScheduler.syncDailySummarySchedule();
+    await NotificationScheduler.syncSpendingSummarySchedule();
+    await _load();
+  }
+
+  Future<void> _setWeeklyEnabled(bool value) async {
+    setState(() => _weeklyEnabled = value);
+    await NotificationSettingsService.instance.setWeeklySummaryEnabled(value);
+    await NotificationScheduler.syncSpendingSummarySchedule();
+    await _load();
+  }
+
+  Future<void> _setMonthlyEnabled(bool value) async {
+    setState(() => _monthlyEnabled = value);
+    await NotificationSettingsService.instance.setMonthlySummaryEnabled(value);
+    await NotificationScheduler.syncSpendingSummarySchedule();
     await _load();
   }
 
@@ -94,7 +110,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     if (picked == null) return;
     setState(() => _dailyTime = picked);
     await NotificationSettingsService.instance.setDailySummaryTime(picked);
-    await NotificationScheduler.syncDailySummarySchedule();
+    await NotificationScheduler.syncSpendingSummarySchedule();
     await _load();
   }
 
@@ -131,10 +147,49 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     }
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────
+  Future<void> _sendTestWeeklySummary() async {
+    try {
+      final totalSpent =
+          await WidgetDataProvider().getLastCompletedWeekSpending();
+      final shown =
+          await NotificationService.instance.showWeeklySpendingTestNotification(
+        amount: totalSpent,
+      );
 
-  bool _isSameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
+      if (!mounted) return;
+      _showSnack(
+        shown
+            ? 'Test weekly summary notification sent'
+            : 'Unable to send notification',
+      );
+    } catch (_) {
+      if (!mounted) return;
+      _showSnack('Failed to send test notification');
+    }
+  }
+
+  Future<void> _sendTestMonthlySummary() async {
+    try {
+      final totalSpent =
+          await WidgetDataProvider().getLastCompletedMonthSpending();
+      final shown =
+          await NotificationService.instance.showMonthlySpendingTestNotification(
+        amount: totalSpent,
+      );
+
+      if (!mounted) return;
+      _showSnack(
+        shown
+            ? 'Test monthly summary notification sent'
+            : 'Unable to send notification',
+      );
+    } catch (_) {
+      if (!mounted) return;
+      _showSnack('Failed to send test notification');
+    }
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
 
   List<Category> _categoriesForFlow(String flow) =>
       _allCategories
@@ -600,14 +655,14 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
 
                   const SizedBox(height: 20),
 
-                  // ── Daily summary ───────────────────────────────────
-                  _SectionHeader(label: 'Daily Summary'),
+                  // ── Spending summaries ──────────────────────────────
+                  _SectionHeader(label: 'Spending Summaries'),
                   const SizedBox(height: 10),
 
                   _SettingTile(
                     icon: Icons.summarize_outlined,
                     iconColor: AppColors.blue,
-                    title: "Day's summary",
+                    title: 'Daily summary',
                     subtitle: "Daily 'Today's spending' notification",
                     trailing: Switch(
                       value: _dailyEnabled,
@@ -617,21 +672,67 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                   ),
 
                   _SettingTile(
+                    icon: Icons.view_week_outlined,
+                    iconColor: AppColors.amber,
+                    title: 'Weekly summary',
+                    subtitle:
+                        "Weekly 'Last week's spending' notification",
+                    trailing: Switch(
+                      value: _weeklyEnabled,
+                      onChanged: _setWeeklyEnabled,
+                      activeColor: AppColors.primaryLight,
+                    ),
+                  ),
+
+                  _SettingTile(
+                    icon: Icons.calendar_month_outlined,
+                    iconColor: AppColors.incomeSuccess,
+                    title: 'Monthly summary',
+                    subtitle:
+                        "Monthly 'Last month's spending' notification",
+                    trailing: Switch(
+                      value: _monthlyEnabled,
+                      onChanged: _setMonthlyEnabled,
+                      activeColor: AppColors.primaryLight,
+                    ),
+                  ),
+
+                  _SettingTile(
                     icon: Icons.schedule_rounded,
                     iconColor: AppColors.primaryLight,
                     title: 'Summary time',
-                    subtitle: _dailyTime.format(context),
-                    enabled: _dailyEnabled,
-                    onTap: _dailyEnabled ? _pickDailyTime : null,
+                    subtitle: '${_dailyTime.format(context)} • shared for all summaries',
+                    enabled: _dailyEnabled || _weeklyEnabled || _monthlyEnabled,
+                    onTap: (_dailyEnabled || _weeklyEnabled || _monthlyEnabled)
+                        ? _pickDailyTime
+                        : null,
                   ),
 
                   _SettingTile(
                     icon: Icons.notification_add_rounded,
                     iconColor: AppColors.incomeSuccess,
-                    title: 'Send test summary',
-                    subtitle: 'Send a sample summary notification now',
+                    title: 'Send test daily summary',
+                    subtitle: 'Send a sample daily summary notification now',
                     enabled: _dailyEnabled,
                     onTap: _dailyEnabled ? _sendTestDailySummary : null,
+                  ),
+
+                  _SettingTile(
+                    icon: Icons.notification_add_rounded,
+                    iconColor: AppColors.amber,
+                    title: 'Send test weekly summary',
+                    subtitle: 'Send a sample weekly summary notification now',
+                    enabled: _weeklyEnabled,
+                    onTap: _weeklyEnabled ? _sendTestWeeklySummary : null,
+                  ),
+
+                  _SettingTile(
+                    icon: Icons.notification_add_rounded,
+                    iconColor: AppColors.primaryLight,
+                    title: 'Send test monthly summary',
+                    subtitle: 'Send a sample monthly summary notification now',
+                    enabled: _monthlyEnabled,
+                    onTap: _monthlyEnabled ? _sendTestMonthlySummary : null,
                   ),
 
                   const SizedBox(height: 20),

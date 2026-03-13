@@ -14,6 +14,12 @@ class NotificationSettingsService {
   static const _kDailyHour = 'notifications_daily_hour';
   static const _kDailyMinute = 'notifications_daily_minute';
   static const _kDailyLastSentEpochMs = 'notifications_daily_last_sent_epoch_ms';
+  static const _kWeeklyEnabled = 'notifications_weekly_enabled';
+  static const _kWeeklyLastSentEpochMs =
+      'notifications_weekly_last_sent_epoch_ms';
+  static const _kMonthlyEnabled = 'notifications_monthly_enabled';
+  static const _kMonthlyLastSentEpochMs =
+      'notifications_monthly_last_sent_epoch_ms';
   static const _kAutoCategorizeReceiverEnabled = 'auto_categorize_receiver_enabled';
   static const _kQuickCategorizeIncomeIds = 'quick_categorize_income_ids';
   static const _kQuickCategorizeExpenseIds = 'quick_categorize_expense_ids';
@@ -86,6 +92,66 @@ class NotificationSettingsService {
   Future<void> clearDailySummaryLastSentAt() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kDailyLastSentEpochMs);
+  }
+
+  Future<bool> isWeeklySummaryEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kWeeklyEnabled) ?? false;
+  }
+
+  Future<void> setWeeklySummaryEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kWeeklyEnabled, enabled);
+  }
+
+  Future<DateTime?> getWeeklySummaryLastSentAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getInt(_kWeeklyLastSentEpochMs);
+    if (raw == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(raw);
+  }
+
+  Future<void> setWeeklySummaryLastSentAt(DateTime time) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kWeeklyLastSentEpochMs, time.millisecondsSinceEpoch);
+  }
+
+  Future<void> clearWeeklySummaryLastSentAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kWeeklyLastSentEpochMs);
+  }
+
+  Future<bool> isMonthlySummaryEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kMonthlyEnabled) ?? false;
+  }
+
+  Future<void> setMonthlySummaryEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kMonthlyEnabled, enabled);
+  }
+
+  Future<DateTime?> getMonthlySummaryLastSentAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getInt(_kMonthlyLastSentEpochMs);
+    if (raw == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(raw);
+  }
+
+  Future<void> setMonthlySummaryLastSentAt(DateTime time) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kMonthlyLastSentEpochMs, time.millisecondsSinceEpoch);
+  }
+
+  Future<void> clearMonthlySummaryLastSentAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kMonthlyLastSentEpochMs);
+  }
+
+  Future<bool> isAnySpendingSummaryEnabled() async {
+    return await isDailySummaryEnabled() ||
+        await isWeeklySummaryEnabled() ||
+        await isMonthlySummaryEnabled();
   }
 
   Future<bool> isAutoCategorizeByReceiverEnabled() async {

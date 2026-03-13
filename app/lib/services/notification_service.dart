@@ -25,13 +25,17 @@ class NotificationService {
   static final NotificationService instance = NotificationService._();
 
   static const String _transactionChannelId = 'transactions';
-  static const String _dailySpendingChannelId = 'daily_spending';
+  static const String _spendingSummaryChannelId = 'spending_summaries';
   static const String _accountSyncChannelId = 'account_sync';
   static const String _budgetChannelId = 'budgets';
   static const String _historyPrefsKey = 'notification_history_v1';
   static const int _maxHistoryEntries = 200;
   static const int dailySpendingNotificationId = 9001;
   static const int dailySpendingTestNotificationId = 9002;
+  static const int weeklySpendingNotificationId = 9003;
+  static const int weeklySpendingTestNotificationId = 9004;
+  static const int monthlySpendingNotificationId = 9005;
+  static const int monthlySpendingTestNotificationId = 9006;
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -65,9 +69,9 @@ class NotificationService {
     );
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        _dailySpendingChannelId,
-        "Today's spending",
-        description: "Daily summary of today's spending",
+        _spendingSummaryChannelId,
+        'Spending summaries',
+        description: 'Daily, weekly, and monthly spending summaries',
         importance: Importance.defaultImportance,
       ),
     );
@@ -382,22 +386,20 @@ class NotificationService {
     }
   }
 
-  Future<bool> showDailySpendingNotification({
-    required double amount,
-    int id = dailySpendingNotificationId,
+  Future<bool> _showSpendingSummaryNotification({
+    required String title,
+    required String body,
+    required int id,
+    required Future<bool> Function() isEnabled,
     bool ignoreEnabledCheck = false,
   }) async {
     try {
       await ensureInitialized();
 
       if (!ignoreEnabledCheck) {
-        final enabled =
-            await NotificationSettingsService.instance.isDailySummaryEnabled();
+        final enabled = await isEnabled();
         if (!enabled) return false;
       }
-
-      final title = "Today's spending";
-      final body = "You've spent ${formatNumberWithComma(amount)} ETB today.";
 
       await _plugin.show(
         id,
@@ -405,9 +407,10 @@ class NotificationService {
         body,
         const NotificationDetails(
           android: AndroidNotificationDetails(
-            _dailySpendingChannelId,
-            "Today's spending",
-            channelDescription: "Daily summary of today's spending",
+            _spendingSummaryChannelId,
+            'Spending summaries',
+            channelDescription:
+                'Daily, weekly, and monthly spending summaries',
             importance: Importance.defaultImportance,
             priority: Priority.defaultPriority,
           ),
@@ -415,17 +418,31 @@ class NotificationService {
         ),
       );
       await _recordHistory(
-        channel: _dailySpendingChannelId,
+        channel: _spendingSummaryChannelId,
         title: title,
         body: body,
       );
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print('debug: Failed to show daily spending notification: $e');
+        print('debug: Failed to show spending summary notification: $e');
       }
       return false;
     }
+  }
+
+  Future<bool> showDailySpendingNotification({
+    required double amount,
+    int id = dailySpendingNotificationId,
+    bool ignoreEnabledCheck = false,
+  }) async {
+    return _showSpendingSummaryNotification(
+      title: "Today's spending",
+      body: "You've spent ${formatNumberWithComma(amount)} ETB today.",
+      id: id,
+      ignoreEnabledCheck: ignoreEnabledCheck,
+      isEnabled: NotificationSettingsService.instance.isDailySummaryEnabled,
+    );
   }
 
   Future<bool> showDailySpendingTestNotification({
@@ -434,6 +451,54 @@ class NotificationService {
     return showDailySpendingNotification(
       amount: amount,
       id: dailySpendingTestNotificationId,
+      ignoreEnabledCheck: true,
+    );
+  }
+
+  Future<bool> showWeeklySpendingNotification({
+    required double amount,
+    int id = weeklySpendingNotificationId,
+    bool ignoreEnabledCheck = false,
+  }) async {
+    return _showSpendingSummaryNotification(
+      title: "Last week's spending",
+      body: "You spent ${formatNumberWithComma(amount)} ETB last week.",
+      id: id,
+      ignoreEnabledCheck: ignoreEnabledCheck,
+      isEnabled: NotificationSettingsService.instance.isWeeklySummaryEnabled,
+    );
+  }
+
+  Future<bool> showWeeklySpendingTestNotification({
+    required double amount,
+  }) async {
+    return showWeeklySpendingNotification(
+      amount: amount,
+      id: weeklySpendingTestNotificationId,
+      ignoreEnabledCheck: true,
+    );
+  }
+
+  Future<bool> showMonthlySpendingNotification({
+    required double amount,
+    int id = monthlySpendingNotificationId,
+    bool ignoreEnabledCheck = false,
+  }) async {
+    return _showSpendingSummaryNotification(
+      title: "Last month's spending",
+      body: "You spent ${formatNumberWithComma(amount)} ETB last month.",
+      id: id,
+      ignoreEnabledCheck: ignoreEnabledCheck,
+      isEnabled: NotificationSettingsService.instance.isMonthlySummaryEnabled,
+    );
+  }
+
+  Future<bool> showMonthlySpendingTestNotification({
+    required double amount,
+  }) async {
+    return showMonthlySpendingNotification(
+      amount: amount,
+      id: monthlySpendingTestNotificationId,
       ignoreEnabledCheck: true,
     );
   }

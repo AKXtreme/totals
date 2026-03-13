@@ -53,18 +53,25 @@ class WidgetDataProvider {
         _telebirrMatchService =
             telebirrMatchService ?? TelebirrBankTransferService();
 
-  Future<List<Transaction>> _getTodayTransactionsByType(String type) async {
-    final now = DateTime.now();
-    final startOfDay = DateTime(now.year, now.month, now.day);
-    final endOfDay = startOfDay.add(const Duration(days: 1));
-
+  Future<List<Transaction>> _getTransactionsByTypeForRange(
+    String type,
+    DateTime start,
+    DateTime end,
+  ) async {
     final transactions = await _transactionRepository.getTransactionsByDateRange(
-      startOfDay,
-      endOfDay,
+      start,
+      end,
       type: type,
     );
 
     return _filterOutSelfTransfers(transactions);
+  }
+
+  Future<List<Transaction>> _getTodayTransactionsByType(String type) async {
+    final now = DateTime.now();
+    final startOfDay = _startOfDay(now);
+    final endOfDay = _endOfDay(now);
+    return _getTransactionsByTypeForRange(type, startOfDay, endOfDay);
   }
 
   Future<List<Transaction>> _getTodayDebitTransactions() async {
@@ -73,6 +80,23 @@ class WidgetDataProvider {
 
   Future<List<Transaction>> _getTodayCreditTransactions() async {
     return _getTodayTransactionsByType('CREDIT');
+  }
+
+  DateTime _startOfDay(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  DateTime _endOfDay(DateTime date) {
+    return DateTime(date.year, date.month, date.day, 23, 59, 59, 999);
+  }
+
+  DateTime _startOfWeek(DateTime date) {
+    final startOfDay = _startOfDay(date);
+    return startOfDay.subtract(Duration(days: date.weekday - DateTime.monday));
+  }
+
+  DateTime _startOfMonth(DateTime date) {
+    return DateTime(date.year, date.month, 1);
   }
 
   Future<List<Transaction>> _filterOutSelfTransfers(
@@ -203,12 +227,40 @@ class WidgetDataProvider {
 
   /// Get today's total spending (DEBIT transactions only)
   Future<double> getTodaySpending() async {
-    final transactions = await _getTodayDebitTransactions();
+    final now = DateTime.now();
+    return getSpendingForRange(
+      _startOfDay(now),
+      _endOfDay(now),
+    );
+  }
 
+  Future<double> getSpendingForRange(DateTime start, DateTime end) async {
+    final transactions = await _getTransactionsByTypeForRange(
+      'DEBIT',
+      start,
+      end,
+    );
     return transactions.fold<double>(
       0.0,
       (sum, tx) => sum + tx.amount,
     );
+  }
+
+  Future<double> getLastCompletedWeekSpending({DateTime? now}) async {
+    final anchor = now ?? DateTime.now();
+    final currentWeekStart = _startOfWeek(anchor);
+    final lastWeekStart = currentWeekStart.subtract(const Duration(days: 7));
+    final lastWeekEnd = _endOfDay(currentWeekStart.subtract(const Duration(days: 1)));
+    return getSpendingForRange(lastWeekStart, lastWeekEnd);
+  }
+
+  Future<double> getLastCompletedMonthSpending({DateTime? now}) async {
+    final anchor = now ?? DateTime.now();
+    final currentMonthStart = _startOfMonth(anchor);
+    final lastMonthDate = currentMonthStart.subtract(const Duration(days: 1));
+    final lastMonthStart = _startOfMonth(lastMonthDate);
+    final lastMonthEnd = _endOfDay(lastMonthDate);
+    return getSpendingForRange(lastMonthStart, lastMonthEnd);
   }
 
   /// Get today's total income (CREDIT transactions only)
@@ -244,5 +296,4 @@ class WidgetDataProvider {
     return '$month/$day, $hour:$minute';
   }
 }
-
 
