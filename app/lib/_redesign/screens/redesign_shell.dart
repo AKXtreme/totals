@@ -598,7 +598,13 @@ class RedesignShellState extends State<RedesignShell>
           extendBody: true,
           body: PageView(
             controller: _pageController,
-            physics: const NeverScrollableScrollPhysics(),
+            physics: const PageScrollPhysics(),
+            onPageChanged: (index) {
+              if (_currentIndex == index || !mounted) return;
+              setState(() {
+                _currentIndex = index;
+              });
+            },
             children: [
               const RedesignHomePage(),
               RedesignMoneyPage(key: _moneyPageKey),

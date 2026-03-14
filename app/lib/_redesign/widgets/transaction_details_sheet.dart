@@ -14,6 +14,7 @@ Future<void> showTransactionDetailsSheet({
   required Transaction transaction,
   required TransactionProvider provider,
 }) async {
+  FocusManager.instance.primaryFocus?.unfocus();
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -146,13 +147,29 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
         .toList(growable: false);
   }
 
+  void _dismissComposerState({bool clearDraft = false}) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    _newCategoryFocus.unfocus();
+    if (!_showNewCategoryForm && !_showColorChoices && !clearDraft) return;
+    if (!mounted) return;
+    setState(() {
+      _showNewCategoryForm = false;
+      _showColorChoices = false;
+      if (clearDraft) {
+        _newCategoryController.clear();
+      }
+    });
+  }
+
   Future<void> _setCategory(Category category) async {
     if (category.id == null) return;
+    _dismissComposerState(clearDraft: true);
     await _provider.setCategoryForTransaction(_tx, category);
     if (mounted) Navigator.pop(context);
   }
 
   Future<void> _clearCategory() async {
+    _dismissComposerState(clearDraft: true);
     await _provider.clearCategoryForTransaction(_tx);
     if (mounted) Navigator.pop(context);
   }
@@ -429,7 +446,10 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                     IconButton(
                       icon: const Icon(AppIcons.close, size: 20),
                       color: AppColors.textSecondary(context),
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () {
+                        _dismissComposerState();
+                        Navigator.pop(context);
+                      },
                     ),
                   ],
                 ),
@@ -707,6 +727,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                   textInputAction: TextInputAction.done,
                   onChanged: (_) => setState(() {}),
                   onSubmitted: (_) => _createNewCategoryInline(),
+                  onTapOutside: (_) => _newCategoryFocus.unfocus(),
                   style: TextStyle(
                     color: AppColors.textPrimary(context),
                     fontSize: 14,

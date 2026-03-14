@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
@@ -37,6 +38,10 @@ enum _SubTab { transactions, analytics, ledger }
 enum _AnalyticsHeatmapMode { all, expense, income }
 
 enum _AnalyticsHeatmapView { daily, monthly }
+
+enum _HeatmapSwipeDirection { left, right }
+
+enum _HeatmapTransitionDirection { previous, next, stationary }
 
 final List<bank_model.Bank> _assetBanks = _buildAssetBanks();
 
@@ -129,7 +134,7 @@ class _TransactionFilter {
 }
 
 class RedesignMoneyPageState extends State<RedesignMoneyPage>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   @override
   bool get wantKeepAlive => true;
 
@@ -151,8 +156,24 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   _AnalyticsHeatmapMode _analyticsHeatmapMode = _AnalyticsHeatmapMode.all;
   _AnalyticsHeatmapView _analyticsHeatmapView = _AnalyticsHeatmapView.daily;
   DateTime? _analyticsHeatmapFocusMonth;
+  late final AnimationController _subTabFadeController;
+  late final Animation<double> _subTabFadeAnimation;
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _subTabFadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+    );
+    _subTabFadeAnimation = CurvedAnimation(
+      parent: _subTabFadeController,
+      curve: Curves.easeOutCubic,
+    );
+    _subTabFadeController.value = 1;
+  }
 
   DateTime _normalizeAnalyticsHeatmapMonth(DateTime date) {
     return DateTime(date.year, date.month, 1);
@@ -191,11 +212,33 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     });
   }
 
-  void openAccountsTab() {
-    if (_topTab == _TopTab.accounts) return;
+  void _setSubTab(_SubTab nextTab) {
+    if (_subTab == nextTab) return;
     setState(() {
-      _topTab = _TopTab.accounts;
+      _subTab = nextTab;
+      if (nextTab != _SubTab.transactions) {
+        _selectedRefs.clear();
+      }
     });
+    _subTabFadeController.forward(from: 0);
+    HapticFeedback.selectionClick();
+    if (_activityScrollController.hasClients) {
+      _activityScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _setTopTab(_TopTab nextTab) {
+    if (_topTab == nextTab) return;
+    setState(() => _topTab = nextTab);
+    HapticFeedback.selectionClick();
+  }
+
+  void openAccountsTab() {
+    _setTopTab(_TopTab.accounts);
   }
 
   void _toggleSelection(Transaction transaction) {
@@ -279,6 +322,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
 
   @override
   void dispose() {
+    _subTabFadeController.dispose();
     _searchController.dispose();
     _activityScrollController.dispose();
     super.dispose();
@@ -298,7 +342,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                   padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
                   child: _TopTabBar(
                     selectedTab: _topTab,
-                    onTabChanged: (tab) => setState(() => _topTab = tab),
+                    onTabChanged: _setTopTab,
                   ),
                 ),
                 Divider(
@@ -352,6 +396,76 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       flatItems.addAll(entry.value);
     }
 
+    final dynamicSlivers = <Widget>[
+      if (_subTab == _SubTab.transactions) ...[
+        if (_isSelecting)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              child: _SelectionBar(
+                count: _selectedRefs.length,
+                onDelete: () => _deleteSelected(provider),
+                onClear: _clearSelection,
+              ),
+            ),
+          ),
+        // Keep rendering existing rows during provider reloads so
+        // category updates do not collapse scroll extent and jump to top.
+        if (flatItems.isEmpty && provider.isLoading)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: _LoadingTransactions(),
+            ),
+          )
+        else if (flatItems.isEmpty)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: _EmptyTransactions(),
+            ),
+          )
+        else ...[
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+            sliver: SliverList.builder(
+              itemCount: flatItems.length,
+              itemBuilder: (context, index) {
+                final item = flatItems[index];
+                if (item is String) {
+                  return _DateHeader(label: item);
+                }
+                final transaction = item as Transaction;
+                return _buildTransactionTile(provider, transaction);
+              },
+            ),
+          ),
+          if (totalPages > 1)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: _PaginationBar(
+                  currentPage: safePage,
+                  totalPages: totalPages,
+                  onPageChanged: (page) {
+                    setState(() => _currentPage = page);
+                    _activityScrollController.animateTo(
+                      0,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                    );
+                  },
+                ),
+              ),
+            ),
+        ],
+      ] else if (_subTab == _SubTab.analytics) ...[
+        ..._buildAnalyticsSlivers(provider),
+      ] else if (_subTab == _SubTab.ledger) ...[
+        ..._buildLedgerSlivers(provider),
+      ],
+    ];
+
     return RefreshIndicator(
       color: AppColors.primaryLight,
       onRefresh: provider.loadData,
@@ -373,7 +487,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                   const SizedBox(height: 16),
                   _SubTabBar(
                     selectedTab: _subTab,
-                    onTabChanged: (tab) => setState(() => _subTab = tab),
+                    onTabChanged: _setSubTab,
                   ),
                   if (_subTab == _SubTab.transactions) ...[
                     const SizedBox(height: 12),
@@ -391,73 +505,10 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
               ),
             ),
           ),
-          if (_subTab == _SubTab.transactions) ...[
-            if (_isSelecting)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                  child: _SelectionBar(
-                    count: _selectedRefs.length,
-                    onDelete: () => _deleteSelected(provider),
-                    onClear: _clearSelection,
-                  ),
-                ),
-              ),
-            // Keep rendering existing rows during provider reloads so
-            // category updates do not collapse scroll extent and jump to top.
-            if (flatItems.isEmpty && provider.isLoading)
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
-                  child: _LoadingTransactions(),
-                ),
-              )
-            else if (flatItems.isEmpty)
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
-                  child: _EmptyTransactions(),
-                ),
-              )
-            else ...[
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                sliver: SliverList.builder(
-                  itemCount: flatItems.length,
-                  itemBuilder: (context, index) {
-                    final item = flatItems[index];
-                    if (item is String) {
-                      return _DateHeader(label: item);
-                    }
-                    final transaction = item as Transaction;
-                    return _buildTransactionTile(provider, transaction);
-                  },
-                ),
-              ),
-              if (totalPages > 1)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                    child: _PaginationBar(
-                      currentPage: safePage,
-                      totalPages: totalPages,
-                      onPageChanged: (page) {
-                        setState(() => _currentPage = page);
-                        _activityScrollController.animateTo(
-                          0,
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOut,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-            ],
-          ] else if (_subTab == _SubTab.analytics) ...[
-            ..._buildAnalyticsSlivers(provider),
-          ] else if (_subTab == _SubTab.ledger) ...[
-            ..._buildLedgerSlivers(provider),
-          ],
+          SliverFadeTransition(
+            opacity: _subTabFadeAnimation,
+            sliver: SliverMainAxisGroup(slivers: dynamicSlivers),
+          ),
           const SliverPadding(padding: EdgeInsets.only(bottom: 96)),
         ],
       ),
@@ -2095,21 +2146,26 @@ class _SubTabButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
         padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
           color: selected ? AppColors.primaryDark : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
         alignment: Alignment.center,
-        child: Text(
-          label,
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
           style: TextStyle(
-            color:
-                selected ? AppColors.white : AppColors.textSecondary(context),
+            color: selected
+                ? AppColors.white
+                : AppColors.textSecondary(context),
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
+          child: Text(label),
         ),
       ),
     );
@@ -2333,7 +2389,7 @@ class _AnalyticsMetricCard extends StatelessWidget {
   }
 }
 
-class _AnalyticsHeatmapCard extends StatelessWidget {
+class _AnalyticsHeatmapCard extends StatefulWidget {
   final List<Transaction> transactions;
   final DateTime focusMonth;
   final _AnalyticsHeatmapView view;
@@ -2346,6 +2402,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
   final ValueChanged<DateTime> onMonthSelected;
 
   const _AnalyticsHeatmapCard({
+    super.key,
     required this.transactions,
     required this.focusMonth,
     required this.view,
@@ -2359,10 +2416,250 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
   });
 
   @override
+  State<_AnalyticsHeatmapCard> createState() => _AnalyticsHeatmapCardState();
+}
+
+class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
+  static const double _dragDistanceThreshold = 42;
+  static const double _dragVelocityThreshold = 300;
+
+  double _horizontalDragDistance = 0;
+  _HeatmapTransitionDirection _transitionDirection =
+      _HeatmapTransitionDirection.stationary;
+
+  void _setTransitionDirection(_HeatmapTransitionDirection direction) {
+    if (_transitionDirection == direction) return;
+    setState(() => _transitionDirection = direction);
+  }
+
+  void _goToPreviousPeriod() {
+    _setTransitionDirection(_HeatmapTransitionDirection.previous);
+    HapticFeedback.selectionClick();
+    widget.onPrevious();
+  }
+
+  void _goToNextPeriod() {
+    _setTransitionDirection(_HeatmapTransitionDirection.next);
+    HapticFeedback.selectionClick();
+    widget.onNext();
+  }
+
+  void _handleModeChanged(_AnalyticsHeatmapMode mode) {
+    _setTransitionDirection(_HeatmapTransitionDirection.stationary);
+    widget.onModeChanged(mode);
+  }
+
+  void _handleToggleView() {
+    _setTransitionDirection(_HeatmapTransitionDirection.stationary);
+    widget.onToggleView();
+  }
+
+  void _handleMonthSelected(DateTime month) {
+    _setTransitionDirection(_HeatmapTransitionDirection.stationary);
+    widget.onMonthSelected(month);
+  }
+
+  void _onHorizontalDragStart(DragStartDetails details) {
+    _horizontalDragDistance = 0;
+  }
+
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    _horizontalDragDistance += details.primaryDelta ?? details.delta.dx;
+  }
+
+  void _onHorizontalDragCancel() {
+    _horizontalDragDistance = 0;
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    final direction = _resolveSwipeDirection(
+      distance: _horizontalDragDistance,
+      velocity: details.primaryVelocity ?? 0,
+    );
+    _horizontalDragDistance = 0;
+    if (direction == null) return;
+    if (direction == _HeatmapSwipeDirection.left) {
+      _goToNextPeriod();
+    } else {
+      _goToPreviousPeriod();
+    }
+  }
+
+  _HeatmapSwipeDirection? _resolveSwipeDirection({
+    required double distance,
+    required double velocity,
+  }) {
+    if (distance.abs() < _dragDistanceThreshold &&
+        velocity.abs() < _dragVelocityThreshold) {
+      return null;
+    }
+
+    final signal =
+        velocity.abs() >= _dragVelocityThreshold ? velocity : distance;
+    if (signal == 0) return null;
+    return signal < 0
+        ? _HeatmapSwipeDirection.left
+        : _HeatmapSwipeDirection.right;
+  }
+
+  Tween<Offset> _slideTweenForChild(bool isIncoming) {
+    switch (_transitionDirection) {
+      case _HeatmapTransitionDirection.previous:
+        return Tween<Offset>(
+          begin: isIncoming ? const Offset(-0.16, 0) : const Offset(0.16, 0),
+          end: Offset.zero,
+        );
+      case _HeatmapTransitionDirection.next:
+        return Tween<Offset>(
+          begin: isIncoming ? const Offset(0.16, 0) : const Offset(-0.16, 0),
+          end: Offset.zero,
+        );
+      case _HeatmapTransitionDirection.stationary:
+        return Tween<Offset>(
+          begin: isIncoming ? const Offset(0, 0.03) : Offset.zero,
+          end: Offset.zero,
+        );
+    }
+  }
+
+  Widget _buildAnimatedHeatmapSection({
+    required BuildContext context,
+    required DateTime visibleMonth,
+    required DateTime now,
+    required Map<int, double> valuesByBucket,
+    required double maxMagnitude,
+  }) {
+    final contentKey = ValueKey<String>(
+      'heatmap-${widget.view.name}-${widget.mode.name}-${visibleMonth.year}-${visibleMonth.month}',
+    );
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragStart: _onHorizontalDragStart,
+      onHorizontalDragUpdate: _onHorizontalDragUpdate,
+      onHorizontalDragCancel: _onHorizontalDragCancel,
+      onHorizontalDragEnd: _onHorizontalDragEnd,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 260),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeOutCubic,
+        layoutBuilder: (currentChild, previousChildren) {
+          return Stack(
+            alignment: Alignment.topCenter,
+            children: [
+              ...previousChildren,
+              if (currentChild != null) currentChild,
+            ],
+          );
+        },
+        transitionBuilder: (child, animation) {
+          final isIncoming = child.key == contentKey;
+          return ClipRect(
+            child: FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: animation.drive(
+                  _slideTweenForChild(isIncoming).chain(
+                    CurveTween(curve: Curves.easeOutCubic),
+                  ),
+                ),
+                child: child,
+              ),
+            ),
+          );
+        },
+        child: KeyedSubtree(
+          key: contentKey,
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: _handleToggleView,
+                    behavior: HitTestBehavior.opaque,
+                    child: Text(
+                      widget.view == _AnalyticsHeatmapView.daily
+                          ? _formatMonthYear(visibleMonth)
+                          : '${visibleMonth.year}',
+                      style: TextStyle(
+                        color: AppColors.textPrimary(context),
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  _AnalyticsLegendDot(
+                    color: AppColors.incomeSuccess,
+                    label: 'Income',
+                  ),
+                  const SizedBox(width: 10),
+                  _AnalyticsLegendDot(
+                    color: AppColors.red,
+                    label: 'Expense',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (widget.view == _AnalyticsHeatmapView.daily) ...[
+                const _AnalyticsWeekdayHeader(),
+                const SizedBox(height: 8),
+                _buildDailyGrid(
+                  context: context,
+                  visibleMonth: visibleMonth,
+                  now: now,
+                  valuesByDay: valuesByBucket,
+                  maxMagnitude: maxMagnitude,
+                  onDaySelected: widget.onDaySelected,
+                ),
+              ] else ...[
+                _buildMonthlyGrid(
+                  context: context,
+                  visibleMonth: visibleMonth,
+                  now: now,
+                  valuesByMonth: valuesByBucket,
+                  maxMagnitude: maxMagnitude,
+                ),
+              ],
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _AnalyticsHeatmapNavButton(
+                    icon: AppIcons.chevron_left_rounded,
+                    onTap: _goToPreviousPeriod,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    widget.view == _AnalyticsHeatmapView.daily
+                        ? _formatFullMonthName(visibleMonth)
+                        : '${visibleMonth.year}',
+                    style: TextStyle(
+                      color: AppColors.textSecondary(context),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  _AnalyticsHeatmapNavButton(
+                    icon: AppIcons.chevron_right_rounded,
+                    onTap: _goToNextPeriod,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final visibleMonth = DateTime(focusMonth.year, focusMonth.month, 1);
+    final visibleMonth =
+        DateTime(widget.focusMonth.year, widget.focusMonth.month, 1);
     final now = DateTime.now();
-    final valuesByBucket = view == _AnalyticsHeatmapView.daily
+    final valuesByBucket = widget.view == _AnalyticsHeatmapView.daily
         ? _buildDailyValues(visibleMonth)
         : _buildMonthlyValues(visibleMonth.year);
     final maxMagnitude = valuesByBucket.values.fold<double>(
@@ -2398,98 +2695,31 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
               const Spacer(),
               _AnalyticsModeChip(
                 label: 'All',
-                selected: mode == _AnalyticsHeatmapMode.all,
-                onTap: () => onModeChanged(_AnalyticsHeatmapMode.all),
+                selected: widget.mode == _AnalyticsHeatmapMode.all,
+                onTap: () => _handleModeChanged(_AnalyticsHeatmapMode.all),
               ),
               const SizedBox(width: 6),
               _AnalyticsModeChip(
                 label: 'Expense',
-                selected: mode == _AnalyticsHeatmapMode.expense,
-                onTap: () => onModeChanged(_AnalyticsHeatmapMode.expense),
+                selected: widget.mode == _AnalyticsHeatmapMode.expense,
+                onTap: () =>
+                    _handleModeChanged(_AnalyticsHeatmapMode.expense),
               ),
               const SizedBox(width: 6),
               _AnalyticsModeChip(
                 label: 'Income',
-                selected: mode == _AnalyticsHeatmapMode.income,
-                onTap: () => onModeChanged(_AnalyticsHeatmapMode.income),
+                selected: widget.mode == _AnalyticsHeatmapMode.income,
+                onTap: () => _handleModeChanged(_AnalyticsHeatmapMode.income),
               ),
             ],
           ),
           const SizedBox(height: 14),
-          Row(
-            children: [
-              GestureDetector(
-                onTap: onToggleView,
-                behavior: HitTestBehavior.opaque,
-                child: Text(
-                  view == _AnalyticsHeatmapView.daily
-                      ? _formatMonthYear(visibleMonth)
-                      : '${visibleMonth.year}',
-                  style: TextStyle(
-                    color: AppColors.textPrimary(context),
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              _AnalyticsLegendDot(
-                color: AppColors.incomeSuccess,
-                label: 'Income',
-              ),
-              const SizedBox(width: 10),
-              _AnalyticsLegendDot(
-                color: AppColors.red,
-                label: 'Expense',
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (view == _AnalyticsHeatmapView.daily) ...[
-            const _AnalyticsWeekdayHeader(),
-            const SizedBox(height: 8),
-            _buildDailyGrid(
-              context: context,
-              visibleMonth: visibleMonth,
-              now: now,
-              valuesByDay: valuesByBucket,
-              maxMagnitude: maxMagnitude,
-              onDaySelected: onDaySelected,
-            ),
-          ] else ...[
-            _buildMonthlyGrid(
-              context: context,
-              visibleMonth: visibleMonth,
-              now: now,
-              valuesByMonth: valuesByBucket,
-              maxMagnitude: maxMagnitude,
-            ),
-          ],
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _AnalyticsHeatmapNavButton(
-                icon: AppIcons.chevron_left_rounded,
-                onTap: onPrevious,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                view == _AnalyticsHeatmapView.daily
-                    ? _formatFullMonthName(visibleMonth)
-                    : '${visibleMonth.year}',
-                style: TextStyle(
-                  color: AppColors.textSecondary(context),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 12),
-              _AnalyticsHeatmapNavButton(
-                icon: AppIcons.chevron_right_rounded,
-                onTap: onNext,
-              ),
-            ],
+          _buildAnimatedHeatmapSection(
+            context: context,
+            visibleMonth: visibleMonth,
+            now: now,
+            valuesByBucket: valuesByBucket,
+            maxMagnitude: maxMagnitude,
           ),
         ],
       ),
@@ -2498,7 +2728,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
 
   Map<int, double> _buildDailyValues(DateTime month) {
     final values = <int, double>{};
-    for (final transaction in transactions) {
+    for (final transaction in widget.transactions) {
       final dt = _parseTransactionTime(transaction.time);
       if (dt == null || dt.year != month.year || dt.month != month.month) {
         continue;
@@ -2512,7 +2742,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
 
   Map<int, double> _buildMonthlyValues(int year) {
     final values = <int, double>{};
-    for (final transaction in transactions) {
+    for (final transaction in widget.transactions) {
       final dt = _parseTransactionTime(transaction.time);
       if (dt == null || dt.year != year) continue;
       final delta = _heatmapDelta(transaction);
@@ -2606,7 +2836,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
           isSelected: isSelectedMonth,
           labelFontSize: 14,
           valueFontSize: 10,
-          onTap: () => onMonthSelected(monthDate),
+          onTap: () => _handleMonthSelected(monthDate),
         );
       },
     );
@@ -2722,7 +2952,7 @@ class _AnalyticsHeatmapCard extends StatelessWidget {
   }
 
   double _heatmapDelta(Transaction transaction) {
-    switch (mode) {
+    switch (widget.mode) {
       case _AnalyticsHeatmapMode.all:
         if (transaction.type == 'CREDIT') return transaction.amount;
         if (transaction.type == 'DEBIT') return -transaction.amount;

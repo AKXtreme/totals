@@ -17,6 +17,9 @@ import 'package:totals/repositories/failed_parse_repository.dart';
 import 'package:totals/repositories/user_account_repository.dart';
 import 'package:totals/services/receiver_category_service.dart';
 import 'package:totals/services/sms_config_service.dart';
+import 'package:totals/utils/transaction_duplicate_detector.dart';
+
+const int _dashenBankId = 4;
 
 class DataExportImportService {
   static const int currentSchemaVersion = 3;
@@ -97,7 +100,10 @@ class DataExportImportService {
       // Import banks (replace - configuration)
       final banksRaw = _asMapList(data['banks']);
       if (banksRaw.isNotEmpty) {
-        final banksList = banksRaw.map(Bank.fromJson).toList();
+        final banksList = banksRaw
+            .map(Bank.fromJson)
+            .map(_normalizeImportedBank)
+            .toList();
 
         if (banksList.isNotEmpty) {
           await db.delete('banks');
@@ -321,6 +327,8 @@ class DataExportImportService {
         if (transactionsList.isNotEmpty) {
           await _transactionRepo.saveAllTransactions(transactionsList);
         }
+
+        await _removeImportedDashenDuplicates();
       }
 
       // Import budgets (append, skip duplicates)
@@ -624,5 +632,78 @@ class DataExportImportService {
         'colors': colors,
       });
     }).toList();
+  }
+
+  Future<void> _removeImportedDashenDuplicates() async {
+    final transactions = await _transactionRepo.getTransactions();
+    if (transactions.isEmpty) return;
+
+    final dashenDebitTransactions = transactions
+        .where((transaction) =>
+            transaction.bankId == _dashenBankId &&
+            (transaction.type ?? '').trim().toUpperCase() == 'DEBIT')
+        .toList(growable: false);
+    if (dashenDebitTransactions.isEmpty) return;
+
+    final dashenAccounts = (await _accountRepo.getAccounts())
+        .where((account) => account.bank == _dashenBankId)
+        .toList(growable: false);
+    final suffixes = buildDashenDeduplicationSuffixes(
+      accountNumbers: dashenAccounts.map((account) => account.accountNumber),
+      transactionAccountNumbers: dashenDebitTransactions
+          .map((transaction) => transaction.accountNumber),
+    );
+    if (suffixes.isEmpty) return;
+
+    final plans = <TransactionDeduplicationPlan>[];
+    final matchMissingAccountNumbers = dashenAccounts.length == 1;
+    for (final suffix in suffixes) {
+      plans.addAll(
+        buildExactAmountAndBalanceDeduplicationPlans(
+          bankId: _dashenBankId,
+          type: 'DEBIT',
+          transactions: transactions,
+          accountSuffix: suffix,
+          matchTransactionsWithoutAccountNumber: matchMissingAccountNumbers,
+        ),
+      );
+    }
+    if (plans.isEmpty) return;
+
+    final dedupedPlans = <String, TransactionDeduplicationPlan>{};
+    for (final plan in plans) {
+      final duplicateRefs = [...plan.duplicateReferences]..sort();
+      final key = '${plan.keeper.reference}|${duplicateRefs.join(",")}';
+      dedupedPlans[key] = plan;
+    }
+
+    for (final plan in dedupedPlans.values) {
+      await _transactionRepo.saveTransaction(
+        plan.mergedKeeper,
+        skipAutoCategorization: true,
+      );
+    }
+    await _transactionRepo.deleteTransactionsByReferences(
+      dedupedPlans.values.expand((plan) => plan.duplicateReferences),
+    );
+  }
+
+  Bank _normalizeImportedBank(Bank bank) {
+    if (bank.id != _dashenBankId ||
+        bank.maskPattern == dashenCanonicalMaskPattern) {
+      return bank;
+    }
+
+    return Bank(
+      id: bank.id,
+      name: bank.name,
+      shortName: bank.shortName,
+      codes: bank.codes,
+      image: bank.image,
+      maskPattern: dashenCanonicalMaskPattern,
+      uniformMasking: bank.uniformMasking,
+      simBased: bank.simBased,
+      colors: bank.colors,
+    );
   }
 }

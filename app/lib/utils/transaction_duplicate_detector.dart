@@ -1,5 +1,8 @@
 import 'package:totals/models/transaction.dart';
 
+const int dashenCanonicalMaskPattern = 3;
+const int dashenLegacyMaskPattern = 4;
+
 class TransactionDeduplicationPlan {
   final Transaction keeper;
   final Transaction mergedKeeper;
@@ -53,11 +56,71 @@ bool hasExactAmountAndBalanceDuplicate({
   return false;
 }
 
+Set<String> buildDashenDeduplicationSuffixes({
+  required Iterable<String> accountNumbers,
+  Iterable<String?> transactionAccountNumbers = const [],
+}) {
+  final normalizedAccounts = accountNumbers
+      .map(_normalizeAccount)
+      .whereType<String>()
+      .toList(growable: false);
+  final suffixes = <String>{};
+
+  if (normalizedAccounts.isNotEmpty) {
+    final canonicalCounts = <String, int>{};
+    for (final account in normalizedAccounts) {
+      final canonicalSuffix =
+          _accountSuffix(account, dashenCanonicalMaskPattern);
+      if (canonicalSuffix == null) continue;
+      canonicalCounts.update(
+        canonicalSuffix,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+    }
+
+    final allowCanonicalFallback = normalizedAccounts.length == 1;
+    for (final account in normalizedAccounts) {
+      final legacySuffix = _accountSuffix(account, dashenLegacyMaskPattern);
+      if (legacySuffix != null) {
+        suffixes.add(legacySuffix);
+      }
+
+      final canonicalSuffix =
+          _accountSuffix(account, dashenCanonicalMaskPattern);
+      if (canonicalSuffix == null) continue;
+      if (allowCanonicalFallback || canonicalCounts[canonicalSuffix] == 1) {
+        suffixes.add(canonicalSuffix);
+      }
+    }
+  }
+
+  if (suffixes.isNotEmpty) {
+    return suffixes;
+  }
+
+  for (final accountNumber in transactionAccountNumbers) {
+    final canonicalSuffix =
+        _accountSuffix(accountNumber, dashenCanonicalMaskPattern);
+    if (canonicalSuffix != null) {
+      suffixes.add(canonicalSuffix);
+    }
+
+    final legacySuffix = _accountSuffix(accountNumber, dashenLegacyMaskPattern);
+    if (legacySuffix != null) {
+      suffixes.add(legacySuffix);
+    }
+  }
+
+  return suffixes;
+}
+
 List<TransactionDeduplicationPlan> buildExactAmountAndBalanceDeduplicationPlans({
   required int bankId,
   required String type,
   required Iterable<Transaction> transactions,
   String? accountSuffix,
+  bool matchTransactionsWithoutAccountNumber = false,
 }) {
   final normalizedType = type.trim().toUpperCase();
   final normalizedSuffix = _normalizeAccount(accountSuffix);
@@ -76,8 +139,11 @@ List<TransactionDeduplicationPlan> buildExactAmountAndBalanceDeduplicationPlans(
 
     final normalizedAccount = _normalizeAccount(transaction.accountNumber);
     if (normalizedSuffix != null) {
-      if (normalizedAccount == null ||
-          !normalizedAccount.endsWith(normalizedSuffix)) {
+      if (normalizedAccount == null) {
+        if (!matchTransactionsWithoutAccountNumber) {
+          continue;
+        }
+      } else if (!normalizedAccount.endsWith(normalizedSuffix)) {
         continue;
       }
     }
@@ -278,6 +344,15 @@ String? _normalizeAccount(String? raw) {
   final cleaned = raw.trim();
   if (cleaned.isEmpty) return null;
   return cleaned;
+}
+
+String? _accountSuffix(String? raw, int maskPattern) {
+  final normalized = _normalizeAccount(raw);
+  if (normalized == null) return null;
+  if (maskPattern > 0 && normalized.length > maskPattern) {
+    return normalized.substring(normalized.length - maskPattern);
+  }
+  return normalized;
 }
 
 String? _pickBetterText(String? current, String? candidate) {

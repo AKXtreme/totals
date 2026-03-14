@@ -15,6 +15,7 @@ import 'package:totals/services/notification_scheduler.dart';
 import 'package:totals/services/widget_service.dart';
 import 'package:totals/services/widget_launch_intent_service.dart';
 import 'package:totals/services/widget_refresh_scheduler.dart';
+import 'package:totals/_redesign/screens/onboarding_page.dart';
 import 'package:totals/_redesign/screens/redesign_shell.dart';
 import 'package:totals/_redesign/theme/theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -87,7 +88,9 @@ void main() async {
   // Read redesign flag from SharedPreferences (persists across restarts)
   final prefs = await SharedPreferences.getInstance();
   final useRedesign = prefs.getBool('use_redesign') ?? true;
-
+  // final hasCompletedOnboarding =
+  //     prefs.getBool('has_completed_onboarding') ?? false;
+  final hasCompletedOnboarding = true;
   if (!kIsWeb) {
     try {
       await Workmanager().initialize(
@@ -95,7 +98,7 @@ void main() async {
         // isInDebugMode: kDebugMode,
         isInDebugMode: false,
       );
-      await NotificationScheduler.syncDailySummarySchedule();
+      await NotificationScheduler.syncSpendingSummarySchedule();
       await WidgetRefreshScheduler.syncWidgetRefreshSchedule();
     } catch (e) {
       // Ignore if not supported on the current platform.
@@ -105,13 +108,21 @@ void main() async {
     }
   }
 
-  runApp(MyApp(useRedesign: useRedesign));
+  runApp(MyApp(
+    useRedesign: useRedesign,
+    showOnboarding: useRedesign && !hasCompletedOnboarding,
+  ));
 }
 
 class MyApp extends StatelessWidget {
   final bool useRedesign;
+  final bool showOnboarding;
 
-  const MyApp({super.key, required this.useRedesign});
+  const MyApp({
+    super.key,
+    required this.useRedesign,
+    this.showOnboarding = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -177,7 +188,11 @@ class MyApp extends StatelessWidget {
                 scale: themeProvider.uiScale,
               );
             },
-            home: useRedesign ? const RedesignShell() : const HomePage(),
+            home: showOnboarding
+                ? const OnboardingPage()
+                : useRedesign
+                    ? const RedesignShell()
+                    : const HomePage(),
           );
         },
       ),
