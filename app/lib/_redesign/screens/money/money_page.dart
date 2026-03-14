@@ -39,10 +39,6 @@ enum _AnalyticsHeatmapMode { all, expense, income }
 
 enum _AnalyticsHeatmapView { daily, monthly }
 
-enum _HeatmapSwipeDirection { left, right }
-
-enum _HeatmapTransitionDirection { previous, next, stationary }
-
 final List<bank_model.Bank> _assetBanks = _buildAssetBanks();
 
 bank_model.Bank _canonicalMpesaBank({int id = 8}) {
@@ -133,6 +129,79 @@ class _TransactionFilter {
   }
 }
 
+class _ProviderContentVersion {
+  final int dataVersion;
+  final bool isLoading;
+
+  const _ProviderContentVersion({
+    required this.dataVersion,
+    required this.isLoading,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is _ProviderContentVersion &&
+        other.dataVersion == dataVersion &&
+        other.isLoading == isLoading;
+  }
+
+  @override
+  int get hashCode => Object.hash(dataVersion, isLoading);
+}
+
+class _ActivityTransactionsViewCacheKey {
+  final int dataVersion;
+  final String searchQuery;
+  final String? type;
+  final int? bankId;
+  final int? categoryId;
+  final int? startDateMillis;
+  final int? endDateMillis;
+  final int currentPage;
+
+  const _ActivityTransactionsViewCacheKey({
+    required this.dataVersion,
+    required this.searchQuery,
+    required this.type,
+    required this.bankId,
+    required this.categoryId,
+    required this.startDateMillis,
+    required this.endDateMillis,
+    required this.currentPage,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is _ActivityTransactionsViewCacheKey &&
+        other.dataVersion == dataVersion &&
+        other.searchQuery == searchQuery &&
+        other.type == type &&
+        other.bankId == bankId &&
+        other.categoryId == categoryId &&
+        other.startDateMillis == startDateMillis &&
+        other.endDateMillis == endDateMillis &&
+        other.currentPage == currentPage;
+  }
+
+  @override
+  int get hashCode => Object.hash(dataVersion, searchQuery, type, bankId,
+      categoryId, startDateMillis, endDateMillis, currentPage);
+}
+
+class _ActivityTransactionsViewData {
+  final int totalPages;
+  final int safePage;
+  final List<Object> flatItems;
+
+  const _ActivityTransactionsViewData({
+    required this.totalPages,
+    required this.safePage,
+    required this.flatItems,
+  });
+}
+
 class RedesignMoneyPageState extends State<RedesignMoneyPage>
     with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   @override
@@ -152,12 +221,14 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   final Set<int> _ledgerBankIds = <int>{};
   final ScrollController _activityScrollController = ScrollController();
   int _currentPage = 0;
-  static const int _pageSize = 50;
+  static const int _pageSize = 20;
   _AnalyticsHeatmapMode _analyticsHeatmapMode = _AnalyticsHeatmapMode.all;
   _AnalyticsHeatmapView _analyticsHeatmapView = _AnalyticsHeatmapView.daily;
   DateTime? _analyticsHeatmapFocusMonth;
   late final AnimationController _subTabFadeController;
   late final Animation<double> _subTabFadeAnimation;
+  _ActivityTransactionsViewCacheKey? _activityTransactionsViewCacheKey;
+  _ActivityTransactionsViewData? _activityTransactionsViewCache;
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
 
@@ -331,34 +402,47 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return Consumer<TransactionProvider>(
-      builder: (context, provider, child) {
-        return Scaffold(
-          backgroundColor: AppColors.background(context),
-          body: SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                  child: _TopTabBar(
-                    selectedTab: _topTab,
-                    onTabChanged: _setTopTab,
-                  ),
-                ),
-                Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: AppColors.borderColor(context)),
-                Expanded(
-                  child: _topTab == _TopTab.activity
-                      ? _buildActivityContent(provider)
-                      : _buildAccountsContent(provider),
-                ),
-              ],
+    return Scaffold(
+      backgroundColor: AppColors.background(context),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: _TopTabBar(
+                selectedTab: _topTab,
+                onTabChanged: _setTopTab,
+              ),
             ),
-          ),
-        );
-      },
+            Divider(
+                height: 1, thickness: 1, color: AppColors.borderColor(context)),
+            Expanded(
+              child: _topTab == _TopTab.activity
+                  ? Selector<TransactionProvider, _ProviderContentVersion>(
+                      selector: (_, provider) => _ProviderContentVersion(
+                        dataVersion: provider.dataVersion,
+                        isLoading: provider.isLoading,
+                      ),
+                      builder: (context, _, __) => _buildActivityContent(
+                          context.read<TransactionProvider>()),
+                    )
+                  : Consumer<AccountSyncStatusService>(
+                      builder: (context, syncStatusService, _) => Selector<
+                          TransactionProvider, _ProviderContentVersion>(
+                        selector: (_, provider) => _ProviderContentVersion(
+                          dataVersion: provider.dataVersion,
+                          isLoading: provider.isLoading,
+                        ),
+                        builder: (context, _, __) => _buildAccountsContent(
+                          context.read<TransactionProvider>(),
+                          syncStatusService,
+                        ),
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -367,34 +451,12 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     final healthScore =
         _computeHealthScore(monthTotals.income, monthTotals.expense);
     final monthAbbrev = _currentMonthAbbrev();
-
-    final transactions = provider.allTransactions;
-    final filtered = _filterTransactions(transactions);
-
-    // Sort filtered transactions by time descending for pagination
-    final sorted = List<Transaction>.from(filtered)
-      ..sort((a, b) {
-        final aTime = _parseTransactionTime(a.time);
-        final bTime = _parseTransactionTime(b.time);
-        if (aTime == null && bTime == null) return 0;
-        if (aTime == null) return 1;
-        if (bTime == null) return -1;
-        return bTime.compareTo(aTime);
-      });
-
-    final totalPages = (sorted.length / _pageSize).ceil().clamp(1, 999999);
-    final safePage = _currentPage.clamp(0, totalPages - 1);
-    final startIndex = safePage * _pageSize;
-    final endIndex = (startIndex + _pageSize).clamp(0, sorted.length);
-    final pageTransactions = sorted.sublist(startIndex, endIndex);
-
-    // Group this page's transactions by date
-    final grouped = _groupByDate(pageTransactions);
-    final flatItems = <Object>[];
-    for (final entry in grouped.entries) {
-      flatItems.add(entry.key);
-      flatItems.addAll(entry.value);
-    }
+    final transactionsViewData = _subTab == _SubTab.transactions
+        ? _resolveActivityTransactionsViewData(provider)
+        : null;
+    final totalPages = transactionsViewData?.totalPages ?? 1;
+    final safePage = transactionsViewData?.safePage ?? 0;
+    final flatItems = transactionsViewData?.flatItems ?? const <Object>[];
 
     final dynamicSlivers = <Widget>[
       if (_subTab == _SubTab.transactions) ...[
@@ -466,51 +528,79 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       ],
     ];
 
-    return RefreshIndicator(
-      color: AppColors.primaryLight,
-      onRefresh: provider.loadData,
-      child: CustomScrollView(
-        controller: _activityScrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Column(
-                children: [
-                  _FinancialHealthCard(
-                    healthScore: healthScore,
-                    monthName: monthAbbrev,
-                    monthIncome: monthTotals.income,
-                    monthExpense: monthTotals.expense,
-                  ),
-                  const SizedBox(height: 16),
-                  _SubTabBar(
-                    selectedTab: _subTab,
-                    onTabChanged: _setSubTab,
-                  ),
-                  if (_subTab == _SubTab.transactions) ...[
-                    const SizedBox(height: 12),
-                    _SearchFilterRow(
-                      controller: _searchController,
-                      onChanged: (value) => setState(() {
-                        _searchQuery = value;
-                        _currentPage = 0;
-                      }),
-                      onFilterTap: () => _openFilterSheet(provider),
-                      activeFilterCount: _filter.activeCount,
-                    ),
-                  ],
-                ],
-              ),
+    return Column(
+      children: [
+        _buildActivityPinnedHeader(
+          provider: provider,
+          healthScore: healthScore,
+          monthAbbrev: monthAbbrev,
+          monthIncome: monthTotals.income,
+          monthExpense: monthTotals.expense,
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            color: AppColors.primaryLight,
+            onRefresh: provider.loadData,
+            child: CustomScrollView(
+              controller: _activityScrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverFadeTransition(
+                  opacity: _subTabFadeAnimation,
+                  sliver: SliverMainAxisGroup(slivers: dynamicSlivers),
+                ),
+                const SliverPadding(padding: EdgeInsets.only(bottom: 96)),
+              ],
             ),
           ),
-          SliverFadeTransition(
-            opacity: _subTabFadeAnimation,
-            sliver: SliverMainAxisGroup(slivers: dynamicSlivers),
-          ),
-          const SliverPadding(padding: EdgeInsets.only(bottom: 96)),
-        ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActivityPinnedHeader({
+    required TransactionProvider provider,
+    required int healthScore,
+    required String monthAbbrev,
+    required double monthIncome,
+    required double monthExpense,
+  }) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.background(context),
+        border: Border(
+          bottom: BorderSide(color: AppColors.borderColor(context)),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+        child: Column(
+          children: [
+            _FinancialHealthCard(
+              healthScore: healthScore,
+              monthName: monthAbbrev,
+              monthIncome: monthIncome,
+              monthExpense: monthExpense,
+            ),
+            const SizedBox(height: 16),
+            _SubTabBar(
+              selectedTab: _subTab,
+              onTabChanged: _setSubTab,
+            ),
+            if (_subTab == _SubTab.transactions) ...[
+              const SizedBox(height: 12),
+              _SearchFilterRow(
+                controller: _searchController,
+                onChanged: (value) => setState(() {
+                  _searchQuery = value;
+                  _currentPage = 0;
+                }),
+                onFilterTap: () => _openFilterSheet(provider),
+                activeFilterCount: _filter.activeCount,
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -1046,11 +1136,71 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     ];
   }
 
-  Widget _buildAccountsContent(TransactionProvider provider) {
+  _ActivityTransactionsViewData _resolveActivityTransactionsViewData(
+    TransactionProvider provider,
+  ) {
+    final cacheKey = _ActivityTransactionsViewCacheKey(
+      dataVersion: provider.dataVersion,
+      searchQuery: _searchQuery,
+      type: _filter.type,
+      bankId: _filter.bankId,
+      categoryId: _filter.categoryId,
+      startDateMillis: _filter.startDate?.millisecondsSinceEpoch,
+      endDateMillis: _filter.endDate?.millisecondsSinceEpoch,
+      currentPage: _currentPage,
+    );
+
+    final cachedData = _activityTransactionsViewCache;
+    if (_activityTransactionsViewCacheKey == cacheKey && cachedData != null) {
+      return cachedData;
+    }
+
+    final filtered = _filterTransactions(provider.allTransactions);
+    final sorted = List<Transaction>.from(filtered)
+      ..sort((a, b) {
+        final aTime = _parseTransactionTime(a.time);
+        final bTime = _parseTransactionTime(b.time);
+        if (aTime == null && bTime == null) return 0;
+        if (aTime == null) return 1;
+        if (bTime == null) return -1;
+        return bTime.compareTo(aTime);
+      });
+
+    final totalPages = (sorted.length / _pageSize).ceil().clamp(1, 999999);
+    final safePage = _currentPage.clamp(0, totalPages - 1);
+    final startIndex = safePage * _pageSize;
+    final endIndex = (startIndex + _pageSize).clamp(0, sorted.length);
+    final pageTransactions = sorted.sublist(startIndex, endIndex);
+
+    final flatItems = <Object>[];
+    String? lastDateKey;
+    for (final transaction in pageTransactions) {
+      final dt = _parseTransactionTime(transaction.time);
+      final dateKey = dt != null ? _formatDateHeader(dt) : 'Unknown Date';
+      if (dateKey != lastDateKey) {
+        flatItems.add(dateKey);
+        lastDateKey = dateKey;
+      }
+      flatItems.add(transaction);
+    }
+
+    final data = _ActivityTransactionsViewData(
+      totalPages: totalPages,
+      safePage: safePage,
+      flatItems: flatItems,
+    );
+    _activityTransactionsViewCacheKey = cacheKey;
+    _activityTransactionsViewCache = data;
+    return data;
+  }
+
+  Widget _buildAccountsContent(
+    TransactionProvider provider,
+    AccountSyncStatusService syncStatusService,
+  ) {
     final summary = provider.summary;
     final bankSummaries = provider.bankSummaries;
     final accountSummaries = provider.accountSummaries;
-    final syncStatusService = context.watch<AccountSyncStatusService>();
     final isOverview = _selectedBankId == null;
 
     // Overview data
@@ -1816,26 +1966,6 @@ String _getBankName(int bankId) {
   }
 }
 
-Map<String, List<Transaction>> _groupByDate(List<Transaction> transactions) {
-  final sorted = List<Transaction>.from(transactions)
-    ..sort((a, b) {
-      final aTime = _parseTransactionTime(a.time);
-      final bTime = _parseTransactionTime(b.time);
-      if (aTime == null && bTime == null) return 0;
-      if (aTime == null) return 1;
-      if (bTime == null) return -1;
-      return bTime.compareTo(aTime);
-    });
-
-  final Map<String, List<Transaction>> grouped = {};
-  for (final txn in sorted) {
-    final dt = _parseTransactionTime(txn.time);
-    final key = dt != null ? _formatDateHeader(dt) : 'Unknown Date';
-    grouped.putIfAbsent(key, () => []).add(txn);
-  }
-  return grouped;
-}
-
 // ─── Widgets ──────────────────────────────────────────────────────
 
 class _TopTabBar extends StatelessWidget {
@@ -2159,9 +2289,8 @@ class _SubTabButton extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
           style: TextStyle(
-            color: selected
-                ? AppColors.white
-                : AppColors.textSecondary(context),
+            color:
+                selected ? AppColors.white : AppColors.textSecondary(context),
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -2420,252 +2549,297 @@ class _AnalyticsHeatmapCard extends StatefulWidget {
 }
 
 class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
-  static const double _dragDistanceThreshold = 42;
-  static const double _dragVelocityThreshold = 300;
+  static const Duration _pageSwipeDuration = Duration(milliseconds: 450);
+  static const double _sectionHeaderHeight = 36;
+  static const double _sectionHeaderSpacing = 10;
+  static const double _weekdayHeaderHeight = 16;
+  static const double _weekdayHeaderSpacing = 8;
+  static const double _sectionFooterSpacing = 10;
+  static const double _sectionFooterHeight = 28;
+  static const double _sectionHeightPadding = 6;
 
-  double _horizontalDragDistance = 0;
-  _HeatmapTransitionDirection _transitionDirection =
-      _HeatmapTransitionDirection.stationary;
+  late final PageController _pageController;
+  late DateTime _visibleMonth;
+  bool _isRecenteringPage = false;
 
-  void _setTransitionDirection(_HeatmapTransitionDirection direction) {
-    if (_transitionDirection == direction) return;
-    setState(() => _transitionDirection = direction);
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: 1);
+    _visibleMonth = _normalizeVisibleMonth(widget.focusMonth);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnalyticsHeatmapCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextVisibleMonth = _normalizeVisibleMonth(widget.focusMonth);
+    if (!_isSameVisibleMonth(_visibleMonth, nextVisibleMonth)) {
+      _visibleMonth = nextVisibleMonth;
+      if (_pageController.hasClients &&
+          (_pageController.page?.round() ?? 1) != 1) {
+        _pageController.jumpToPage(1);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   void _goToPreviousPeriod() {
-    _setTransitionDirection(_HeatmapTransitionDirection.previous);
-    HapticFeedback.selectionClick();
-    widget.onPrevious();
+    _animateToRelativePage(0);
   }
 
   void _goToNextPeriod() {
-    _setTransitionDirection(_HeatmapTransitionDirection.next);
-    HapticFeedback.selectionClick();
-    widget.onNext();
+    _animateToRelativePage(2);
   }
 
   void _handleModeChanged(_AnalyticsHeatmapMode mode) {
-    _setTransitionDirection(_HeatmapTransitionDirection.stationary);
     widget.onModeChanged(mode);
   }
 
   void _handleToggleView() {
-    _setTransitionDirection(_HeatmapTransitionDirection.stationary);
     widget.onToggleView();
   }
 
   void _handleMonthSelected(DateTime month) {
-    _setTransitionDirection(_HeatmapTransitionDirection.stationary);
     widget.onMonthSelected(month);
   }
 
-  void _onHorizontalDragStart(DragStartDetails details) {
-    _horizontalDragDistance = 0;
-  }
-
-  void _onHorizontalDragUpdate(DragUpdateDetails details) {
-    _horizontalDragDistance += details.primaryDelta ?? details.delta.dx;
-  }
-
-  void _onHorizontalDragCancel() {
-    _horizontalDragDistance = 0;
-  }
-
-  void _onHorizontalDragEnd(DragEndDetails details) {
-    final direction = _resolveSwipeDirection(
-      distance: _horizontalDragDistance,
-      velocity: details.primaryVelocity ?? 0,
+  Future<void> _animateToRelativePage(int page) async {
+    if (_isRecenteringPage || !_pageController.hasClients) return;
+    await _pageController.animateToPage(
+      page,
+      duration: _pageSwipeDuration,
+      curve: Curves.easeInOutCubic,
     );
-    _horizontalDragDistance = 0;
-    if (direction == null) return;
-    if (direction == _HeatmapSwipeDirection.left) {
-      _goToNextPeriod();
+  }
+
+  DateTime _normalizeVisibleMonth(DateTime date) {
+    return DateTime(date.year, date.month, 1);
+  }
+
+  bool _isSameVisibleMonth(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month;
+  }
+
+  DateTime _shiftVisibleMonth(DateTime month, int delta) {
+    if (widget.view == _AnalyticsHeatmapView.daily) {
+      return DateTime(month.year, month.month + delta, 1);
+    }
+    return DateTime(month.year + delta, month.month, 1);
+  }
+
+  void _handlePageChanged(int page) {
+    if (_isRecenteringPage || page == 1) return;
+    final delta = page == 0 ? -1 : 1;
+    final nextVisibleMonth = _shiftVisibleMonth(_visibleMonth, delta);
+
+    setState(() {
+      _visibleMonth = nextVisibleMonth;
+      _isRecenteringPage = true;
+    });
+
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(1);
+    }
+
+    setState(() => _isRecenteringPage = false);
+    HapticFeedback.selectionClick();
+    if (delta < 0) {
+      widget.onPrevious();
     } else {
-      _goToPreviousPeriod();
+      widget.onNext();
     }
   }
 
-  _HeatmapSwipeDirection? _resolveSwipeDirection({
-    required double distance,
-    required double velocity,
+  double _heatmapViewportHeight({
+    required double width,
+    required DateTime visibleMonth,
   }) {
-    if (distance.abs() < _dragDistanceThreshold &&
-        velocity.abs() < _dragVelocityThreshold) {
-      return null;
-    }
+    if (width <= 0) return 320;
 
-    final signal =
-        velocity.abs() >= _dragVelocityThreshold ? velocity : distance;
-    if (signal == 0) return null;
-    return signal < 0
-        ? _HeatmapSwipeDirection.left
-        : _HeatmapSwipeDirection.right;
-  }
-
-  Tween<Offset> _slideTweenForChild(bool isIncoming) {
-    switch (_transitionDirection) {
-      case _HeatmapTransitionDirection.previous:
-        return Tween<Offset>(
-          begin: isIncoming ? const Offset(-0.16, 0) : const Offset(0.16, 0),
-          end: Offset.zero,
-        );
-      case _HeatmapTransitionDirection.next:
-        return Tween<Offset>(
-          begin: isIncoming ? const Offset(0.16, 0) : const Offset(-0.16, 0),
-          end: Offset.zero,
-        );
-      case _HeatmapTransitionDirection.stationary:
-        return Tween<Offset>(
-          begin: isIncoming ? const Offset(0, 0.03) : Offset.zero,
-          end: Offset.zero,
-        );
+    double gridHeight;
+    if (widget.view == _AnalyticsHeatmapView.daily) {
+      final daysInMonth =
+          DateTime(visibleMonth.year, visibleMonth.month + 1, 0).day;
+      final startOffset = visibleMonth.weekday - 1;
+      final rowCount = ((startOffset + daysInMonth + 6) ~/ 7).clamp(4, 6);
+      const crossCount = 7;
+      const spacing = 4.0;
+      const aspectRatio = 1.04;
+      final cellWidth = (width - (spacing * (crossCount - 1))) / crossCount;
+      final cellHeight = cellWidth / aspectRatio;
+      gridHeight = (cellHeight * rowCount) + (spacing * (rowCount - 1));
+      return _sectionHeaderHeight +
+          _sectionHeaderSpacing +
+          _weekdayHeaderHeight +
+          _weekdayHeaderSpacing +
+          gridHeight +
+          _sectionFooterSpacing +
+          _sectionFooterHeight +
+          _sectionHeightPadding;
+    } else {
+      const crossCount = 4;
+      const spacing = 6.0;
+      const aspectRatio = 1.35;
+      const rowCount = 3;
+      final cellWidth = (width - (spacing * (crossCount - 1))) / crossCount;
+      final cellHeight = cellWidth / aspectRatio;
+      gridHeight = (cellHeight * rowCount) + (spacing * (rowCount - 1));
+      return _sectionHeaderHeight +
+          _sectionHeaderSpacing +
+          gridHeight +
+          _sectionFooterSpacing +
+          _sectionFooterHeight +
+          _sectionHeightPadding;
     }
   }
 
   Widget _buildAnimatedHeatmapSection({
     required BuildContext context,
-    required DateTime visibleMonth,
     required DateTime now,
-    required Map<int, double> valuesByBucket,
-    required double maxMagnitude,
   }) {
-    final contentKey = ValueKey<String>(
-      'heatmap-${widget.view.name}-${widget.mode.name}-${visibleMonth.year}-${visibleMonth.month}',
-    );
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onHorizontalDragStart: _onHorizontalDragStart,
-      onHorizontalDragUpdate: _onHorizontalDragUpdate,
-      onHorizontalDragCancel: _onHorizontalDragCancel,
-      onHorizontalDragEnd: _onHorizontalDragEnd,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 260),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeOutCubic,
-        layoutBuilder: (currentChild, previousChildren) {
-          return Stack(
-            alignment: Alignment.topCenter,
-            children: [
-              ...previousChildren,
-              if (currentChild != null) currentChild,
-            ],
-          );
-        },
-        transitionBuilder: (child, animation) {
-          final isIncoming = child.key == contentKey;
-          return ClipRect(
-            child: FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: animation.drive(
-                  _slideTweenForChild(isIncoming).chain(
-                    CurveTween(curve: Curves.easeOutCubic),
-                  ),
-                ),
-                child: child,
-              ),
-            ),
-          );
-        },
-        child: KeyedSubtree(
-          key: contentKey,
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: _handleToggleView,
-                    behavior: HitTestBehavior.opaque,
-                    child: Text(
-                      widget.view == _AnalyticsHeatmapView.daily
-                          ? _formatMonthYear(visibleMonth)
-                          : '${visibleMonth.year}',
-                      style: TextStyle(
-                        color: AppColors.textPrimary(context),
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  _AnalyticsLegendDot(
-                    color: AppColors.incomeSuccess,
-                    label: 'Income',
-                  ),
-                  const SizedBox(width: 10),
-                  _AnalyticsLegendDot(
-                    color: AppColors.red,
-                    label: 'Expense',
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (widget.view == _AnalyticsHeatmapView.daily) ...[
-                const _AnalyticsWeekdayHeader(),
-                const SizedBox(height: 8),
-                _buildDailyGrid(
-                  context: context,
-                  visibleMonth: visibleMonth,
-                  now: now,
-                  valuesByDay: valuesByBucket,
-                  maxMagnitude: maxMagnitude,
-                  onDaySelected: widget.onDaySelected,
-                ),
-              ] else ...[
-                _buildMonthlyGrid(
-                  context: context,
-                  visibleMonth: visibleMonth,
-                  now: now,
-                  valuesByMonth: valuesByBucket,
-                  maxMagnitude: maxMagnitude,
-                ),
-              ],
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _AnalyticsHeatmapNavButton(
-                    icon: AppIcons.chevron_left_rounded,
-                    onTap: _goToPreviousPeriod,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    widget.view == _AnalyticsHeatmapView.daily
-                        ? _formatFullMonthName(visibleMonth)
-                        : '${visibleMonth.year}',
-                    style: TextStyle(
-                      color: AppColors.textSecondary(context),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  _AnalyticsHeatmapNavButton(
-                    icon: AppIcons.chevron_right_rounded,
-                    onTap: _goToNextPeriod,
-                  ),
-                ],
-              ),
-            ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final previousMonth = _shiftVisibleMonth(_visibleMonth, -1);
+        final nextMonth = _shiftVisibleMonth(_visibleMonth, 1);
+        final viewportHeight = math.max(
+          _heatmapViewportHeight(
+            width: constraints.maxWidth,
+            visibleMonth: previousMonth,
           ),
-        ),
-      ),
+          math.max(
+            _heatmapViewportHeight(
+              width: constraints.maxWidth,
+              visibleMonth: _visibleMonth,
+            ),
+            _heatmapViewportHeight(
+              width: constraints.maxWidth,
+              visibleMonth: nextMonth,
+            ),
+          ),
+        );
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOutCubic,
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            height: viewportHeight,
+            child: PageView.builder(
+              controller: _pageController,
+              onPageChanged: _handlePageChanged,
+              itemCount: 3,
+              physics: const PageScrollPhysics(),
+              itemBuilder: (context, index) {
+                final pageMonth = _shiftVisibleMonth(_visibleMonth, index - 1);
+                final valuesByBucket =
+                    widget.view == _AnalyticsHeatmapView.daily
+                        ? _buildDailyValues(pageMonth)
+                        : _buildMonthlyValues(pageMonth.year);
+                final maxMagnitude = valuesByBucket.values.fold<double>(
+                  0.0,
+                  (currentMax, value) => math.max(currentMax, value.abs()),
+                );
+
+                return KeyedSubtree(
+                  key: ValueKey<String>(
+                    'heatmap-page-${widget.view.name}-${widget.mode.name}-${pageMonth.year}-${pageMonth.month}',
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          GestureDetector(
+                            onTap: _handleToggleView,
+                            behavior: HitTestBehavior.opaque,
+                            child: Text(
+                              widget.view == _AnalyticsHeatmapView.daily
+                                  ? _formatMonthYear(pageMonth)
+                                  : '${pageMonth.year}',
+                              style: TextStyle(
+                                color: AppColors.textPrimary(context),
+                                fontSize: 28,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          _AnalyticsLegendDot(
+                            color: AppColors.incomeSuccess,
+                            label: 'Income',
+                          ),
+                          const SizedBox(width: 10),
+                          _AnalyticsLegendDot(
+                            color: AppColors.red,
+                            label: 'Expense',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      if (widget.view == _AnalyticsHeatmapView.daily) ...[
+                        const _AnalyticsWeekdayHeader(),
+                        const SizedBox(height: 8),
+                        _buildDailyGrid(
+                          context: context,
+                          visibleMonth: pageMonth,
+                          now: now,
+                          valuesByDay: valuesByBucket,
+                          maxMagnitude: maxMagnitude,
+                          onDaySelected:
+                              index == 1 ? widget.onDaySelected : null,
+                        ),
+                      ] else ...[
+                        _buildMonthlyGrid(
+                          context: context,
+                          visibleMonth: pageMonth,
+                          now: now,
+                          valuesByMonth: valuesByBucket,
+                          maxMagnitude: maxMagnitude,
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _AnalyticsHeatmapNavButton(
+                            icon: AppIcons.chevron_left_rounded,
+                            onTap: _goToPreviousPeriod,
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            widget.view == _AnalyticsHeatmapView.daily
+                                ? _formatFullMonthName(pageMonth)
+                                : '${pageMonth.year}',
+                            style: TextStyle(
+                              color: AppColors.textSecondary(context),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          _AnalyticsHeatmapNavButton(
+                            icon: AppIcons.chevron_right_rounded,
+                            onTap: _goToNextPeriod,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final visibleMonth =
-        DateTime(widget.focusMonth.year, widget.focusMonth.month, 1);
     final now = DateTime.now();
-    final valuesByBucket = widget.view == _AnalyticsHeatmapView.daily
-        ? _buildDailyValues(visibleMonth)
-        : _buildMonthlyValues(visibleMonth.year);
-    final maxMagnitude = valuesByBucket.values.fold<double>(
-      0.0,
-      (currentMax, value) => math.max(currentMax, value.abs()),
-    );
 
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
@@ -2702,8 +2876,7 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
               _AnalyticsModeChip(
                 label: 'Expense',
                 selected: widget.mode == _AnalyticsHeatmapMode.expense,
-                onTap: () =>
-                    _handleModeChanged(_AnalyticsHeatmapMode.expense),
+                onTap: () => _handleModeChanged(_AnalyticsHeatmapMode.expense),
               ),
               const SizedBox(width: 6),
               _AnalyticsModeChip(
@@ -2716,10 +2889,7 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
           const SizedBox(height: 14),
           _buildAnimatedHeatmapSection(
             context: context,
-            visibleMonth: visibleMonth,
             now: now,
-            valuesByBucket: valuesByBucket,
-            maxMagnitude: maxMagnitude,
           ),
         ],
       ),
