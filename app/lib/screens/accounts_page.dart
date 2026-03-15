@@ -156,15 +156,16 @@ class _AccountsPageState extends State<AccountsPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
+        final mediaQuery = MediaQuery.of(context);
         return ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           child: Container(
-            height: MediaQuery.of(context).size.height * 0.85,
+            height: mediaQuery.size.height * 0.85,
             decoration: BoxDecoration(
               color: Theme.of(context).scaffoldBackgroundColor,
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
               child: AddUserAccountForm(
                 onAccountAdded: () {
                   _loadData();
@@ -362,11 +363,11 @@ class _AccountsPageState extends State<AccountsPage> {
                               size: 64,
                               color: colorScheme.onSurfaceVariant,
                             ),
-                          const SizedBox(height: 16),
-                          Text(
-                            _searchQuery.isNotEmpty
-                                ? 'No accounts found'
-                                : 'No accounts yet',
+                            const SizedBox(height: 16),
+                            Text(
+                              _searchQuery.isNotEmpty
+                                  ? 'No accounts found'
+                                  : 'No accounts yet',
                               style: theme.textTheme.titleLarge?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
@@ -402,8 +403,8 @@ class _AccountsPageState extends State<AccountsPage> {
                             return _AccountCard(
                               account: account,
                               bank: bank,
-                              isSelected: _selectedKeys
-                                  .contains(_accountKey(account)),
+                              isSelected:
+                                  _selectedKeys.contains(_accountKey(account)),
                               isSelectionMode: _isSelectionMode,
                               onTap: _isSelectionMode
                                   ? () => _toggleSelection(account)
@@ -558,9 +559,7 @@ class _AccountCard extends StatelessWidget {
                       isSelected
                           ? Icons.check_circle
                           : Icons.radio_button_unchecked,
-                      color: isSelected
-                          ? selectionColor
-                          : colorScheme.outline,
+                      color: isSelected ? selectionColor : colorScheme.outline,
                     )
                   else
                     IconButton(

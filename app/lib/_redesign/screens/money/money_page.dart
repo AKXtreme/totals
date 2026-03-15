@@ -6156,132 +6156,146 @@ class _SetCashAmountSheetState extends State<_SetCashAmountSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final navBarInset = MediaQuery.of(context).padding.bottom;
+    final mediaQuery = MediaQuery.of(context);
+    final bottomInset = mediaQuery.viewInsets.bottom;
+    final navBarInset = mediaQuery.padding.bottom;
+    final bottomPadding = bottomInset + navBarInset + 20;
 
-    return Container(
-      padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + navBarInset + 20),
-      decoration: BoxDecoration(
-        color: AppColors.cardColor(context),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 16),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.slate400,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Text(
-              'Set cash wallet amount',
-              style: TextStyle(
-                color: AppColors.textPrimary(context),
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _controller,
-              autofocus: true,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              style: TextStyle(
-                color: AppColors.textPrimary(context),
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
-              decoration: InputDecoration(
-                labelText: 'Target balance',
-                prefixText: 'ETB ',
-                prefixStyle: TextStyle(
-                  color: AppColors.textSecondary(context),
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-                hintText: '0.00',
-                filled: true,
-                fillColor: AppColors.surfaceColor(context),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: AppColors.borderColor(context)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: AppColors.borderColor(context)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.primaryLight),
-                ),
-              ),
-              validator: (value) {
-                final parsed = _parseAmount(value ?? '');
-                if (parsed == null) return 'Enter a valid amount';
-                if (parsed < 0) return 'Amount cannot be negative';
-                return null;
-              },
-            ),
-            const SizedBox(height: 20),
-            Row(
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.fromLTRB(20, 0, 20, bottomPadding),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(context),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: BorderSide(color: AppColors.borderColor(context)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: Text(
-                      'Cancel',
-                      style: TextStyle(color: AppColors.textSecondary(context)),
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 16),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.slate400,
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      if (!_formKey.currentState!.validate()) return;
-                      final parsed = _parseAmount(_controller.text);
-                      Navigator.pop(context, parsed);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      backgroundColor: AppColors.primaryDark,
-                      foregroundColor: AppColors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text(
-                      'Set amount',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                Text(
+                  'Set cash wallet amount',
+                  style: TextStyle(
+                    color: AppColors.textPrimary(context),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _controller,
+                  autofocus: true,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  style: TextStyle(
+                    color: AppColors.textPrimary(context),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Target balance',
+                    prefixText: 'ETB ',
+                    prefixStyle: TextStyle(
+                      color: AppColors.textSecondary(context),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    hintText: '0.00',
+                    filled: true,
+                    fillColor: AppColors.surfaceColor(context),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                          BorderSide(color: AppColors.borderColor(context)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                          BorderSide(color: AppColors.borderColor(context)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                          const BorderSide(color: AppColors.primaryLight),
+                    ),
+                  ),
+                  validator: (value) {
+                    final parsed = _parseAmount(value ?? '');
+                    if (parsed == null) return 'Enter a valid amount';
+                    if (parsed < 0) return 'Amount cannot be negative';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          side:
+                              BorderSide(color: AppColors.borderColor(context)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(
+                              color: AppColors.textSecondary(context)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          if (!_formKey.currentState!.validate()) return;
+                          final parsed = _parseAmount(_controller.text);
+                          Navigator.pop(context, parsed);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: AppColors.primaryDark,
+                          foregroundColor: AppColors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Set amount',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
               ],
             ),
-            const SizedBox(height: 12),
-          ],
+          ),
         ),
       ),
     );
@@ -6443,7 +6457,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     final selectedBank = _selectedBank();
 
     return Container(
-      padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + navBarInset + 20),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       decoration: BoxDecoration(
         color: AppColors.background(context),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
@@ -6451,6 +6465,8 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       child: Form(
         key: _formKey,
         child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsets.only(bottom: bottomInset + navBarInset),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,

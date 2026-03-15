@@ -21,7 +21,7 @@ import 'package:totals/_redesign/theme/app_icons.dart';
 
 // ── Support links ───────────────────────────────────────────────────────────
 Future<void> _openSupportLink() async {
-  final uri = Uri.parse('https://jami.bio/detached');
+  final uri = Uri.parse('https://www.gurshaplus.com/detached');
   try {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   } catch (e) {

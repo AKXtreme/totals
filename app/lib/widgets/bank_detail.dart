@@ -311,7 +311,8 @@ class _BankDetailState extends State<BankDetail> {
                         label: const Text('Clear wallet'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: scheme.error,
-                          side: BorderSide(color: scheme.error.withOpacity(0.5)),
+                          side:
+                              BorderSide(color: scheme.error.withOpacity(0.5)),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                       ),
@@ -386,59 +387,70 @@ class _SetCashWalletAmountSheetState extends State<_SetCashWalletAmountSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(16, 8, 16, bottomInset + 16),
+    final mediaQuery = MediaQuery.of(context);
+    final bottomInset = mediaQuery.viewInsets.bottom;
+    final bottomPadding = bottomInset + mediaQuery.padding.bottom + 16;
+
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.fromLTRB(16, 8, 16, bottomPadding),
       child: Form(
         key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Set cash wallet amount',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _controller,
-              autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Target balance',
-                prefixText: 'ETB ',
-                hintText: '0.00',
+        child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Set cash wallet amount',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
               ),
-              validator: (value) {
-                final parsed = _parseAmount(value ?? '');
-                if (parsed == null) return 'Enter a valid amount';
-                if (parsed < 0) return 'Amount cannot be negative';
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
-                  ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _controller,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () {
-                      if (!_formKey.currentState!.validate()) return;
-                      final parsed = _parseAmount(_controller.text);
-                      Navigator.of(context).pop(parsed);
-                    },
-                    child: const Text('Set amount'),
-                  ),
+                decoration: const InputDecoration(
+                  labelText: 'Target balance',
+                  prefixText: 'ETB ',
+                  hintText: '0.00',
                 ),
-              ],
-            ),
-          ],
+                validator: (value) {
+                  final parsed = _parseAmount(value ?? '');
+                  if (parsed == null) return 'Enter a valid amount';
+                  if (parsed < 0) return 'Amount cannot be negative';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () {
+                        if (!_formKey.currentState!.validate()) return;
+                        final parsed = _parseAmount(_controller.text);
+                        Navigator.of(context).pop(parsed);
+                      },
+                      child: const Text('Set amount'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );

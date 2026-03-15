@@ -118,12 +118,18 @@ class _DetectedBanksWidgetState extends State<DetectedBanksWidget>
       isScrollControlled: true,
       context: context,
       builder: (context) {
+        final mediaQuery = MediaQuery.of(context);
         return ClipRRect(
           borderRadius: BorderRadius.circular(15),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
-            height: MediaQuery.of(context).size.height * 0.83,
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+            height: mediaQuery.size.height * 0.83,
             child: SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.only(
+                bottom:
+                    mediaQuery.viewInsets.bottom + mediaQuery.padding.bottom,
+              ),
               child: RegisterAccountForm(
                 initialBankId: bank?.id,
                 onSubmit: () {

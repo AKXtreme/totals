@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/models/category.dart';
 import 'package:totals/_redesign/theme/app_icons.dart';
@@ -301,96 +300,23 @@ class TransactionCategoryChip extends StatelessWidget {
   }
 }
 
-// ── Marquee Text ────────────────────────────────────────────────────────────
+// ── Truncated Text ──────────────────────────────────────────────────────────
 
-class TileMarqueeText extends StatefulWidget {
+class TileMarqueeText extends StatelessWidget {
   final String text;
   final TextStyle? style;
 
   const TileMarqueeText({super.key, required this.text, this.style});
 
   @override
-  State<TileMarqueeText> createState() => _TileMarqueeTextState();
-}
-
-class _TileMarqueeTextState extends State<TileMarqueeText>
-    with SingleTickerProviderStateMixin {
-  Ticker? _ticker;
-  final _px = ValueNotifier<double>(0.0);
-  double _scrollDistance = 0;
-  static const _gap = 20.0;
-  static const _pxPerSec = 30.0;
-
-  @override
-  void dispose() {
-    _ticker?.dispose();
-    _px.dispose();
-    super.dispose();
-  }
-
-  void _ensureScroll(double distance) {
-    _scrollDistance = distance;
-    if (_ticker != null) return;
-    _ticker = createTicker((elapsed) {
-      _px.value =
-          (elapsed.inMicroseconds * _pxPerSec / 1000000.0) % _scrollDistance;
-    })
-      ..start();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final tp = TextPainter(
-        text: TextSpan(text: widget.text, style: widget.style),
-        maxLines: 1,
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      if (tp.width <= constraints.maxWidth) {
-        return Text(widget.text, style: widget.style, maxLines: 1);
-      }
-
-      _ensureScroll(tp.width + _gap);
-
-      return SizedBox(
-        width: constraints.maxWidth,
-        height: tp.height,
-        child: ClipRect(
-          child: ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              colors: [
-                Colors.transparent,
-                Colors.white,
-                Colors.white,
-                Colors.transparent,
-              ],
-              stops: [0.0, 0.06, 0.94, 1.0],
-            ).createShader(bounds),
-            blendMode: BlendMode.dstIn,
-            child: OverflowBox(
-              maxWidth: double.infinity,
-              alignment: Alignment.centerLeft,
-              child: ValueListenableBuilder<double>(
-                valueListenable: _px,
-                builder: (context, px, child) => Transform.translate(
-                  offset: Offset(-px, 0),
-                  child: child,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(widget.text, style: widget.style),
-                    const SizedBox(width: _gap),
-                    Text(widget.text, style: widget.style),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    });
+    return Text(
+      text,
+      style: style,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.ellipsis,
+    );
   }
 }
 
