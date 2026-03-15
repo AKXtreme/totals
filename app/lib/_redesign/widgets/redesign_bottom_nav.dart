@@ -6,6 +6,7 @@ class RedesignBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
   final VoidCallback? onMoneyLongPress;
+  final VoidCallback? onToolsLongPress;
   final ValueChanged<Rect>? onProfileLongPressAt;
 
   const RedesignBottomNav({
@@ -13,6 +14,7 @@ class RedesignBottomNav extends StatelessWidget {
     required this.currentIndex,
     required this.onTap,
     this.onMoneyLongPress,
+    this.onToolsLongPress,
     this.onProfileLongPressAt,
   });
 
@@ -64,6 +66,7 @@ class RedesignBottomNav extends StatelessWidget {
               inactiveIcon: AppIcons.grid_view_outlined,
               isActive: currentIndex == 3,
               onTap: () => onTap(3),
+              onLongPress: onToolsLongPress,
             ),
             _NavItem(
               label: 'Profile',
