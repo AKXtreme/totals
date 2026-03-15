@@ -586,9 +586,10 @@ class RedesignShellState extends State<RedesignShell>
       anchorBottomRight,
     ).inflate(4);
     final estimatedMenuHeight = (visibleProfiles.length * rowHeight) + 16.0;
-    final menuTop = (anchorRectInOverlay.top - estimatedMenuHeight - menuVerticalGap)
-        .clamp(8.0, overlayBox.size.height - estimatedMenuHeight - 8.0)
-        .toDouble();
+    final menuTop =
+        (anchorRectInOverlay.top - estimatedMenuHeight - menuVerticalGap)
+            .clamp(8.0, overlayBox.size.height - estimatedMenuHeight - 8.0)
+            .toDouble();
     final menuAnchorRect = Rect.fromLTWH(
       anchorRectInOverlay.left,
       menuTop,
@@ -673,7 +674,8 @@ class RedesignShellState extends State<RedesignShell>
       child: WillPopScope(
         onWillPop: () async {
           if (_currentIndex == _budgetIndex) {
-            final handled = _budgetPageKey.currentState?.handleSystemBack() ?? false;
+            final handled =
+                _budgetPageKey.currentState?.handleSystemBack() ?? false;
             if (handled) return false;
           }
           return true;
@@ -701,6 +703,7 @@ class RedesignShellState extends State<RedesignShell>
           ),
           bottomNavigationBar: RedesignBottomNav(
             currentIndex: _currentIndex,
+            pageController: _pageController,
             onTap: _onTabSelected,
             onMoneyLongPress: _showQuickCashSheet,
             onToolsLongPress: _showQuickAccessAccountsSheet,
@@ -820,12 +823,12 @@ class _QuickAccessAccountsSheetState extends State<_QuickAccessAccountsSheet>
     final media = MediaQuery.of(context);
     final theme = Theme.of(context);
     final isQuickTab = _tabController.index == 0;
-    final maxAvailableHeight = (media.size.height - media.viewInsets.bottom - 12)
-        .clamp(240.0, media.size.height)
-        .toDouble();
-    final sheetHeight = (media.size.height * 0.82)
-        .clamp(240.0, maxAvailableHeight)
-        .toDouble();
+    final maxAvailableHeight =
+        (media.size.height - media.viewInsets.bottom - 12)
+            .clamp(240.0, media.size.height)
+            .toDouble();
+    final sheetHeight =
+        (media.size.height * 0.82).clamp(240.0, maxAvailableHeight).toDouble();
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -943,8 +946,7 @@ class _QuickAccessAccountsSheetState extends State<_QuickAccessAccountsSheet>
                                     ? null
                                     : IconButton(
                                         onPressed: _searchController.clear,
-                                        icon:
-                                            const Icon(Icons.close_rounded),
+                                        icon: const Icon(Icons.close_rounded),
                                       ),
                                 filled: true,
                                 fillColor: AppColors.surfaceColor(context),
