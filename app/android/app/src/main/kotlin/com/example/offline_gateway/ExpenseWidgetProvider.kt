@@ -131,11 +131,7 @@ class ExpenseWidgetProvider : HomeWidgetProvider() {
             views.setTextViewText(R.id.last_updated, lastUpdated)
             views.setTextViewText(
                 R.id.toggle_flow,
-                if (mode.compact) {
-                    if (showIncome) "Income" else "Spending"
-                } else {
-                    if (showIncome) "Show Spending" else "Show Income"
-                }
+                if (showIncome) "Show expense" else "Show income"
             )
 
             val categoryRowIds = listOf(
@@ -297,7 +293,7 @@ class ExpenseWidgetProvider : HomeWidgetProvider() {
         views.setTextViewTextSize(
             R.id.toggle_flow,
             TypedValue.COMPLEX_UNIT_SP,
-            if (mode.compact) 9f else 10f
+            if (mode.compact) 10f else 11f
         )
         views.setTextViewTextSize(
             R.id.expense_total_value,
