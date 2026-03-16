@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/providers/insights_provider.dart';
 import 'package:totals/providers/theme_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/providers/budget_provider.dart';
 import 'package:totals/screens/home_page.dart';
-import 'package:totals/database/migration_helper.dart';
 import 'package:totals/services/account_sync_status_service.dart';
 import 'package:totals/repositories/profile_repository.dart';
 import 'package:workmanager/workmanager.dart';
@@ -90,7 +90,7 @@ void main() async {
   final useRedesign = prefs.getBool('use_redesign') ?? true;
   // final hasCompletedOnboarding =
   //     prefs.getBool('has_completed_onboarding') ?? false;
-  final hasCompletedOnboarding = true;
+  const hasCompletedOnboarding = true;
   if (!kIsWeb) {
     try {
       await Workmanager().initialize(
@@ -182,10 +182,25 @@ class MyApp extends StatelessWidget {
             themeMode: themeProvider.themeMode,
             builder: (context, child) {
               if (child == null) return const SizedBox.shrink();
+              final theme = Theme.of(context);
+              final isDark = theme.brightness == Brightness.dark;
+              final overlayStyle = SystemUiOverlayStyle(
+                statusBarColor: theme.scaffoldBackgroundColor,
+                statusBarIconBrightness:
+                    isDark ? Brightness.light : Brightness.dark,
+                statusBarBrightness:
+                    isDark ? Brightness.dark : Brightness.light,
+                systemNavigationBarColor: theme.scaffoldBackgroundColor,
+                systemNavigationBarIconBrightness:
+                    isDark ? Brightness.light : Brightness.dark,
+              );
               return _buildUiScaledApp(
                 context: context,
-                child: child,
                 scale: themeProvider.uiScale,
+                child: AnnotatedRegion<SystemUiOverlayStyle>(
+                  value: overlayStyle,
+                  child: child,
+                ),
               );
             },
             home: showOnboarding
