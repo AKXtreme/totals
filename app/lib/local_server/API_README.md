@@ -12,6 +12,7 @@ This document describes all available API endpoints in the Totals local server a
   - [Accounts](#accounts-endpoints)
   - [Transactions](#transactions-endpoints)
   - [Summary](#summary-endpoints)
+  - [Categories](#categories-endpoints)
   - [Banks](#banks-endpoints)
   - [Utility](#utility-endpoints)
 - [Examples](#examples)
@@ -21,7 +22,7 @@ This document describes all available API endpoints in the Totals local server a
 
 ## Overview
 
-The Totals local server provides a RESTful API to access your financial data including accounts, transactions, summaries, and bank information. The server runs locally on your device and is accessible from any device on the same WiFi network.
+The Totals local server provides a RESTful API to access your financial data including accounts, transactions, summaries, categories, and bank information. The server runs locally on your device and is accessible from any device on the same WiFi network.
 
 ---
 
@@ -170,7 +171,8 @@ Returns transactions with optional filtering and pagination.
       "bankImage": "assets/images/cbe.png",
       "type": "CREDIT",
       "transactionLink": "https://...",
-      "accountNumber": "1234567890"
+      "accountNumber": "1234567890",
+      "categoryId": 9
     }
   ],
   "total": 150,
@@ -178,6 +180,8 @@ Returns transactions with optional filtering and pagination.
   "offset": 0
 }
 ```
+
+Use `categoryId` with the categories endpoint to resolve the category name and metadata.
 
 **Examples:**
 
@@ -327,6 +331,73 @@ Returns summary for each individual account.
 **Example:**
 ```bash
 curl http://localhost:8080/api/summary/by-account
+```
+
+---
+
+### Categories Endpoints
+
+#### `GET /api/categories`
+
+Returns all categories. You can optionally filter the result by flow.
+
+**Query Parameters:**
+- `flow` (string, optional) - Filter by category flow: `expense` or `income`
+
+**Response:**
+```json
+[
+  {
+    "id": 9,
+    "name": "Rent",
+    "essential": true,
+    "uncategorized": false,
+    "iconKey": "home",
+    "description": "Housing rent and lease payments",
+    "flow": "expense",
+    "recurring": true,
+    "builtIn": true,
+    "builtInKey": "expense_rent",
+    "typeLabel": "Essential"
+  }
+]
+```
+
+**Examples:**
+```bash
+curl http://localhost:8080/api/categories
+curl "http://localhost:8080/api/categories?flow=expense"
+```
+
+---
+
+#### `GET /api/categories/<id>`
+
+Returns a specific category by ID.
+
+**Path Parameters:**
+- `id` (integer) - The category ID
+
+**Response:**
+```json
+{
+  "id": 9,
+  "name": "Rent",
+  "essential": true,
+  "uncategorized": false,
+  "iconKey": "home",
+  "description": "Housing rent and lease payments",
+  "flow": "expense",
+  "recurring": true,
+  "builtIn": true,
+  "builtInKey": "expense_rent",
+  "typeLabel": "Essential"
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/api/categories/9
 ```
 
 ---
