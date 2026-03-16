@@ -506,6 +506,8 @@ class TransactionProvider with ChangeNotifier {
 
       return (t.creditor?.toLowerCase().contains(_searchKey.toLowerCase()) ??
               false) ||
+          (t.receiver?.toLowerCase().contains(_searchKey.toLowerCase()) ??
+              false) ||
           (t.note?.toLowerCase().contains(_searchKey.toLowerCase()) ?? false) ||
           (t.reference.toLowerCase().contains(_searchKey.toLowerCase()));
     }).toList();
@@ -967,6 +969,61 @@ class TransactionProvider with ChangeNotifier {
     final updated = normalizedNote == null || normalizedNote.isEmpty
         ? transaction.copyWith(clearNote: true)
         : transaction.copyWith(note: normalizedNote);
+    final previous = _replaceTransactionLocally(updated);
+    if (previous != null) {
+      _filterTransactions(_allTransactions);
+      _notifyOptimisticChange();
+    }
+
+    try {
+      await _transactionRepo.saveTransaction(
+        updated,
+        skipAutoCategorization: true,
+      );
+    } catch (e) {
+      if (previous != null) {
+        _replaceTransactionLocally(previous);
+        _filterTransactions(_allTransactions);
+        _notifyOptimisticChange();
+      }
+      rethrow;
+    }
+
+    _filterTransactions(_allTransactions);
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
+  Future<void> updateCounterpartyForTransaction(
+    Transaction transaction,
+    String? counterparty,
+  ) async {
+    final normalizedCounterparty = counterparty?.trim();
+    final updatedValue =
+        normalizedCounterparty == null || normalizedCounterparty.isEmpty
+            ? null
+            : normalizedCounterparty;
+    final updated = Transaction(
+      amount: transaction.amount,
+      reference: transaction.reference,
+      creditor:
+          transaction.type == 'CREDIT' ? updatedValue : transaction.creditor,
+      receiver:
+          transaction.type == 'CREDIT' ? transaction.receiver : updatedValue,
+      note: transaction.note,
+      time: transaction.time,
+      status: transaction.status,
+      currentBalance: transaction.currentBalance,
+      bankId: transaction.bankId,
+      type: transaction.type,
+      transactionLink: transaction.transactionLink,
+      accountNumber: transaction.accountNumber,
+      categoryId: transaction.categoryId,
+      profileId: transaction.profileId,
+      serviceCharge: transaction.serviceCharge,
+      vat: transaction.vat,
+    );
+
     final previous = _replaceTransactionLocally(updated);
     if (previous != null) {
       _filterTransactions(_allTransactions);

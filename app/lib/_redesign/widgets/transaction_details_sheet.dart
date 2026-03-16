@@ -42,11 +42,14 @@ class _TransactionDetailsSheet extends StatefulWidget {
 
 class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   bool _categoryExpanded = false;
+  bool _isSavingCounterparty = false;
   bool _isSavingNote = false;
   bool _showNewCategoryForm = false;
   bool _showColorChoices = false;
   String _draftColorKey = _kCategoryColorOptions.first.key;
   late Transaction _transaction;
+  final TextEditingController _counterpartyController = TextEditingController();
+  final FocusNode _counterpartyFocus = FocusNode();
   final TextEditingController _noteController = TextEditingController();
   final FocusNode _noteFocus = FocusNode();
   final TextEditingController _newCategoryController = TextEditingController();
@@ -63,6 +66,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   void initState() {
     super.initState();
     _transaction = widget.transaction;
+    _counterpartyController.text = _storedCounterpartyValue ?? '';
+    _counterpartyFocus.addListener(_handleCounterpartyFocusChange);
     _noteController.text = _tx.note?.trim() ?? '';
     _noteFocus.addListener(_handleNoteFocusChange);
   }
@@ -74,6 +79,21 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     if (creditor != null && creditor.isNotEmpty) return creditor;
     return _bankFullName;
   }
+
+  String? get _storedCounterpartyValue {
+    final receiver = _tx.receiver?.trim();
+    final creditor = _tx.creditor?.trim();
+    if (_isCredit) {
+      if (creditor != null && creditor.isNotEmpty) return creditor;
+      if (receiver != null && receiver.isNotEmpty) return receiver;
+      return null;
+    }
+    if (receiver != null && receiver.isNotEmpty) return receiver;
+    if (creditor != null && creditor.isNotEmpty) return creditor;
+    return null;
+  }
+
+  bool get _isUnknownCounterparty => _storedCounterpartyValue == null;
 
   String get _bankFullName {
     return _provider.getBankName(_tx.bankId);
@@ -233,6 +253,67 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
       return;
     }
     _saveNote();
+  }
+
+  void _handleCounterpartyFocusChange() {
+    if (_counterpartyFocus.hasFocus) return;
+    _saveCounterparty();
+  }
+
+  Transaction _copyTransactionWithCounterparty(String? counterparty) {
+    final normalizedCounterparty = counterparty?.trim();
+    final updatedValue =
+        normalizedCounterparty == null || normalizedCounterparty.isEmpty
+            ? null
+            : normalizedCounterparty;
+    return Transaction(
+      amount: _tx.amount,
+      reference: _tx.reference,
+      creditor: _isCredit ? updatedValue : _tx.creditor,
+      receiver: _isCredit ? _tx.receiver : updatedValue,
+      note: _tx.note,
+      time: _tx.time,
+      status: _tx.status,
+      currentBalance: _tx.currentBalance,
+      bankId: _tx.bankId,
+      type: _tx.type,
+      transactionLink: _tx.transactionLink,
+      accountNumber: _tx.accountNumber,
+      categoryId: _tx.categoryId,
+      profileId: _tx.profileId,
+      serviceCharge: _tx.serviceCharge,
+      vat: _tx.vat,
+    );
+  }
+
+  Future<void> _saveCounterparty() async {
+    if (_isSavingCounterparty || !_isUnknownCounterparty) return;
+
+    final trimmed = _counterpartyController.text.trim();
+    final normalized = trimmed.isEmpty ? null : trimmed;
+    final current = _storedCounterpartyValue;
+
+    if (normalized == current) return;
+
+    final updated = _copyTransactionWithCounterparty(normalized);
+
+    setState(() => _isSavingCounterparty = true);
+
+    try {
+      await _provider.updateCounterpartyForTransaction(_tx, normalized);
+      if (!mounted) return;
+      setState(() {
+        _transaction = updated;
+        _counterpartyController.text = _storedCounterpartyValue ?? '';
+        _isSavingCounterparty = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isSavingCounterparty = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save sender or recipient')),
+      );
+    }
   }
 
   Future<void> _saveNote() async {
@@ -445,6 +526,9 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
 
   @override
   void dispose() {
+    _counterpartyFocus.removeListener(_handleCounterpartyFocusChange);
+    _counterpartyController.dispose();
+    _counterpartyFocus.dispose();
     _noteFocus.removeListener(_handleNoteFocusChange);
     _noteController.dispose();
     _noteFocus.dispose();
@@ -463,7 +547,9 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
     final keyboardScrollBuffer = keyboardInset > 0 ? 88.0 : 24.0;
     if (keyboardInset > _lastKeyboardInset &&
-        (_showNewCategoryForm || _noteFocus.hasFocus)) {
+        (_showNewCategoryForm ||
+            _noteFocus.hasFocus ||
+            _counterpartyFocus.hasFocus)) {
       _scrollComposerIntoView();
     }
     _lastKeyboardInset = keyboardInset;
@@ -538,13 +624,41 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: SizedBox(
                   width: double.infinity,
-                  child: _MarqueeText(
-                    text: _counterparty,
-                    centerWhenStatic: true,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textSecondary(context),
-                    ),
-                  ),
+                  child: _isUnknownCounterparty
+                      ? TextField(
+                          controller: _counterpartyController,
+                          focusNode: _counterpartyFocus,
+                          enabled: !_isSavingCounterparty,
+                          textAlign: TextAlign.center,
+                          textInputAction: TextInputAction.done,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: AppColors.textSecondary(context),
+                          ),
+                          onSubmitted: (_) {
+                            FocusManager.instance.primaryFocus?.unfocus();
+                          },
+                          onTapOutside: (_) {
+                            FocusManager.instance.primaryFocus?.unfocus();
+                          },
+                          decoration: InputDecoration(
+                            hintText: 'Add sender or recipient',
+                            hintStyle: TextStyle(
+                              color: AppColors.textTertiary(context),
+                            ),
+                            isCollapsed: true,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                          ),
+                        )
+                      : _MarqueeText(
+                          text: _counterparty,
+                          centerWhenStatic: true,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: AppColors.textSecondary(context),
+                          ),
+                        ),
                 ),
               ),
 
