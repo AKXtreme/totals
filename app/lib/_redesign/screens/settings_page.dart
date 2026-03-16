@@ -663,7 +663,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
       backgroundColor: AppColors.background(context),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

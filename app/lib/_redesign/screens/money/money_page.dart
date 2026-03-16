@@ -550,7 +550,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                   opacity: _subTabFadeAnimation,
                   sliver: SliverMainAxisGroup(slivers: dynamicSlivers),
                 ),
-                const SliverPadding(padding: EdgeInsets.only(bottom: 96)),
+                const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
               ],
             ),
           ),
@@ -1264,7 +1264,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       onRefresh: provider.loadData,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         child: Column(
           children: [
             // Balance card

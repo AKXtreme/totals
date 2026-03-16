@@ -295,7 +295,7 @@ class _RedesignHomePageState extends State<RedesignHomePage>
                         });
                       },
                     ),
-                    const SizedBox(height: 96),
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),
