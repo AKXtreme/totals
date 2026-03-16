@@ -1215,7 +1215,7 @@ class _RedesignAboutPage extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: const Text(
-                      'Version 1.1.0',
+                      'Version 1.3.0',
                       style: TextStyle(
                         color: AppColors.primaryLight,
                         fontWeight: FontWeight.w600,
