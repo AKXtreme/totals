@@ -35,6 +35,7 @@ class TransactionTile extends StatelessWidget {
 
   final bool selected;
   final VoidCallback? onTap;
+  final VoidCallback? onCategoryTap;
   final VoidCallback? onLongPress;
 
   const TransactionTile({
@@ -52,6 +53,7 @@ class TransactionTile extends StatelessWidget {
     this.timestamp,
     this.selected = false,
     this.onTap,
+    this.onCategoryTap,
     this.onLongPress,
   });
 
@@ -112,6 +114,7 @@ class TransactionTile extends StatelessWidget {
                         isDebit: isDebit,
                         isSelfTransfer: isSelfTransfer,
                         isMisc: isMisc,
+                        onTap: onCategoryTap,
                       ),
                     ],
                   ),
@@ -171,6 +174,7 @@ class TransactionCategoryChip extends StatelessWidget {
   final bool isDebit;
   final bool isSelfTransfer;
   final bool isMisc;
+  final VoidCallback? onTap;
 
   const TransactionCategoryChip({
     super.key,
@@ -180,24 +184,80 @@ class TransactionCategoryChip extends StatelessWidget {
     required this.isDebit,
     this.isSelfTransfer = false,
     this.isMisc = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     // Self-transfer or Misc: neutral gray filled chip
     if (isSelfTransfer || isMisc) {
-      return Container(
+      return _maybeWrapPressable(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: AppColors.textTertiary(context),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 132),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (isCategorized) {
+      final color = _categoryColor();
+      return _maybeWrapPressable(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 132),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return _maybeWrapPressable(
+      child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: AppColors.textTertiary(context),
+          border: Border.all(color: AppColors.textTertiary(context)),
           borderRadius: BorderRadius.circular(8),
         ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 132),
           child: Text(
             label,
-            style: const TextStyle(
-              color: AppColors.white,
+            style: TextStyle(
+              color: AppColors.isDark(context)
+                  ? AppColors.slate400
+                  : AppColors.slate700,
               fontSize: 11,
               fontWeight: FontWeight.w600,
             ),
@@ -206,56 +266,18 @@ class TransactionCategoryChip extends StatelessWidget {
             softWrap: false,
           ),
         ),
-      );
-    }
-
-    if (isCategorized) {
-      final color = _categoryColor();
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 132),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            softWrap: false,
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.textTertiary(context)),
-        borderRadius: BorderRadius.circular(8),
       ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 132),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: AppColors.isDark(context)
-                ? AppColors.slate400
-                : AppColors.slate700,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          softWrap: false,
-        ),
-      ),
+    );
+  }
+
+  Widget _maybeWrapPressable({
+    required Widget child,
+  }) {
+    if (onTap == null) return child;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: child,
     );
   }
 

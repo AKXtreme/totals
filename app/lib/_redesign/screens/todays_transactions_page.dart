@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
+import 'package:totals/_redesign/widgets/transaction_category_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
@@ -36,6 +37,15 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
   Future<void> _openDetails(
       TransactionProvider provider, Transaction tx) async {
     await showTransactionDetailsSheet(
+      context: context,
+      transaction: tx,
+      provider: provider,
+    );
+  }
+
+  Future<void> _openCategorySheet(
+      TransactionProvider provider, Transaction tx) async {
+    await showTransactionCategorySheet(
       context: context,
       transaction: tx,
       provider: provider,
@@ -170,6 +180,9 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
                       onTap: _isSelecting
                           ? () => _toggle(tx)
                           : () => _openDetails(provider, tx),
+                      onCategoryTap: _isSelecting
+                          ? () => _toggle(tx)
+                          : () => _openCategorySheet(provider, tx),
                       onLongPress: () => _toggle(tx),
                     );
                   },

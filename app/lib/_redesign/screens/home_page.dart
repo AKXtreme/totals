@@ -8,6 +8,7 @@ import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/_redesign/screens/redesign_shell.dart';
 import 'package:totals/services/sms_service.dart';
 import 'package:totals/utils/text_utils.dart';
+import 'package:totals/_redesign/widgets/transaction_category_sheet.dart';
 import 'package:totals/_redesign/screens/todays_transactions_page.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_tile.dart';
@@ -270,6 +271,12 @@ class _RedesignHomePageState extends State<RedesignHomePage>
                           selected: selected,
                           onTap: _isSelecting
                               ? () => _toggleSelection(transaction)
+                              : () => _openTransactionDetailsSheet(
+                                    provider: provider,
+                                    transaction: transaction,
+                                  ),
+                          onCategoryTap: _isSelecting
+                              ? () => _toggleSelection(transaction)
                               : () => _openTransactionCategorySheet(
                                     provider: provider,
                                     transaction: transaction,
@@ -333,11 +340,22 @@ class _RedesignHomePageState extends State<RedesignHomePage>
     );
   }
 
-  Future<void> _openTransactionCategorySheet({
+  Future<void> _openTransactionDetailsSheet({
     required TransactionProvider provider,
     required Transaction transaction,
   }) async {
     await showTransactionDetailsSheet(
+      context: context,
+      transaction: transaction,
+      provider: provider,
+    );
+  }
+
+  Future<void> _openTransactionCategorySheet({
+    required TransactionProvider provider,
+    required Transaction transaction,
+  }) async {
+    await showTransactionCategorySheet(
       context: context,
       transaction: transaction,
       provider: provider,

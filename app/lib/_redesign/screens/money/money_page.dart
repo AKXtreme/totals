@@ -20,6 +20,7 @@ import 'package:totals/services/account_sync_status_service.dart';
 import 'package:totals/services/bank_detection_service.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/widgets/add_cash_transaction_sheet.dart';
+import 'package:totals/_redesign/widgets/transaction_category_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_tile.dart';
 import 'package:totals/_redesign/theme/app_icons.dart';
@@ -634,8 +635,22 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       selected: selected,
       onTap: _isSelecting
           ? () => _toggleSelection(transaction)
+          : () => _openTransactionDetailsSheet(provider, transaction),
+      onCategoryTap: _isSelecting
+          ? () => _toggleSelection(transaction)
           : () => _openTransactionCategorySheet(provider, transaction),
       onLongPress: () => _toggleSelection(transaction),
+    );
+  }
+
+  Future<void> _openTransactionDetailsSheet(
+    TransactionProvider provider,
+    Transaction transaction,
+  ) async {
+    await showTransactionDetailsSheet(
+      context: context,
+      transaction: transaction,
+      provider: provider,
     );
   }
 
@@ -643,7 +658,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     TransactionProvider provider,
     Transaction transaction,
   ) async {
-    await showTransactionDetailsSheet(
+    await showTransactionCategorySheet(
       context: context,
       transaction: transaction,
       provider: provider,
@@ -695,7 +710,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           derivedBalancesByReference: derivedBalancesByReference,
           mode: _analyticsHeatmapMode,
           onTransactionTap: (transaction) =>
-              _openTransactionCategorySheet(provider, transaction),
+              _openTransactionDetailsSheet(provider, transaction),
         ),
       ),
     );
@@ -1116,7 +1131,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                     const SizedBox(width: 12),
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => _openTransactionCategorySheet(
+                        onTap: () => _openTransactionDetailsSheet(
                             provider, entry.transaction),
                         behavior: HitTestBehavior.opaque,
                         child: _LedgerTransactionEntry(

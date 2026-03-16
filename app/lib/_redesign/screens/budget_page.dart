@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
+import 'package:totals/_redesign/widgets/transaction_category_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_tile.dart';
 import 'package:totals/constants/cash_constants.dart';
@@ -499,6 +500,11 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
                                 ? t.receiver!
                                 : t.creditor?.trim() ?? '')
                             .trim(),
+                        onCategoryTap: () => showTransactionCategorySheet(
+                          context: context,
+                          transaction: t,
+                          provider: tp,
+                        ),
                         onTap: () => showTransactionDetailsSheet(
                           context: context,
                           transaction: t,
@@ -1151,6 +1157,11 @@ class _UnbudgetedTransactionsPage extends StatelessWidget {
                             ? t.receiver!
                             : t.creditor?.trim() ?? '')
                         .trim(),
+                    onCategoryTap: () => showTransactionCategorySheet(
+                      context: context,
+                      transaction: t,
+                      provider: provider,
+                    ),
                     onTap: () => showTransactionDetailsSheet(
                       context: context,
                       transaction: t,
