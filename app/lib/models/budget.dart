@@ -253,6 +253,29 @@ class Budget {
     return selectedCategoryIds.contains(id);
   }
 
+  bool overlapsRange(DateTime rangeStart, DateTime rangeEnd) {
+    final normalizedStart =
+        DateTime(rangeStart.year, rangeStart.month, rangeStart.day);
+    final normalizedEnd = DateTime(
+      rangeEnd.year,
+      rangeEnd.month,
+      rangeEnd.day,
+      23,
+      59,
+      59,
+      999,
+    );
+
+    final budgetStart = startDate;
+    final budgetEnd = endDate;
+
+    final startsAfterRange = budgetStart.isAfter(normalizedEnd);
+    final endsBeforeRange =
+        budgetEnd != null && budgetEnd.isBefore(normalizedStart);
+
+    return !startsAfterRange && !endsBeforeRange;
+  }
+
   // Helper methods for period calculations
   DateTime getCurrentPeriodStart() {
     final now = DateTime.now();

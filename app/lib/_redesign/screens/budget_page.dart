@@ -156,10 +156,7 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
       _monthEnd.subtract(const Duration(milliseconds: 1));
 
   bool _isBudgetVisibleInSelectedMonth(Budget budget) {
-    final startsAfterMonth = budget.startDate.isAfter(_monthEndInclusive);
-    final endsBeforeMonth =
-        budget.endDate != null && budget.endDate!.isBefore(_monthStart);
-    return !startsAfterMonth && !endsBeforeMonth;
+    return budget.overlapsRange(_monthStart, _monthEndInclusive);
   }
 
   void _prevMonth() => setState(() {

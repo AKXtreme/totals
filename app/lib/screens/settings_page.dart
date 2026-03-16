@@ -728,7 +728,8 @@ class _SettingsPageState extends State<SettingsPage>
             ),
             decoration: BoxDecoration(
               color: theme.colorScheme.surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -919,8 +920,8 @@ class _SettingsPageState extends State<SettingsPage>
                                       themeProvider.toggleTheme();
                                     },
                                   ),
-                                    onTap: null,
-                                  );
+                                  onTap: null,
+                                );
                               },
                             ),
                             _buildDivider(context),
@@ -934,7 +935,8 @@ class _SettingsPageState extends State<SettingsPage>
                                     children: [
                                       Text(
                                         themeProvider.uiScaleLabel,
-                                        style: theme.textTheme.bodySmall?.copyWith(
+                                        style:
+                                            theme.textTheme.bodySmall?.copyWith(
                                           fontWeight: FontWeight.w600,
                                           color: theme.colorScheme.onSurface
                                               .withOpacity(0.65),
@@ -949,7 +951,8 @@ class _SettingsPageState extends State<SettingsPage>
                                       ),
                                     ],
                                   ),
-                                  onTap: () => _showFontSizeSheet(themeProvider),
+                                  onTap: () =>
+                                      _showFontSizeSheet(themeProvider),
                                 );
                               },
                             ),
@@ -1339,7 +1342,7 @@ class _SettingsPageState extends State<SettingsPage>
               ),
               const SizedBox(width: 12),
               Text(
-                'Support the Developers',
+                'Support the Project',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: theme.colorScheme.primary,
                   fontWeight: FontWeight.w500,

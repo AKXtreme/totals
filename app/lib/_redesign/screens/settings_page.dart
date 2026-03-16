@@ -1135,7 +1135,7 @@ class _SupportDevelopersCard extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Text(
-                'Support the Developers',
+                'Support the Project',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: AppColors.primaryLight,
                   fontWeight: FontWeight.w700,

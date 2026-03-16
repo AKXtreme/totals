@@ -84,12 +84,20 @@ class BudgetWidgetDataProvider {
     required List<BudgetStatus> allCategoryStatuses,
     required Map<int, Category> categoryById,
   }) {
+    final rangeStart = _periodRangeStart(period);
+    final rangeEnd = _periodRangeEnd(period, rangeStart);
+
+    final visiblePeriodStatuses = periodStatuses
+        .where((status) => status.budget.overlapsRange(rangeStart, rangeEnd))
+        .toList(growable: false);
+
     final matchingCategoryStatuses = allCategoryStatuses
         .where((status) => _matchesPeriod(status.budget, period))
+        .where((status) => status.budget.overlapsRange(rangeStart, rangeEnd))
         .toList(growable: false);
 
     final combinedStatuses = <BudgetStatus>[
-      ...periodStatuses,
+      ...visiblePeriodStatuses,
       ...matchingCategoryStatuses,
     ];
 
@@ -193,6 +201,33 @@ class BudgetWidgetDataProvider {
         return 'Yearly';
       default:
         return 'Monthly';
+    }
+  }
+
+  DateTime _periodRangeStart(String period) {
+    final now = DateTime.now();
+    switch (period) {
+      case 'daily':
+        return DateTime(now.year, now.month, now.day);
+      case 'yearly':
+        return DateTime(now.year, 1, 1);
+      default:
+        return DateTime(now.year, now.month, 1);
+    }
+  }
+
+  DateTime _periodRangeEnd(String period, DateTime start) {
+    switch (period) {
+      case 'daily':
+        return DateTime(start.year, start.month, start.day, 23, 59, 59, 999);
+      case 'yearly':
+        return DateTime(start.year, 12, 31, 23, 59, 59, 999);
+      default:
+        return DateTime(
+          start.year,
+          start.month + 1,
+          1,
+        ).subtract(const Duration(milliseconds: 1));
     }
   }
 
