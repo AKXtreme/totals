@@ -21,7 +21,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 18,
+      version: 19,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -36,6 +36,7 @@ class DatabaseHelper {
     await _seedBuiltInCategories(db);
     await _ensureProfileSchema(db);
     await _ensureTransactionFeesSchema(db);
+    await _ensureTransactionNotesSchema(db);
 
     return db;
   }
@@ -72,6 +73,7 @@ class DatabaseHelper {
         reference TEXT NOT NULL UNIQUE,
         creditor TEXT,
         receiver TEXT,
+        note TEXT,
         time TEXT,
         status TEXT,
         currentBalance TEXT,
@@ -697,6 +699,15 @@ class DatabaseHelper {
       }
       await _migrateLegacyCategoryColorKeys(db);
     }
+
+    if (oldVersion < 19) {
+      try {
+        await db.execute('ALTER TABLE transactions ADD COLUMN note TEXT');
+        print("debug: Added note column to transactions table");
+      } catch (e) {
+        print("debug: Error adding note column (might already exist): $e");
+      }
+    }
   }
 
   Future<void> _seedBuiltInCategories(Database db) async {
@@ -1002,8 +1013,6 @@ class DatabaseHelper {
       await prefs.setInt('active_profile_id', activeProfileId);
     }
 
-    if (activeProfileId == null) return;
-
     if (tableNames.contains('accounts')) {
       await db.update(
         'accounts',
@@ -1045,6 +1054,25 @@ class DatabaseHelper {
     if (!names.contains('vat')) {
       await addColumn('ALTER TABLE transactions ADD COLUMN vat REAL');
     }
+  }
+
+  Future<void> _ensureTransactionNotesSchema(Database db) async {
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'",
+    );
+    if (tables.isEmpty) return;
+
+    final cols = await db.rawQuery('PRAGMA table_info(transactions)');
+    final names = cols
+        .map((r) => (r['name'] as String?)?.trim())
+        .whereType<String>()
+        .toSet();
+
+    if (names.contains('note')) return;
+
+    try {
+      await db.execute('ALTER TABLE transactions ADD COLUMN note TEXT');
+    } catch (_) {}
   }
 
   Future<void> _assignBuiltInCategoryKeys(Database db) async {

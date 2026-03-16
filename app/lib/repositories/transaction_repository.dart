@@ -18,7 +18,7 @@ class TransactionRepository {
   Future<List<Transaction>> getTransactions() async {
     final db = await DatabaseHelper.instance.database;
     final activeProfileId = await _getActiveProfileId();
-    
+
     final List<Map<String, dynamic>> maps = activeProfileId != null
         ? await db.query(
             'transactions',
@@ -70,6 +70,7 @@ class TransactionRepository {
       'reference': map['reference'],
       'creditor': map['creditor'],
       'receiver': map['receiver'],
+      'note': map['note'],
       'time': map['time'],
       'status': map['status'],
       'currentBalance': map['currentBalance'],
@@ -90,7 +91,7 @@ class TransactionRepository {
   }) async {
     final db = await DatabaseHelper.instance.database;
     final activeProfileId = await _getActiveProfileId();
-    
+
     // Use transaction's profileId if provided, otherwise use active profile
     final profileId = transaction.profileId ?? activeProfileId;
 
@@ -101,18 +102,20 @@ class TransactionRepository {
       final isEnabled = await NotificationSettingsService.instance
           .isAutoCategorizeByReceiverEnabled();
       if (isEnabled) {
-        final categoryId = await ReceiverCategoryService.instance
-            .getCategoryForTransaction(
+        final categoryId =
+            await ReceiverCategoryService.instance.getCategoryForTransaction(
           receiver: transaction.receiver,
           creditor: transaction.creditor,
         );
         if (categoryId != null) {
           transactionToSave = transaction.copyWith(categoryId: categoryId);
-          print("debug: Auto-categorized transaction ${transaction.reference} with categoryId $categoryId");
+          print(
+              "debug: Auto-categorized transaction ${transaction.reference} with categoryId $categoryId");
         }
       }
     } else if (skipAutoCategorization) {
-      print("debug: Skipping auto-categorization for transaction ${transaction.reference}, categoryId: ${transaction.categoryId}");
+      print(
+          "debug: Skipping auto-categorization for transaction ${transaction.reference}, categoryId: ${transaction.categoryId}");
     }
 
     // Parse and extract date components for faster queries
@@ -134,6 +137,7 @@ class TransactionRepository {
       'reference': transactionToSave.reference,
       'creditor': transactionToSave.creditor,
       'receiver': transactionToSave.receiver,
+      'note': transactionToSave.note,
       'time': transactionToSave.time,
       'status': transactionToSave.status,
       'currentBalance': transactionToSave.currentBalance,
@@ -149,19 +153,21 @@ class TransactionRepository {
       'day': day,
       'week': week,
     };
-    
-    print("debug: Saving transaction ${transactionToSave.reference} with categoryId: ${dataToSave['categoryId']}");
-    
+
+    print(
+        "debug: Saving transaction ${transactionToSave.reference} with categoryId: ${dataToSave['categoryId']}");
+
     // Add profileId to dataToSave
     dataToSave['profileId'] = profileId;
-    
+
     await db.insert(
       'transactions',
       dataToSave,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
-    
-    print("debug: Transaction ${transactionToSave.reference} saved successfully");
+
+    print(
+        "debug: Transaction ${transactionToSave.reference} saved successfully");
   }
 
   Future<void> saveAllTransactions(List<Transaction> transactions) async {
@@ -172,7 +178,7 @@ class TransactionRepository {
     for (var transaction in transactions) {
       // Use transaction's profileId if provided, otherwise use active profile
       final profileId = transaction.profileId ?? activeProfileId;
-      
+
       // Parse and extract date components for faster queries
       int? year, month, day, week;
       if (transaction.time != null) {
@@ -194,6 +200,7 @@ class TransactionRepository {
           'reference': transaction.reference,
           'creditor': transaction.creditor,
           'receiver': transaction.receiver,
+          'note': transaction.note,
           'time': transaction.time,
           'status': transaction.status,
           'currentBalance': transaction.currentBalance,
@@ -289,22 +296,7 @@ class TransactionRepository {
       orderBy: 'time DESC, id DESC',
     );
 
-    return maps.map<Transaction>((map) {
-      return Transaction.fromJson({
-        'amount': map['amount'],
-        'reference': map['reference'],
-        'creditor': map['creditor'],
-        'receiver': map['receiver'],
-        'time': map['time'],
-        'status': map['status'],
-        'currentBalance': map['currentBalance'],
-        'bankId': map['bankId'],
-        'type': map['type'],
-        'transactionLink': map['transactionLink'],
-        'accountNumber': map['accountNumber'],
-        'categoryId': map['categoryId'],
-      });
-    }).toList();
+    return maps.map<Transaction>(_transactionFromMap).toList();
   }
 
   /// Get transactions by month with optional bank filter
@@ -339,23 +331,7 @@ class TransactionRepository {
       orderBy: 'time DESC, id DESC',
     );
 
-    return maps.map<Transaction>((map) {
-      return Transaction.fromJson({
-        'amount': map['amount'],
-        'reference': map['reference'],
-        'creditor': map['creditor'],
-        'receiver': map['receiver'],
-        'time': map['time'],
-        'status': map['status'],
-        'currentBalance': map['currentBalance'],
-        'bankId': map['bankId'],
-        'type': map['type'],
-        'transactionLink': map['transactionLink'],
-        'accountNumber': map['accountNumber'],
-        'categoryId': map['categoryId'],
-        'profileId': map['profileId'],
-      });
-    }).toList();
+    return maps.map<Transaction>(_transactionFromMap).toList();
   }
 
   /// Get transactions by week with optional filters
@@ -418,7 +394,7 @@ class TransactionRepository {
     if (currentBank.uniformMasking == false) {
       whereParts.add('bankId = ?');
       whereArgs.add(bank);
-      
+
       await db.delete(
         'transactions',
         where: whereParts.join(' AND '),
@@ -441,7 +417,7 @@ class TransactionRepository {
       whereParts.add('accountNumber IS NOT NULL');
       whereParts.add('accountNumber LIKE ?');
       whereArgs.add('%$accountSuffix');
-      
+
       // Delete transactions where bankId matches and accountNumber ends with the suffix
       // Using SQL LIKE pattern matching to match the suffix at the end
       await db.delete(
@@ -454,7 +430,7 @@ class TransactionRepository {
       whereParts.add('bankId = ?');
       whereArgs.add(bank);
       whereParts.add('accountNumber IS NOT NULL');
-      
+
       await db.delete(
         'transactions',
         where: whereParts.join(' AND '),

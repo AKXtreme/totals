@@ -3,6 +3,7 @@ class Transaction {
   final String reference; // required
   final String? creditor;
   final String? receiver;
+  final String? note;
   final String? time; // ISO string
   final String? status; // PENDING, CLEARED, SYNCED
   final String? currentBalance;
@@ -20,6 +21,7 @@ class Transaction {
     required this.reference,
     this.creditor,
     this.receiver,
+    this.note,
     this.time,
     this.status,
     this.currentBalance,
@@ -45,6 +47,7 @@ class Transaction {
       reference: json['reference'] ?? '',
       creditor: json['creditor'],
       receiver: json['receiver'],
+      note: json['note'],
       time: json['time'],
       status: json['status'],
       currentBalance: json['currentBalance']?.toString(),
@@ -64,6 +67,7 @@ class Transaction {
         'reference': reference,
         'creditor': creditor,
         'receiver': receiver,
+        'note': note,
         'time': time,
         'status': status,
         'currentBalance': currentBalance,
@@ -82,6 +86,7 @@ class Transaction {
     String? reference,
     String? creditor,
     String? receiver,
+    String? note,
     String? time,
     String? status,
     String? currentBalance,
@@ -94,12 +99,14 @@ class Transaction {
     double? serviceCharge,
     double? vat,
     bool clearCategoryId = false, // Flag to explicitly clear categoryId
+    bool clearNote = false,
   }) {
     return Transaction(
       amount: amount ?? this.amount,
       reference: reference ?? this.reference,
       creditor: creditor ?? this.creditor,
       receiver: receiver ?? this.receiver,
+      note: clearNote ? null : (note ?? this.note),
       time: time ?? this.time,
       status: status ?? this.status,
       currentBalance: currentBalance ?? this.currentBalance,
@@ -107,9 +114,7 @@ class Transaction {
       type: type ?? this.type,
       transactionLink: transactionLink ?? this.transactionLink,
       accountNumber: accountNumber ?? this.accountNumber,
-      categoryId: clearCategoryId 
-          ? null 
-          : (categoryId ?? this.categoryId),
+      categoryId: clearCategoryId ? null : (categoryId ?? this.categoryId),
       profileId: profileId ?? this.profileId,
       serviceCharge: serviceCharge ?? this.serviceCharge,
       vat: vat ?? this.vat,

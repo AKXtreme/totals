@@ -506,6 +506,7 @@ class TransactionProvider with ChangeNotifier {
 
       return (t.creditor?.toLowerCase().contains(_searchKey.toLowerCase()) ??
               false) ||
+          (t.note?.toLowerCase().contains(_searchKey.toLowerCase()) ?? false) ||
           (t.reference.toLowerCase().contains(_searchKey.toLowerCase()));
     }).toList();
   }
@@ -956,6 +957,39 @@ class TransactionProvider with ChangeNotifier {
         print("debug: Error checking budget alerts after categorizing: $e");
       }
     }
+  }
+
+  Future<void> updateNoteForTransaction(
+    Transaction transaction,
+    String? note,
+  ) async {
+    final normalizedNote = note?.trim();
+    final updated = normalizedNote == null || normalizedNote.isEmpty
+        ? transaction.copyWith(clearNote: true)
+        : transaction.copyWith(note: normalizedNote);
+    final previous = _replaceTransactionLocally(updated);
+    if (previous != null) {
+      _filterTransactions(_allTransactions);
+      _notifyOptimisticChange();
+    }
+
+    try {
+      await _transactionRepo.saveTransaction(
+        updated,
+        skipAutoCategorization: true,
+      );
+    } catch (e) {
+      if (previous != null) {
+        _replaceTransactionLocally(previous);
+        _filterTransactions(_allTransactions);
+        _notifyOptimisticChange();
+      }
+      rethrow;
+    }
+
+    _filterTransactions(_allTransactions);
+    _dataVersion += 1;
+    notifyListeners();
   }
 
   Future<void> clearCategoryForTransaction(Transaction transaction) async {

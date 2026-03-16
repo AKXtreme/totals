@@ -1427,9 +1427,13 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       result = result.where((t) {
         final receiver = t.receiver?.toLowerCase() ?? '';
         final creditor = t.creditor?.toLowerCase() ?? '';
+        final note = t.note?.toLowerCase() ?? '';
+        final reference = t.reference.toLowerCase();
         final bank = _bankLabel(t.bankId).toLowerCase();
         return receiver.contains(query) ||
             creditor.contains(query) ||
+            note.contains(query) ||
+            reference.contains(query) ||
             bank.contains(query);
       }).toList();
     }

@@ -42,18 +42,30 @@ class _TransactionDetailsSheet extends StatefulWidget {
 
 class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   bool _categoryExpanded = false;
+  bool _isSavingNote = false;
   bool _showNewCategoryForm = false;
   bool _showColorChoices = false;
   String _draftColorKey = _kCategoryColorOptions.first.key;
+  late Transaction _transaction;
+  final TextEditingController _noteController = TextEditingController();
+  final FocusNode _noteFocus = FocusNode();
   final TextEditingController _newCategoryController = TextEditingController();
   final FocusNode _newCategoryFocus = FocusNode();
   final ScrollController _sheetScrollController = ScrollController();
   double _lastKeyboardInset = 0;
 
-  Transaction get _tx => widget.transaction;
+  Transaction get _tx => _transaction;
   TransactionProvider get _provider => widget.provider;
 
   bool get _isCredit => _tx.type == 'CREDIT';
+
+  @override
+  void initState() {
+    super.initState();
+    _transaction = widget.transaction;
+    _noteController.text = _tx.note?.trim() ?? '';
+    _noteFocus.addListener(_handleNoteFocusChange);
+  }
 
   String get _counterparty {
     final receiver = _tx.receiver?.trim();
@@ -136,6 +148,12 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
 
   Category? get _currentCategory => _provider.getCategoryById(_tx.categoryId);
 
+  String? get _noteText {
+    final note = _tx.note?.trim();
+    if (note == null || note.isEmpty) return null;
+    return note;
+  }
+
   List<Category> get _availableCategories {
     final desiredFlow = _isCredit ? 'income' : 'expense';
     final filtered = _provider.categories
@@ -190,6 +208,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
         _newCategoryController.clear();
       }
     });
+    _noteFocus.unfocus();
     if (!shouldShow) {
       _newCategoryFocus.unfocus();
       return;
@@ -206,6 +225,46 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     setState(() => _showColorChoices = willOpen);
     if (!willOpen) return;
     _scrollComposerIntoView();
+  }
+
+  void _handleNoteFocusChange() {
+    if (_noteFocus.hasFocus) {
+      _scrollComposerIntoView();
+      return;
+    }
+    _saveNote();
+  }
+
+  Future<void> _saveNote() async {
+    if (_isSavingNote) return;
+
+    final trimmed = _noteController.text.trim();
+    final normalized = trimmed.isEmpty ? null : trimmed;
+    final current = _noteText;
+
+    if (normalized == current) return;
+
+    final updated = normalized == null
+        ? _tx.copyWith(clearNote: true)
+        : _tx.copyWith(note: normalized);
+
+    setState(() => _isSavingNote = true);
+
+    try {
+      await _provider.updateNoteForTransaction(_tx, normalized);
+      if (!mounted) return;
+      setState(() {
+        _transaction = updated;
+        _noteController.text = updated.note ?? '';
+        _isSavingNote = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isSavingNote = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save note')),
+      );
+    }
   }
 
   void _scrollComposerIntoView() {
@@ -370,7 +429,10 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Delete', style: TextStyle(color: AppColors.red)),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppColors.red),
+            ),
           ),
         ],
       ),
@@ -383,6 +445,9 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
 
   @override
   void dispose() {
+    _noteFocus.removeListener(_handleNoteFocusChange);
+    _noteController.dispose();
+    _noteFocus.dispose();
     _newCategoryController.dispose();
     _newCategoryFocus.dispose();
     _sheetScrollController.dispose();
@@ -397,7 +462,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     final selfTransferLabel = _provider.getSelfTransferLabel(_tx);
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
     final keyboardScrollBuffer = keyboardInset > 0 ? 88.0 : 24.0;
-    if (keyboardInset > _lastKeyboardInset && _showNewCategoryForm) {
+    if (keyboardInset > _lastKeyboardInset &&
+        (_showNewCategoryForm || _noteFocus.hasFocus)) {
       _scrollComposerIntoView();
     }
     _lastKeyboardInset = keyboardInset;
@@ -528,6 +594,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                       if (_categoryExpanded && !isLockedSelfTransfer)
                         _buildCategoryPicker(category),
 
+                      _buildNoteSection(),
+
                       const SizedBox(height: 20),
 
                       // Delete button
@@ -561,8 +629,75 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     );
   }
 
+  Widget _buildNoteSection() {
+    final theme = Theme.of(context);
+    final valueColumnWidth =
+        (MediaQuery.of(context).size.width * 0.3).clamp(96.0, 120.0);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: AppColors.borderColor(context), width: 1),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: _kLabelWidth,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                'Reason',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: AppColors.textSecondary(context),
+                ),
+              ),
+            ),
+          ),
+          const Spacer(),
+          SizedBox(
+            width: valueColumnWidth,
+            child: TextField(
+              controller: _noteController,
+              focusNode: _noteFocus,
+              enabled: !_isSavingNote,
+              maxLines: 1,
+              textAlign: TextAlign.start,
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.done,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: AppColors.textPrimary(context),
+                fontWeight: FontWeight.w500,
+              ),
+              onTap: _scrollComposerIntoView,
+              onSubmitted: (_) {
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
+              onTapOutside: (_) {
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
+              decoration: InputDecoration(
+                hintText: 'Add a note..',
+                hintStyle: TextStyle(color: AppColors.textTertiary(context)),
+                isCollapsed: true,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCategoryRow(Category? category) {
     final theme = Theme.of(context);
+    final valueColumnWidth =
+        (MediaQuery.of(context).size.width * 0.3).clamp(96.0, 120.0);
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -583,15 +718,16 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
             ),
           ),
           const Spacer(),
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.5,
-            ),
+          SizedBox(
+            width: valueColumnWidth,
             child: GestureDetector(
-              onTap: () =>
-                  setState(() => _categoryExpanded = !_categoryExpanded),
+              onTap: () {
+                _noteFocus.unfocus();
+                setState(() {
+                  _categoryExpanded = !_categoryExpanded;
+                });
+              },
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
                   if (category != null) ...[
                     Container(
@@ -603,7 +739,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Flexible(
+                    Expanded(
                       child: Text(
                         category.name,
                         style: theme.textTheme.bodyMedium?.copyWith(
@@ -615,11 +751,13 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                       ),
                     ),
                   ] else
-                    Text(
-                      'Categorize',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppColors.textTertiary(context),
-                        fontWeight: FontWeight.w500,
+                    Expanded(
+                      child: Text(
+                        'Categorize',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: AppColors.textTertiary(context),
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   const SizedBox(width: 4),
