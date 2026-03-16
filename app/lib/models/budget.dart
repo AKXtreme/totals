@@ -245,7 +245,10 @@ class Budget {
     return ids.first;
   }
 
+  bool get appliesToAllExpenses => selectedCategoryIds.isEmpty;
+
   bool includesCategory(int? id) {
+    if (appliesToAllExpenses) return true;
     if (id == null) return false;
     return selectedCategoryIds.contains(id);
   }

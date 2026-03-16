@@ -185,11 +185,8 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
   }
 
   double _spentForBudget(Budget b, List<Transaction> debits) {
-    final categoryIds = b.selectedCategoryIds;
-    if (categoryIds.isEmpty) return 0;
     return debits
-        .where(
-            (t) => t.categoryId != null && categoryIds.contains(t.categoryId))
+        .where((t) => b.includesCategory(t.categoryId))
         .fold(0.0, (s, t) => s + t.amount);
   }
 
@@ -203,6 +200,8 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
   }
 
   String? _categorySummaryForBudget(Budget budget, TransactionProvider tp) {
+    if (budget.appliesToAllExpenses) return 'All expenses';
+
     final categories = budget.selectedCategoryIds
         .map(tp.getCategoryById)
         .whereType<Category>()
@@ -287,8 +286,12 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
 
     // Unbudgeted spending
     final budgetedCatIds = budgets.expand((b) => b.selectedCategoryIds).toSet();
-    final unbudgetedTxns =
-        debits.where((t) => !budgetedCatIds.contains(t.categoryId)).toList();
+    final hasCatchAllBudget = budgets.any((b) => b.appliesToAllExpenses);
+    final unbudgetedTxns = hasCatchAllBudget
+        ? <Transaction>[]
+        : debits
+            .where((t) => !budgets.any((b) => b.includesCategory(t.categoryId)))
+            .toList();
     final unbudgetedAmount = unbudgetedTxns.fold(0.0, (s, t) => s + t.amount);
 
     return RefreshIndicator(
@@ -397,13 +400,8 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
     final categorySummary = _categorySummaryForBudget(budget, tp);
 
     // Transactions for this budget
-    final selectedIds = budget.selectedCategoryIds;
-    final txns = selectedIds.isNotEmpty
-        ? debits
-            .where((t) =>
-                t.categoryId != null && selectedIds.contains(t.categoryId))
-            .toList()
-        : <Transaction>[];
+    final txns =
+        debits.where((t) => budget.includesCategory(t.categoryId)).toList();
     // Sort newest first
     txns.sort((a, b) {
       final ta = a.time != null ? DateTime.tryParse(a.time!) : null;

@@ -230,7 +230,9 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               20,
               0,
               20,
-              20 + MediaQuery.of(sheetCtx).viewInsets.bottom + MediaQuery.of(sheetCtx).padding.bottom,
+              20 +
+                  MediaQuery.of(sheetCtx).viewInsets.bottom +
+                  MediaQuery.of(sheetCtx).padding.bottom,
             ),
             decoration: BoxDecoration(
               color: AppColors.cardColor(sheetCtx),
@@ -1253,10 +1255,12 @@ class _RedesignAboutPage extends StatelessWidget {
                     alignment: WrapAlignment.center,
                     children: [
                       _FeatureChip(
-                          icon: AppIcons.lock_outline_rounded, label: 'Private'),
+                          icon: AppIcons.lock_outline_rounded,
+                          label: 'Private'),
                       _FeatureChip(icon: AppIcons.bolt_rounded, label: 'Fast'),
                       _FeatureChip(
-                          icon: AppIcons.auto_graph_rounded, label: 'Insightful'),
+                          icon: AppIcons.auto_graph_rounded,
+                          label: 'Insightful'),
                     ],
                   ),
                 ],
@@ -1298,7 +1302,7 @@ class _RedesignAboutPage extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Support the devs',
+                              'support the project',
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 fontWeight: FontWeight.w700,
                                 color: AppColors.textPrimary(context),
