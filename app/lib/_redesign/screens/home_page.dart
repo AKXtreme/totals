@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/constants/cash_constants.dart';
@@ -945,14 +949,10 @@ class _IncomeExpenseCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: 140,
+            height: 176,
             width: double.infinity,
-            child: CustomPaint(
-              painter: _IncomeExpenseChartPainter(
-                incomePoints: trendSeries.incomePoints,
-                expensePoints: trendSeries.expensePoints,
-                gridColor: AppColors.mutedFill(context),
-              ),
+            child: _IncomeExpenseTrendChart(
+              trendSeries: trendSeries,
             ),
           ),
           const SizedBox(height: 10),
@@ -1070,74 +1070,209 @@ class _RangeToggleButton extends StatelessWidget {
   }
 }
 
-class _IncomeExpenseChartPainter extends CustomPainter {
-  final List<double> incomePoints;
-  final List<double> expensePoints;
-  final Color gridColor;
+class _IncomeExpenseTrendChart extends StatelessWidget {
+  final TransactionTrendSeries trendSeries;
 
-  _IncomeExpenseChartPainter({
-    required this.incomePoints,
-    required this.expensePoints,
-    required this.gridColor,
+  const _IncomeExpenseTrendChart({
+    required this.trendSeries,
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final gridPaint = Paint()
-      ..color = gridColor
-      ..strokeWidth = 1;
-    const dashWidth = 4.0;
-    const dashSpace = 4.0;
-
-    for (int i = 1; i <= 3; i++) {
-      final y = size.height * (i / 4);
-      double x = 0;
-      while (x < size.width) {
-        canvas.drawLine(Offset(x, y), Offset(x + dashWidth, y), gridPaint);
-        x += dashWidth + dashSpace;
-      }
+  Widget build(BuildContext context) {
+    if (trendSeries.maxValue <= 0.001) {
+      return Center(
+        child: Text(
+          'No income or expense data yet.',
+          style: TextStyle(
+            color: AppColors.textSecondary(context),
+            fontSize: 13,
+          ),
+        ),
+      );
     }
 
-    final incomePaint = Paint()
-      ..color = AppColors.incomeSuccess
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    final expensePaint = Paint()
-      ..color = AppColors.red
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
+    final incomeValues = trendSeries.incomePoints
+        .map((value) => value * trendSeries.maxValue)
+        .toList(growable: false);
+    final expenseValues = trendSeries.expensePoints
+        .map((value) => value * trendSeries.maxValue)
+        .toList(growable: false);
+    final pointCount = incomeValues.length;
+    final chartMax = _resolveHomeTrendChartMax(trendSeries.maxValue);
+    final interval = chartMax / 4;
 
-    Path buildPath(List<double> values) {
-      if (values.isEmpty) return Path();
-      if (values.length == 1) {
-        final y = size.height * (1 - values.first.clamp(0.0, 1.0));
-        return Path()
-          ..moveTo(0, y)
-          ..lineTo(size.width, y);
-      }
-      final path = Path();
-      for (int i = 0; i < values.length; i++) {
-        final x = size.width * (i / (values.length - 1));
-        final y = size.height * (1 - values[i]);
-        if (i == 0) {
-          path.moveTo(x, y);
-        } else {
-          path.lineTo(x, y);
-        }
-      }
-      return path;
-    }
+    return LineChart(
+      LineChartData(
+        minX: 0,
+        maxX: pointCount <= 1 ? 1 : (pointCount - 1).toDouble(),
+        minY: 0,
+        maxY: chartMax,
+        clipData: const FlClipData.all(),
+        lineTouchData: LineTouchData(enabled: false),
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: interval,
+          getDrawingHorizontalLine: (value) => FlLine(
+            color: AppColors.borderColor(context).withValues(alpha: 0.7),
+            strokeWidth: 0.9,
+            dashArray: const [3, 4],
+          ),
+        ),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 1,
+              reservedSize: 26,
+              getTitlesWidget: (value, meta) => _buildHomeTrendBottomAxisTitle(
+                context,
+                value,
+                meta,
+                pointCount,
+              ),
+            ),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: interval,
+              reservedSize: 40,
+              getTitlesWidget: (value, meta) =>
+                  _buildHomeTrendAxisTitle(context, value, meta),
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        lineBarsData: [
+          LineChartBarData(
+            spots: [
+              for (int index = 0; index < incomeValues.length; index++)
+                FlSpot(index.toDouble(), incomeValues[index]),
+            ],
+            isCurved: true,
+            curveSmoothness: 0.32,
+            preventCurveOverShooting: true,
+            color: AppColors.incomeSuccess,
+            barWidth: 2.2,
+            isStrokeCapRound: true,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ),
+          LineChartBarData(
+            spots: [
+              for (int index = 0; index < expenseValues.length; index++)
+                FlSpot(index.toDouble(), expenseValues[index]),
+            ],
+            isCurved: true,
+            curveSmoothness: 0.32,
+            preventCurveOverShooting: true,
+            color: AppColors.red,
+            barWidth: 2.2,
+            isStrokeCapRound: true,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-    canvas.drawPath(buildPath(incomePoints), incomePaint);
-    canvas.drawPath(buildPath(expensePoints), expensePaint);
+double _resolveHomeTrendChartMax(double maxValue) {
+  if (maxValue <= 0) return 100.0;
+
+  final roughStep = maxValue / 4;
+  final magnitude =
+      math.pow(10, (math.log(roughStep) / math.ln10).floor()).toDouble();
+  final normalized = roughStep / magnitude;
+
+  double niceNormalized;
+  if (normalized <= 1) {
+    niceNormalized = 1;
+  } else if (normalized <= 2) {
+    niceNormalized = 2;
+  } else if (normalized <= 2.5) {
+    niceNormalized = 2.5;
+  } else if (normalized <= 5) {
+    niceNormalized = 5;
+  } else {
+    niceNormalized = 10;
   }
 
-  @override
-  bool shouldRepaint(covariant _IncomeExpenseChartPainter oldDelegate) {
-    return oldDelegate.incomePoints != incomePoints ||
-        oldDelegate.expensePoints != expensePoints ||
-        oldDelegate.gridColor != gridColor;
+  final step = niceNormalized * magnitude;
+  return step * 4;
+}
+
+Widget _buildHomeTrendAxisTitle(
+  BuildContext context,
+  double value,
+  TitleMeta meta,
+) {
+  return SideTitleWidget(
+    axisSide: meta.axisSide,
+    child: Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: Text(
+        value.abs() < 0.001
+            ? '0K'
+            : formatNumberAbbreviated(value).replaceAll('k', 'K').replaceAll(
+                  ' ',
+                  '',
+                ),
+        style: TextStyle(
+          color: AppColors.textTertiary(context),
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _buildHomeTrendBottomAxisTitle(
+  BuildContext context,
+  double value,
+  TitleMeta meta,
+  int pointCount,
+) {
+  if ((value - value.roundToDouble()).abs() > 0.001) {
+    return const SizedBox.shrink();
   }
+
+  final index = value.toInt();
+  if (index < 0 || index >= pointCount) return const SizedBox.shrink();
+
+  final labelStride = pointCount <= 7 ? 1 : 5;
+  final shouldShow =
+      index == 0 || index == pointCount - 1 || index % labelStride == 0;
+  if (!shouldShow) return const SizedBox.shrink();
+
+  final today = DateTime.now();
+  final endDate = DateTime(today.year, today.month, today.day);
+  final date = endDate.subtract(Duration(days: pointCount - 1 - index));
+  final label = DateFormat('MMM d').format(date);
+
+  return SideTitleWidget(
+    axisSide: meta.axisSide,
+    child: Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: AppColors.textTertiary(context),
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    ),
+  );
 }
 
 class _BalanceBreakdownSheet extends StatefulWidget {

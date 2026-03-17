@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -39,6 +40,31 @@ enum _SubTab { transactions, analytics, ledger }
 enum _AnalyticsHeatmapMode { all, expense, income }
 
 enum _AnalyticsHeatmapView { daily, monthly }
+
+enum _AnalyticsChartSection {
+  heatmap,
+  expenseBubble,
+  lineChart,
+  barChart,
+  pieChart,
+}
+
+extension on _AnalyticsChartSection {
+  String get title {
+    switch (this) {
+      case _AnalyticsChartSection.heatmap:
+        return 'Heatmap';
+      case _AnalyticsChartSection.expenseBubble:
+        return 'Bubble Chart';
+      case _AnalyticsChartSection.lineChart:
+        return 'Line Chart';
+      case _AnalyticsChartSection.barChart:
+        return 'Bar Chart';
+      case _AnalyticsChartSection.pieChart:
+        return 'Pie Chart';
+    }
+  }
+}
 
 final List<bank_model.Bank> _assetBanks = _buildAssetBanks();
 
@@ -126,6 +152,29 @@ class _TransactionFilter {
     if (bankId != null) count++;
     if (categoryId != null) count++;
     if (startDate != null || endDate != null) count++;
+    return count;
+  }
+}
+
+class _AnalyticsHeatmapFilter {
+  final _AnalyticsHeatmapMode mode;
+  final int? bankId;
+  final int? categoryId;
+
+  const _AnalyticsHeatmapFilter({
+    this.mode = _AnalyticsHeatmapMode.all,
+    this.bankId,
+    this.categoryId,
+  });
+
+  bool get isActive =>
+      mode != _AnalyticsHeatmapMode.all || bankId != null || categoryId != null;
+
+  int get activeCount {
+    int count = 0;
+    if (mode != _AnalyticsHeatmapMode.all) count++;
+    if (bankId != null) count++;
+    if (categoryId != null) count++;
     return count;
   }
 }
@@ -223,9 +272,12 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   final ScrollController _activityScrollController = ScrollController();
   int _currentPage = 0;
   static const int _pageSize = 20;
-  _AnalyticsHeatmapMode _analyticsHeatmapMode = _AnalyticsHeatmapMode.all;
+  _AnalyticsHeatmapFilter _analyticsHeatmapFilter =
+      const _AnalyticsHeatmapFilter();
   _AnalyticsHeatmapView _analyticsHeatmapView = _AnalyticsHeatmapView.daily;
   DateTime? _analyticsHeatmapFocusMonth;
+  _AnalyticsChartSection _analyticsSelectedChartSection =
+      _AnalyticsChartSection.heatmap;
   late final AnimationController _subTabFadeController;
   late final Animation<double> _subTabFadeAnimation;
   _ActivityTransactionsViewCacheKey? _activityTransactionsViewCacheKey;
@@ -282,6 +334,116 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       _analyticsHeatmapFocusMonth = _normalizeAnalyticsHeatmapMonth(month);
       _analyticsHeatmapView = _AnalyticsHeatmapView.daily;
     });
+  }
+
+  void _setAnalyticsHeatmapMode(_AnalyticsHeatmapMode mode) {
+    if (_analyticsHeatmapFilter.mode == mode) return;
+    setState(() {
+      _analyticsHeatmapFilter = _AnalyticsHeatmapFilter(
+        mode: mode,
+        bankId: _analyticsHeatmapFilter.bankId,
+        categoryId: _analyticsHeatmapFilter.categoryId,
+      );
+    });
+  }
+
+  Future<void> _openAnalyticsChartSheet() async {
+    final selectedSection = await showModalBottomSheet<_AnalyticsChartSection>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final bottomPadding = MediaQuery.of(sheetContext).padding.bottom;
+        return Container(
+          decoration: BoxDecoration(
+            color: AppColors.background(sheetContext),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottomPadding),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.textTertiary(sheetContext)
+                            .withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Select chart',
+                    style: TextStyle(
+                      color: AppColors.textPrimary(sheetContext),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Choose which chart shows in the main analytics slot.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary(sheetContext),
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ..._AnalyticsChartSection.values.map(
+                    (section) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _AnalyticsBottomSheetOption(
+                        title: section.title,
+                        selected: section == _analyticsSelectedChartSection,
+                        onTap: () => Navigator.of(sheetContext).pop(section),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || selectedSection == null) return;
+    setState(() => _analyticsSelectedChartSection = selectedSection);
+  }
+
+  Future<void> _openAnalyticsFilterSheet(TransactionProvider provider) async {
+    final bankIds = <int>{};
+    final categoryIds = <int>{};
+    for (final transaction in provider.allTransactions) {
+      if (transaction.bankId != null) bankIds.add(transaction.bankId!);
+      if (transaction.categoryId != null) categoryIds.add(transaction.categoryId!);
+    }
+
+    final categories = categoryIds
+        .map((id) => provider.getCategoryById(id))
+        .whereType<Category>()
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+
+    final selectedFilter = await showModalBottomSheet<_AnalyticsHeatmapFilter>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AnalyticsHeatmapFilterSheet(
+        currentFilter: _analyticsHeatmapFilter,
+        bankIds: bankIds.toList()..sort(),
+        categories: categories,
+      ),
+    );
+    if (!mounted || selectedFilter == null) {
+      return;
+    }
+    setState(() => _analyticsHeatmapFilter = selectedFilter);
   }
 
   void _setSubTab(_SubTab nextTab) {
@@ -665,6 +827,29 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     );
   }
 
+  bool _matchesAnalyticsHeatmapFilter(Transaction transaction) {
+    switch (_analyticsHeatmapFilter.mode) {
+      case _AnalyticsHeatmapMode.all:
+        break;
+      case _AnalyticsHeatmapMode.expense:
+        if (transaction.type != 'DEBIT') return false;
+        break;
+      case _AnalyticsHeatmapMode.income:
+        if (transaction.type != 'CREDIT') return false;
+        break;
+    }
+
+    if (_analyticsHeatmapFilter.bankId != null &&
+        transaction.bankId != _analyticsHeatmapFilter.bankId) {
+      return false;
+    }
+    if (_analyticsHeatmapFilter.categoryId != null &&
+        transaction.categoryId != _analyticsHeatmapFilter.categoryId) {
+      return false;
+    }
+    return true;
+  }
+
   List<Transaction> _transactionsForHeatmapDay(
     DateTime day,
     TransactionProvider provider,
@@ -674,7 +859,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     final transactions = provider.allTransactions.where((transaction) {
       final dt = _parseTransactionTime(transaction.time);
       if (dt == null) return false;
-      return !dt.isBefore(start) && dt.isBefore(end);
+      if (dt.isBefore(start) || !dt.isBefore(end)) return false;
+      return _matchesAnalyticsHeatmapFilter(transaction);
     }).toList()
       ..sort((a, b) {
         final aTime = _parseTransactionTime(a.time);
@@ -708,7 +894,6 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           transactions: transactions,
           showBalance: _showAccountBalances,
           derivedBalancesByReference: derivedBalancesByReference,
-          mode: _analyticsHeatmapMode,
           onTransactionTap: (transaction) =>
               _openTransactionDetailsSheet(provider, transaction),
         ),
@@ -717,43 +902,38 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   }
 
   List<Widget> _buildAnalyticsSlivers(TransactionProvider provider) {
-    final snapshot = _buildAnalyticsSnapshot(provider);
+    final analyticsTransactions = provider.allTransactions
+        .where(_matchesAnalyticsHeatmapFilter)
+        .toList(growable: false);
+    final filteredSnapshot = _buildAnalyticsSnapshot(
+      provider,
+      sourceTransactions: analyticsTransactions,
+      anchorTransactions: provider.allTransactions,
+      categoryMode: _analyticsHeatmapFilter.mode,
+    );
+    final fullSnapshot = _buildAnalyticsSnapshot(provider);
     final heatmapFocusMonth =
-        _resolveAnalyticsHeatmapFocusMonth(snapshot.monthDate);
+        _resolveAnalyticsHeatmapFocusMonth(filteredSnapshot.monthDate);
     return [
       SliverToBoxAdapter(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
           child: Column(
             children: [
-              _AnalyticsHeatmapCard(
-                transactions: provider.allTransactions,
-                focusMonth: heatmapFocusMonth,
-                view: _analyticsHeatmapView,
-                mode: _analyticsHeatmapMode,
-                onModeChanged: (mode) {
-                  if (_analyticsHeatmapMode == mode) return;
-                  setState(() => _analyticsHeatmapMode = mode);
-                },
-                onPrevious: () =>
-                    _shiftAnalyticsHeatmapPeriod(heatmapFocusMonth, -1),
-                onNext: () =>
-                    _shiftAnalyticsHeatmapPeriod(heatmapFocusMonth, 1),
-                onToggleView: () =>
-                    _toggleAnalyticsHeatmapView(heatmapFocusMonth),
-                onDaySelected: (date) => _openHeatmapDayLedger(date, provider),
-                onMonthSelected: _selectAnalyticsHeatmapMonth,
+              _buildPrimaryAnalyticsChart(
+                provider: provider,
+                snapshot: filteredSnapshot,
+                analyticsTransactions: analyticsTransactions,
+                heatmapFocusMonth: heatmapFocusMonth,
               ),
               const SizedBox(height: 14),
-              _AnalyticsExpenseBubbleCard(snapshot: snapshot),
+              _AnalyticsSpendingByDayCard(snapshot: fullSnapshot),
               const SizedBox(height: 14),
-              _AnalyticsSpendingByDayCard(snapshot: snapshot),
+              _AnalyticsTopRecipientsCard(snapshot: filteredSnapshot),
               const SizedBox(height: 14),
-              _AnalyticsTopRecipientsCard(snapshot: snapshot),
+              _AnalyticsMoneyFlowCard(snapshot: filteredSnapshot),
               const SizedBox(height: 14),
-              _AnalyticsMoneyFlowCard(snapshot: snapshot),
-              const SizedBox(height: 14),
-              _AnalyticsOverviewGrid(snapshot: snapshot),
+              _AnalyticsOverviewGrid(snapshot: filteredSnapshot),
             ],
           ),
         ),
@@ -761,9 +941,81 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     ];
   }
 
-  _AnalyticsSnapshot _buildAnalyticsSnapshot(TransactionProvider provider) {
+  Widget _buildPrimaryAnalyticsChart({
+    required TransactionProvider provider,
+    required _AnalyticsSnapshot snapshot,
+    required List<Transaction> analyticsTransactions,
+    required DateTime heatmapFocusMonth,
+  }) {
+    final activeFilterCount = _analyticsHeatmapFilter.activeCount;
+
+    switch (_analyticsSelectedChartSection) {
+      case _AnalyticsChartSection.heatmap:
+        return _AnalyticsHeatmapCard(
+          transactions: analyticsTransactions,
+          focusMonth: heatmapFocusMonth,
+          view: _analyticsHeatmapView,
+          mode: _analyticsHeatmapFilter.mode,
+          activeFilterCount: activeFilterCount,
+          onOpenModeSheet: () => _openAnalyticsFilterSheet(provider),
+          onOpenChartSheet: _openAnalyticsChartSheet,
+          onPrevious: () => _shiftAnalyticsHeatmapPeriod(heatmapFocusMonth, -1),
+          onNext: () => _shiftAnalyticsHeatmapPeriod(heatmapFocusMonth, 1),
+          onToggleView: () => _toggleAnalyticsHeatmapView(heatmapFocusMonth),
+          onDaySelected: (date) => _openHeatmapDayLedger(date, provider),
+          onMonthSelected: _selectAnalyticsHeatmapMonth,
+        );
+      case _AnalyticsChartSection.expenseBubble:
+        return _AnalyticsExpenseBubbleCard(
+          snapshot: snapshot,
+          showIncome:
+              _analyticsHeatmapFilter.mode == _AnalyticsHeatmapMode.income,
+          onChartPickerTap: _openAnalyticsChartSheet,
+          onToggleFlow: () => _setAnalyticsHeatmapMode(
+            _analyticsHeatmapFilter.mode == _AnalyticsHeatmapMode.income
+                ? _AnalyticsHeatmapMode.expense
+                : _AnalyticsHeatmapMode.income,
+          ),
+        );
+      case _AnalyticsChartSection.lineChart:
+        return _AnalyticsLineChartCard(
+          snapshot: snapshot,
+          activeFilterCount: activeFilterCount,
+          onOpenFilterSheet: () => _openAnalyticsFilterSheet(provider),
+          onChartPickerTap: _openAnalyticsChartSheet,
+        );
+      case _AnalyticsChartSection.barChart:
+        return _AnalyticsBarChartCard(
+          snapshot: snapshot,
+          activeFilterCount: activeFilterCount,
+          onOpenFilterSheet: () => _openAnalyticsFilterSheet(provider),
+          onChartPickerTap: _openAnalyticsChartSheet,
+        );
+      case _AnalyticsChartSection.pieChart:
+        return _AnalyticsPieChartCard(
+          snapshot: snapshot,
+          showIncome:
+              _analyticsHeatmapFilter.mode == _AnalyticsHeatmapMode.income,
+          onToggleFlow: () => _setAnalyticsHeatmapMode(
+            _analyticsHeatmapFilter.mode == _AnalyticsHeatmapMode.income
+                ? _AnalyticsHeatmapMode.expense
+                : _AnalyticsHeatmapMode.income,
+          ),
+          onChartPickerTap: _openAnalyticsChartSheet,
+        );
+    }
+  }
+
+  _AnalyticsSnapshot _buildAnalyticsSnapshot(
+    TransactionProvider provider, {
+    List<Transaction>? sourceTransactions,
+    Iterable<Transaction>? anchorTransactions,
+    _AnalyticsHeatmapMode categoryMode = _AnalyticsHeatmapMode.expense,
+  }) {
+    final transactions = sourceTransactions ?? provider.allTransactions;
+    final anchorSource = anchorTransactions ?? transactions;
     DateTime? latestTransactionTime;
-    for (final transaction in provider.allTransactions) {
+    for (final transaction in anchorSource) {
       final dt = _parseTransactionTime(transaction.time);
       if (dt == null) continue;
       if (latestTransactionTime == null || dt.isAfter(latestTransactionTime)) {
@@ -792,7 +1044,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     var largestExpense = 0.0;
     var largestDeposit = 0.0;
 
-    for (final transaction in provider.allTransactions) {
+    for (final transaction in transactions) {
       totalTransactions += 1;
       totalFees +=
           (transaction.serviceCharge ?? 0.0) + (transaction.vat ?? 0.0);
@@ -802,8 +1054,9 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
 
       final isSelfTransfer =
           isDebit ? provider.isSelfTransfer(transaction) : false;
-      final category =
-          isDebit ? provider.getCategoryById(transaction.categoryId) : null;
+      final category = transaction.categoryId == null
+          ? null
+          : provider.getCategoryById(transaction.categoryId!);
       final isMisc = category?.uncategorized == true;
 
       if (isCredit) {
@@ -839,15 +1092,21 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         byDayNet[day] = (byDayNet[day] ?? 0.0) - transaction.amount;
       }
 
-      if (!isDebit) continue;
+      final includeBubbleCategory = categoryMode == _AnalyticsHeatmapMode.income
+          ? isCredit
+          : isDebit;
+      final skipBubbleCategory =
+          categoryMode == _AnalyticsHeatmapMode.income ? isMisc : isSelfTransfer || isMisc;
 
-      if (isSelfTransfer || isMisc) continue;
+      if (includeBubbleCategory && !skipBubbleCategory) {
+        final categoryName = (category?.name.trim().isNotEmpty ?? false)
+            ? category!.name.trim()
+            : 'Other';
+        categoryTotals[categoryName] =
+            (categoryTotals[categoryName] ?? 0.0) + transaction.amount;
+      }
 
-      final categoryName = (category?.name.trim().isNotEmpty ?? false)
-          ? category!.name.trim()
-          : 'Other';
-      categoryTotals[categoryName] =
-          (categoryTotals[categoryName] ?? 0.0) + transaction.amount;
+      if (!isDebit || isSelfTransfer || isMisc) continue;
 
       final weekdayIndex = dt.weekday % 7; // Sunday = 0 ... Saturday = 6
       weekdayExpenseTotals[weekdayIndex] += transaction.amount;
@@ -2542,7 +2801,9 @@ class _AnalyticsHeatmapCard extends StatefulWidget {
   final DateTime focusMonth;
   final _AnalyticsHeatmapView view;
   final _AnalyticsHeatmapMode mode;
-  final ValueChanged<_AnalyticsHeatmapMode> onModeChanged;
+  final int activeFilterCount;
+  final VoidCallback onOpenModeSheet;
+  final VoidCallback onOpenChartSheet;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
   final VoidCallback onToggleView;
@@ -2555,7 +2816,9 @@ class _AnalyticsHeatmapCard extends StatefulWidget {
     required this.focusMonth,
     required this.view,
     required this.mode,
-    required this.onModeChanged,
+    this.activeFilterCount = 0,
+    required this.onOpenModeSheet,
+    required this.onOpenChartSheet,
     required this.onPrevious,
     required this.onNext,
     required this.onToggleView,
@@ -2613,10 +2876,6 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
 
   void _goToNextPeriod() {
     _animateToRelativePage(2);
-  }
-
-  void _handleModeChanged(_AnalyticsHeatmapMode mode) {
-    widget.onModeChanged(mode);
   }
 
   void _handleToggleView() {
@@ -2872,36 +3131,31 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
         children: [
           Row(
             children: [
-              Text(
-                'Heatmap',
-                style: TextStyle(
-                  color: AppColors.textPrimary(context),
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
+              GestureDetector(
+                onTap: widget.onOpenChartSheet,
+                behavior: HitTestBehavior.opaque,
+                child: Row(
+                  children: [
+                    Text(
+                      'Heatmap',
+                      style: TextStyle(
+                        color: AppColors.textPrimary(context),
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    Icon(
+                      AppIcons.keyboard_arrow_down_rounded,
+                      color: AppColors.textTertiary(context),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 3),
-              Icon(
-                AppIcons.keyboard_arrow_down_rounded,
-                color: AppColors.textTertiary(context),
-              ),
               const Spacer(),
-              _AnalyticsModeChip(
-                label: 'All',
-                selected: widget.mode == _AnalyticsHeatmapMode.all,
-                onTap: () => _handleModeChanged(_AnalyticsHeatmapMode.all),
-              ),
-              const SizedBox(width: 6),
-              _AnalyticsModeChip(
-                label: 'Expense',
-                selected: widget.mode == _AnalyticsHeatmapMode.expense,
-                onTap: () => _handleModeChanged(_AnalyticsHeatmapMode.expense),
-              ),
-              const SizedBox(width: 6),
-              _AnalyticsModeChip(
-                label: 'Income',
-                selected: widget.mode == _AnalyticsHeatmapMode.income,
-                onTap: () => _handleModeChanged(_AnalyticsHeatmapMode.income),
+              _AnalyticsFilterBadgeButton(
+                activeCount: widget.activeFilterCount,
+                onTap: widget.onOpenModeSheet,
               ),
             ],
           ),
@@ -3186,14 +3440,177 @@ class _AnalyticsHeatmapNavButton extends StatelessWidget {
   }
 }
 
-class _AnalyticsModeChip extends StatelessWidget {
-  final String label;
-  final bool selected;
+class _AnalyticsFilterBadgeButton extends StatelessWidget {
+  final int activeCount;
   final VoidCallback onTap;
 
-  const _AnalyticsModeChip({
+  const _AnalyticsFilterBadgeButton({
+    this.activeCount = 0,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasFilters = activeCount > 0;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: hasFilters
+                  ? AppColors.primaryDark.withValues(alpha: 0.1)
+                  : AppColors.surfaceColor(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: hasFilters
+                    ? AppColors.primaryDark
+                    : AppColors.borderColor(context),
+              ),
+            ),
+            child: Icon(
+              AppIcons.filter_list,
+              size: 18,
+              color: hasFilters
+                  ? AppColors.primaryDark
+                  : AppColors.textSecondary(context),
+            ),
+          ),
+          if (hasFilters)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: Container(
+                width: 18,
+                height: 18,
+                decoration: const BoxDecoration(
+                  color: AppColors.primaryDark,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    '$activeCount',
+                    style: const TextStyle(
+                      color: AppColors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalyticsPrimaryChartHeader extends StatelessWidget {
+  final String chartLabel;
+  final String headline;
+  final String supportingText;
+  final int activeFilterCount;
+  final VoidCallback? onOpenFilterSheet;
+  final VoidCallback? onChartPickerTap;
+  final Widget? details;
+
+  const _AnalyticsPrimaryChartHeader({
+    required this.chartLabel,
+    required this.headline,
+    required this.supportingText,
+    this.activeFilterCount = 0,
+    this.onOpenFilterSheet,
+    this.onChartPickerTap,
+    this.details,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final showFilterButton = onOpenFilterSheet != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            if (onChartPickerTap == null)
+              Text(
+                chartLabel,
+                style: TextStyle(
+                  color: AppColors.textPrimary(context),
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              )
+            else
+              GestureDetector(
+                onTap: onChartPickerTap,
+                behavior: HitTestBehavior.opaque,
+                child: Row(
+                  children: [
+                    Text(
+                      chartLabel,
+                      style: TextStyle(
+                        color: AppColors.textPrimary(context),
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    Icon(
+                      AppIcons.keyboard_arrow_down_rounded,
+                      color: AppColors.textTertiary(context),
+                    ),
+                  ],
+                ),
+              ),
+            const Spacer(),
+            if (showFilterButton)
+              _AnalyticsFilterBadgeButton(
+                activeCount: activeFilterCount,
+                onTap: onOpenFilterSheet!,
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (details != null)
+          details!
+        else ...[
+          Text(
+            headline,
+            style: TextStyle(
+              color: AppColors.textPrimary(context),
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            supportingText,
+            style: TextStyle(
+              color: AppColors.textSecondary(context),
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _AnalyticsFlowModeLabel extends StatelessWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _AnalyticsFlowModeLabel({
     required this.label,
-    required this.selected,
+    required this.color,
     required this.onTap,
   });
 
@@ -3201,25 +3618,59 @@ class _AnalyticsModeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedDefaultTextStyle(
         duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primaryLight : Colors.transparent,
-          borderRadius: BorderRadius.circular(99),
-          border: Border.all(
-            color: selected
-                ? AppColors.primaryLight
-                : AppColors.borderColor(context),
-          ),
+        style: TextStyle(
+          color: color,
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
         ),
+        child: Text(label),
+      ),
+    );
+  }
+}
+
+class _AnalyticsHorizontalSwipeBlocker extends StatelessWidget {
+  final Widget child;
+
+  const _AnalyticsHorizontalSwipeBlocker({
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: (_) {},
+      onHorizontalDragUpdate: (_) {},
+      onHorizontalDragEnd: (_) {},
+      child: child,
+    );
+  }
+}
+
+class _AnalyticsChartEmptyState extends StatelessWidget {
+  final String message;
+  final double height;
+
+  const _AnalyticsChartEmptyState({
+    required this.message,
+    this.height = 220,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: Center(
         child: Text(
-          label,
+          message,
+          textAlign: TextAlign.center,
           style: TextStyle(
-            color:
-                selected ? AppColors.white : AppColors.textSecondary(context),
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
+            color: AppColors.textSecondary(context),
+            fontSize: 13,
           ),
         ),
       ),
@@ -3351,9 +3802,15 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
   ];
 
   final _AnalyticsSnapshot snapshot;
+  final bool showIncome;
+  final VoidCallback? onChartPickerTap;
+  final VoidCallback? onToggleFlow;
 
   const _AnalyticsExpenseBubbleCard({
     required this.snapshot,
+    this.showIncome = false,
+    this.onChartPickerTap,
+    this.onToggleFlow,
   });
 
   @override
@@ -3368,92 +3825,77 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
         DateTime(snapshot.monthDate.year, snapshot.monthDate.month + 1, 0);
     final dataRangeLabel =
         'Data from ${_formatDateHeader(snapshot.monthDate)} - ${_formatDateHeader(monthEnd)}';
+    final emptyLabel = showIncome
+        ? 'No categorized income this month.'
+        : 'No categorized expenses this month.';
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-      decoration: BoxDecoration(
-        color: AppColors.cardColor(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.borderColor(context)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Expenses',
-                style: TextStyle(
-                  color: AppColors.textPrimary(context),
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                'Bubble chart',
-                style: TextStyle(
-                  color: AppColors.textPrimary(context),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              Icon(
-                AppIcons.keyboard_arrow_down_rounded,
-                color: AppColors.textTertiary(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            dataRangeLabel,
-            style: TextStyle(
-              color: AppColors.textSecondary(context),
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (categories.isEmpty)
-            SizedBox(
-              height: 170,
-              child: Center(
-                child: Text(
-                  'No categorized expenses this month.',
-                  style: TextStyle(
-                    color: AppColors.textSecondary(context),
-                    fontSize: 13,
+    return _AnalyticsHorizontalSwipeBlocker(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.borderColor(context)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _AnalyticsPrimaryChartHeader(
+              chartLabel: 'Bubble Chart',
+              headline: '',
+              supportingText: dataRangeLabel,
+              onChartPickerTap: onChartPickerTap,
+              details: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _AnalyticsFlowModeLabel(
+                    label: showIncome ? 'Income' : 'Expense',
+                    color: showIncome ? AppColors.incomeSuccess : AppColors.red,
+                    onTap: onToggleFlow ?? () {},
                   ),
-                ),
-              ),
-            )
-          else
-            SizedBox(
-              height: bubbleChartHeight,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final chartCenter = _bubbleChartCenter(
-                    extents: bubbleChartExtents,
-                    chartWidth: constraints.maxWidth,
-                    chartHeight: bubbleChartHeight,
-                  );
-                  return Stack(
-                    children: [
-                      for (final bubble in bubbleNodes)
-                        _buildBubble(
-                          context: context,
-                          chartCenter: chartCenter,
-                          bubble: bubble,
-                        ),
-                    ],
-                  );
-                },
+                  const SizedBox(height: 6),
+                  Text(
+                    dataRangeLabel,
+                    style: TextStyle(
+                      color: AppColors.textSecondary(context),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
             ),
-          if (categories.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ..._buildLegendRows(context, categories),
+            const SizedBox(height: 10),
+            if (categories.isEmpty)
+              _AnalyticsChartEmptyState(message: emptyLabel, height: 170)
+            else
+              SizedBox(
+                height: bubbleChartHeight,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final chartCenter = _bubbleChartCenter(
+                      extents: bubbleChartExtents,
+                      chartWidth: constraints.maxWidth,
+                      chartHeight: bubbleChartHeight,
+                    );
+                    return Stack(
+                      children: [
+                        for (final bubble in bubbleNodes)
+                          _buildBubble(
+                            context: context,
+                            chartCenter: chartCenter,
+                            bubble: bubble,
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            if (categories.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ..._buildLegendRows(context, categories),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -3760,87 +4202,488 @@ class _AnalyticsLegendAmountItem extends StatelessWidget {
   }
 }
 
-class _AnalyticsSpendingByDayCard extends StatelessWidget {
-  final _AnalyticsSnapshot snapshot;
+List<double> _analyticsDaySeries(
+  Map<int, double> valuesByDay,
+  DateTime monthDate,
+) {
+  final dayCount = DateTime(monthDate.year, monthDate.month + 1, 0).day;
+  return List<double>.generate(
+    dayCount,
+    (index) => valuesByDay[index + 1] ?? 0.0,
+    growable: false,
+  );
+}
 
-  const _AnalyticsSpendingByDayCard({
+Widget _buildAnalyticsDayAxisTitle(
+  BuildContext context,
+  double value,
+  TitleMeta meta,
+  int dayCount,
+) {
+  final day = value.toInt();
+  final shouldShow =
+      day == 1 || day == dayCount || day == 7 || day == 14 || day == 21 || day == 28;
+  if (day < 1 || day > dayCount || !shouldShow) {
+    return const SizedBox.shrink();
+  }
+
+  return SideTitleWidget(
+    axisSide: meta.axisSide,
+    child: Text(
+      '$day',
+      style: TextStyle(
+        color: AppColors.textTertiary(context),
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
+}
+
+Widget _buildAnalyticsValueAxisTitle(
+  BuildContext context,
+  double value,
+  TitleMeta meta,
+) {
+  if (value.abs() < 0.001) return const SizedBox.shrink();
+
+  return SideTitleWidget(
+    axisSide: meta.axisSide,
+    child: Text(
+      '${value < 0 ? '-' : ''}${_formatEtbAbbrev(value.abs())}',
+      style: TextStyle(
+        color: AppColors.textTertiary(context),
+        fontSize: 11,
+        fontWeight: FontWeight.w500,
+      ),
+    ),
+  );
+}
+
+class _AnalyticsLineChartCard extends StatelessWidget {
+  final _AnalyticsSnapshot snapshot;
+  final int activeFilterCount;
+  final VoidCallback? onOpenFilterSheet;
+  final VoidCallback? onChartPickerTap;
+
+  const _AnalyticsLineChartCard({
     required this.snapshot,
+    this.activeFilterCount = 0,
+    this.onOpenFilterSheet,
+    this.onChartPickerTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final maxValue = snapshot.weekdayExpenseTotals.fold<double>(0.0, math.max);
-    final peakDay = _analyticsWeekdayLabel(snapshot.peakWeekdayIndex);
+    final monthLabel = DateFormat('MMMM yyyy').format(snapshot.monthDate);
+    final values = _analyticsDaySeries(snapshot.netByDay, snapshot.monthDate);
+    final hasData = values.any((value) => value.abs() > 0.001);
+    final dayCount = values.length;
+    final maxAbs = values.fold<double>(
+      0.0,
+      (currentMax, value) => math.max(currentMax, value.abs()),
+    );
+    final chartMax = math.max(100.0, maxAbs * 1.22).toDouble();
+    final interval = math.max(100.0, chartMax / 3).toDouble();
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-      decoration: BoxDecoration(
-        color: AppColors.cardColor(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.borderColor(context)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Spending by Day',
-                style: TextStyle(
-                  color: AppColors.textPrimary(context),
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                'Peak: $peakDay',
-                style: TextStyle(
-                  color: AppColors.textTertiary(context),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 84,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(7, (index) {
-                final value = snapshot.weekdayExpenseTotals[index];
-                final ratio =
-                    maxValue > 0 ? (value / maxValue).clamp(0.0, 1.0) : 0.0;
-                final barHeight = 10 + (ratio * 52);
-                final isPeak =
-                    index == snapshot.peakWeekdayIndex && maxValue > 0;
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          height: barHeight,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: isPeak
-                                  ? const [Color(0xFF4ADE80), Color(0xFF22C55E)]
-                                  : const [
-                                      Color(0xFF7C83EA),
-                                      Color(0xFF5B60D9)
-                                    ],
+    return _AnalyticsHorizontalSwipeBlocker(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.borderColor(context)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _AnalyticsPrimaryChartHeader(
+              chartLabel: 'Line Chart',
+              headline: 'Net Flow',
+              supportingText: 'Daily movement for $monthLabel',
+              activeFilterCount: activeFilterCount,
+              onOpenFilterSheet: onOpenFilterSheet,
+              onChartPickerTap: onChartPickerTap,
+            ),
+            const SizedBox(height: 12),
+            if (!hasData)
+              const _AnalyticsChartEmptyState(
+                message: 'No net flow data for this month.',
+              )
+            else
+              SizedBox(
+                height: 220,
+                child: LineChart(
+                  LineChartData(
+                  minX: 1,
+                  maxX: dayCount.toDouble(),
+                  minY: -chartMax,
+                  maxY: chartMax,
+                  lineTouchData: LineTouchData(enabled: true),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: interval,
+                    getDrawingHorizontalLine: (value) => FlLine(
+                      color: AppColors.borderColor(context),
+                      strokeWidth: value.abs() < 0.001 ? 1.2 : 0.8,
+                    ),
+                  ),
+                  titlesData: FlTitlesData(
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        interval: 1,
+                        reservedSize: 28,
+                        getTitlesWidget: (value, meta) =>
+                            _buildAnalyticsDayAxisTitle(
+                              context,
+                              value,
+                              meta,
+                              dayCount,
                             ),
-                            borderRadius: BorderRadius.circular(7),
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        interval: interval,
+                        reservedSize: 48,
+                        getTitlesWidget: (value, meta) =>
+                            _buildAnalyticsValueAxisTitle(
+                              context,
+                              value,
+                              meta,
+                            ),
+                      ),
+                    ),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  extraLinesData: ExtraLinesData(
+                    horizontalLines: [
+                      HorizontalLine(
+                        y: 0,
+                        color: AppColors.borderColor(context),
+                        strokeWidth: 1,
+                      ),
+                    ],
+                  ),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: [
+                        for (int index = 0; index < values.length; index++)
+                          FlSpot((index + 1).toDouble(), values[index]),
+                      ],
+                      isCurved: true,
+                      curveSmoothness: 0.24,
+                      color: const Color(0xFF6D7EE8),
+                      barWidth: 3,
+                      isStrokeCapRound: true,
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            const Color(0xFF6D7EE8).withValues(alpha: 0.24),
+                            const Color(0xFF6D7EE8).withValues(alpha: 0.02),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnalyticsBarChartCard extends StatelessWidget {
+  final _AnalyticsSnapshot snapshot;
+  final int activeFilterCount;
+  final VoidCallback? onOpenFilterSheet;
+  final VoidCallback? onChartPickerTap;
+
+  const _AnalyticsBarChartCard({
+    required this.snapshot,
+    this.activeFilterCount = 0,
+    this.onOpenFilterSheet,
+    this.onChartPickerTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final monthLabel = DateFormat('MMMM yyyy').format(snapshot.monthDate);
+    final dayCount = DateTime(snapshot.monthDate.year, snapshot.monthDate.month + 1, 0).day;
+    final weekCount = ((dayCount + 6) ~/ 7).clamp(4, 5).toInt();
+    final incomeByWeek = List<double>.filled(weekCount, 0.0);
+    final expenseByWeek = List<double>.filled(weekCount, 0.0);
+
+    for (int day = 1; day <= dayCount; day++) {
+      final weekIndex = ((day - 1) ~/ 7).clamp(0, weekCount - 1);
+      incomeByWeek[weekIndex] += snapshot.incomeByDay[day] ?? 0.0;
+      expenseByWeek[weekIndex] += snapshot.expenseByDay[day] ?? 0.0;
+    }
+
+    final maxValue = [
+      ...incomeByWeek,
+      ...expenseByWeek,
+    ].fold<double>(0.0, math.max);
+    final chartMax = math.max(100.0, maxValue * 1.22).toDouble();
+    final interval = math.max(100.0, chartMax / 3).toDouble();
+    final hasData = maxValue > 0.001;
+
+    return _AnalyticsHorizontalSwipeBlocker(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.borderColor(context)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _AnalyticsPrimaryChartHeader(
+              chartLabel: 'Bar Chart',
+              headline: 'Income vs Expense',
+              supportingText: 'Weekly totals for $monthLabel',
+              activeFilterCount: activeFilterCount,
+              onOpenFilterSheet: onOpenFilterSheet,
+              onChartPickerTap: onChartPickerTap,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: const [
+                _AnalyticsLegendDot(
+                  color: AppColors.incomeSuccess,
+                  label: 'Income',
+                ),
+                SizedBox(width: 12),
+                _AnalyticsLegendDot(
+                  color: AppColors.red,
+                  label: 'Expense',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (!hasData)
+              const _AnalyticsChartEmptyState(
+                message: 'No income or expense data for this month.',
+              )
+            else
+              SizedBox(
+                height: 220,
+                child: BarChart(
+                  BarChartData(
+                  minY: -chartMax,
+                  maxY: chartMax,
+                  baselineY: 0,
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: interval,
+                    getDrawingHorizontalLine: (value) => FlLine(
+                      color: AppColors.borderColor(context),
+                      strokeWidth: value.abs() < 0.001 ? 1.2 : 0.8,
+                    ),
+                  ),
+                  titlesData: FlTitlesData(
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 28,
+                        getTitlesWidget: (value, meta) {
+                          final week = value.toInt();
+                          if (week < 0 || week >= weekCount) {
+                            return const SizedBox.shrink();
+                          }
+                          return SideTitleWidget(
+                            axisSide: meta.axisSide,
+                            child: Text(
+                              'W${week + 1}',
+                              style: TextStyle(
+                                color: AppColors.textTertiary(context),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        interval: interval,
+                        reservedSize: 48,
+                        getTitlesWidget: (value, meta) =>
+                            _buildAnalyticsValueAxisTitle(
+                              context,
+                              value,
+                              meta,
+                            ),
+                      ),
+                    ),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  barTouchData: BarTouchData(enabled: true),
+                  barGroups: [
+                    for (int index = 0; index < weekCount; index++)
+                      BarChartGroupData(
+                        x: index,
+                        barsSpace: 5,
+                        barRods: [
+                          BarChartRodData(
+                            toY: incomeByWeek[index],
+                            width: 8,
+                            color: AppColors.incomeSuccess,
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(3),
+                            ),
+                          ),
+                          BarChartRodData(
+                            toY: -expenseByWeek[index],
+                            width: 8,
+                            color: AppColors.red,
+                            borderRadius: const BorderRadius.vertical(
+                              bottom: Radius.circular(3),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnalyticsPieChartCard extends StatelessWidget {
+  final _AnalyticsSnapshot snapshot;
+  final bool showIncome;
+  final VoidCallback? onToggleFlow;
+  final VoidCallback? onChartPickerTap;
+
+  const _AnalyticsPieChartCard({
+    required this.snapshot,
+    this.showIncome = false,
+    this.onToggleFlow,
+    this.onChartPickerTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final monthLabel = DateFormat('MMMM yyyy').format(snapshot.monthDate);
+    final categories = snapshot.categories.take(6).toList(growable: false);
+    final total = categories.fold<double>(0.0, (sum, stat) => sum + stat.amount);
+    final hasData = total > 0.001;
+
+    return _AnalyticsHorizontalSwipeBlocker(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.borderColor(context)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _AnalyticsPrimaryChartHeader(
+              chartLabel: 'Pie Chart',
+              headline: '',
+              supportingText: 'Category share for $monthLabel',
+              details: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _AnalyticsFlowModeLabel(
+                    label: showIncome ? 'Income' : 'Expense',
+                    color: showIncome ? AppColors.incomeSuccess : AppColors.red,
+                    onTap: onToggleFlow ?? () {},
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Category share for $monthLabel',
+                    style: TextStyle(
+                      color: AppColors.textSecondary(context),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              onChartPickerTap: onChartPickerTap,
+            ),
+            const SizedBox(height: 12),
+            if (!hasData)
+              _AnalyticsChartEmptyState(
+                message: showIncome
+                    ? 'No categorized income data for this month.'
+                    : 'No categorized expense data for this month.',
+              )
+            else
+              SizedBox(
+                height: 220,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    PieChart(
+                      PieChartData(
+                        sectionsSpace: 3,
+                        centerSpaceRadius: 54,
+                        sections: [
+                          for (final stat in categories)
+                            PieChartSectionData(
+                              value: stat.amount,
+                              color: stat.color,
+                              radius: 56,
+                              title: total <= 0
+                                  ? ''
+                                  : '${((stat.amount / total) * 100).round()}%',
+                              titleStyle: TextStyle(
+                                color: AppColors.textPrimary(context),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'ETB ${_formatEtbAbbrev(total)}',
+                          style: TextStyle(
+                            color: AppColors.textPrimary(context),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 4),
                         Text(
-                          _analyticsWeekdayLabel(index),
+                          showIncome ? 'Income' : 'Expenses',
                           style: TextStyle(
                             color: AppColors.textSecondary(context),
                             fontSize: 12,
@@ -3849,12 +4692,216 @@ class _AnalyticsSpendingByDayCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                  ),
-                );
-              }),
-            ),
+                  ],
+                ),
+              ),
+            if (hasData) ...[
+              const SizedBox(height: 10),
+              ..._buildLegendRows(context, categories),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildLegendRows(
+    BuildContext context,
+    List<_AnalyticsCategoryStat> categories,
+  ) {
+    final rows = <Widget>[];
+    for (int i = 0; i < categories.length; i += 2) {
+      final left = categories[i];
+      final right = i + 1 < categories.length ? categories[i + 1] : null;
+      rows.add(
+        Padding(
+          padding: EdgeInsets.only(bottom: i + 2 < categories.length ? 8 : 0),
+          child: Row(
+            children: [
+              Expanded(child: _AnalyticsLegendAmountItem(stat: left)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: right == null
+                    ? const SizedBox.shrink()
+                    : _AnalyticsLegendAmountItem(stat: right),
+              ),
+            ],
           ),
-        ],
+        ),
+      );
+    }
+    return rows;
+  }
+}
+
+class _AnalyticsSpendingByDayCard extends StatelessWidget {
+  final _AnalyticsSnapshot snapshot;
+  final int activeFilterCount;
+  final VoidCallback? onOpenFilterSheet;
+  final VoidCallback? onChartPickerTap;
+
+  const _AnalyticsSpendingByDayCard({
+    required this.snapshot,
+    this.activeFilterCount = 0,
+    this.onOpenFilterSheet,
+    this.onChartPickerTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final maxValue = snapshot.weekdayExpenseTotals.fold<double>(0.0, math.max);
+    final peakDay = _analyticsWeekdayLabel(snapshot.peakWeekdayIndex);
+    final showFilterButton = onOpenFilterSheet != null;
+
+    return _AnalyticsHorizontalSwipeBlocker(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.borderColor(context)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: onChartPickerTap == null
+                      ? Text(
+                          'Spending by Day',
+                          style: TextStyle(
+                            color: AppColors.textPrimary(context),
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        )
+                      : GestureDetector(
+                          onTap: onChartPickerTap,
+                          behavior: HitTestBehavior.opaque,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  'Spending by Day',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: AppColors.textPrimary(context),
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 3),
+                              Icon(
+                                AppIcons.keyboard_arrow_down_rounded,
+                                color: AppColors.textTertiary(context),
+                              ),
+                            ],
+                          ),
+                        ),
+                ),
+                if (showFilterButton)
+                  _AnalyticsFilterBadgeButton(
+                    activeCount: activeFilterCount,
+                    onTap: onOpenFilterSheet!,
+                  ),
+                if (!showFilterButton && onChartPickerTap == null)
+                  Text(
+                    'Peak: $peakDay',
+                    style: TextStyle(
+                      color: AppColors.textTertiary(context),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+              ],
+            ),
+            if (showFilterButton || onChartPickerTap != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                maxValue > 0
+                    ? 'Peak: $peakDay'
+                    : 'No expense activity for this month.',
+                style: TextStyle(
+                  color: AppColors.textTertiary(context),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            if (maxValue <= 0)
+              SizedBox(
+                height: 84,
+                child: Center(
+                  child: Text(
+                    'No expense activity for this month.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary(context),
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              )
+            else
+              SizedBox(
+                height: 84,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: List.generate(7, (index) {
+                    final value = snapshot.weekdayExpenseTotals[index];
+                    final ratio =
+                        maxValue > 0 ? (value / maxValue).clamp(0.0, 1.0) : 0.0;
+                    final barHeight = 10 + (ratio * 52);
+                    final isPeak =
+                        index == snapshot.peakWeekdayIndex && maxValue > 0;
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              height: barHeight,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: isPeak
+                                      ? const [
+                                          Color(0xFF4ADE80),
+                                          Color(0xFF22C55E),
+                                        ]
+                                      : const [
+                                          Color(0xFF7C83EA),
+                                          Color(0xFF5B60D9),
+                                        ],
+                                ),
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _analyticsWeekdayLabel(index),
+                              style: TextStyle(
+                                color: AppColors.textSecondary(context),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -4580,7 +5627,6 @@ class _HeatmapDayLedgerSheet extends StatelessWidget {
   final List<Transaction> transactions;
   final bool showBalance;
   final Map<String, double> derivedBalancesByReference;
-  final _AnalyticsHeatmapMode mode;
   final ValueChanged<Transaction> onTransactionTap;
 
   const _HeatmapDayLedgerSheet({
@@ -4588,7 +5634,6 @@ class _HeatmapDayLedgerSheet extends StatelessWidget {
     required this.transactions,
     required this.showBalance,
     required this.derivedBalancesByReference,
-    required this.mode,
     required this.onTransactionTap,
   });
 
@@ -4608,11 +5653,6 @@ class _HeatmapDayLedgerSheet extends StatelessWidget {
     final netTotal = incomeTotal - expenseTotal;
     final transactionLabel =
         '${_formatCount(transactions.length)} transaction${transactions.length == 1 ? '' : 's'}';
-    final modeLabel = switch (mode) {
-      _AnalyticsHeatmapMode.all => 'All',
-      _AnalyticsHeatmapMode.expense => 'Expense',
-      _AnalyticsHeatmapMode.income => 'Income',
-    };
     final netPrefix = netTotal >= 0 ? '+' : '-';
 
     return Container(
@@ -4640,82 +5680,24 @@ class _HeatmapDayLedgerSheet extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-              child: Row(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _formatDateHeader(date),
-                          style: TextStyle(
-                            color: AppColors.textPrimary(context),
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '$weekdayLabel • $transactionLabel',
-                          style: TextStyle(
-                            color: AppColors.textSecondary(context),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
+                  Text(
+                    _formatDateHeader(date),
+                    style: TextStyle(
+                      color: AppColors.textPrimary(context),
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.cardColor(context),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: AppColors.borderColor(context)),
-                    ),
-                    child: Text(
-                      'Heatmap: $modeLabel',
-                      style: TextStyle(
-                        color: AppColors.textSecondary(context),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _HeatmapDaySummaryStat(
-                      label: 'Income',
-                      value: '+ETB ${_formatEtbAbbrev(incomeTotal)}',
-                      valueColor: AppColors.incomeSuccess,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _HeatmapDaySummaryStat(
-                      label: 'Expense',
-                      value: '-ETB ${_formatEtbAbbrev(expenseTotal)}',
-                      valueColor: AppColors.red,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _HeatmapDaySummaryStat(
-                      label: 'Net',
-                      value:
-                          '${netPrefix}ETB ${_formatEtbAbbrev(netTotal.abs())}',
-                      valueColor: netTotal >= 0
-                          ? AppColors.incomeSuccess
-                          : AppColors.red,
+                  const SizedBox(height: 4),
+                  Text(
+                    '$weekdayLabel • $transactionLabel',
+                    style: TextStyle(
+                      color: AppColors.textSecondary(context),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -4731,6 +5713,33 @@ class _HeatmapDayLedgerSheet extends StatelessWidget {
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                 ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Wrap(
+                spacing: 16,
+                runSpacing: 6,
+                children: [
+                  _HeatmapDayInlineStat(
+                    label: 'Income',
+                    value: '+ETB ${_formatEtbAbbrev(incomeTotal)}',
+                    valueColor: AppColors.incomeSuccess,
+                  ),
+                  _HeatmapDayInlineStat(
+                    label: 'Expense',
+                    value: '-ETB ${_formatEtbAbbrev(expenseTotal)}',
+                    valueColor: AppColors.red,
+                  ),
+                  _HeatmapDayInlineStat(
+                    label: 'Net',
+                    value: '${netPrefix}ETB ${_formatEtbAbbrev(netTotal.abs())}',
+                    valueColor: netTotal >= 0
+                        ? AppColors.incomeSuccess
+                        : AppColors.red,
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
@@ -4803,12 +5812,12 @@ class _HeatmapDayLedgerSheet extends StatelessWidget {
   }
 }
 
-class _HeatmapDaySummaryStat extends StatelessWidget {
+class _HeatmapDayInlineStat extends StatelessWidget {
   final String label;
   final String value;
   final Color valueColor;
 
-  const _HeatmapDaySummaryStat({
+  const _HeatmapDayInlineStat({
     required this.label,
     required this.value,
     required this.valueColor,
@@ -4816,37 +5825,29 @@ class _HeatmapDaySummaryStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.cardColor(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.borderColor(context)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Text.rich(
+      TextSpan(
         children: [
-          Text(
-            label,
+          TextSpan(
+            text: '$label ',
             style: TextStyle(
-              color: AppColors.textTertiary(context),
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
+              color: AppColors.textSecondary(context),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          TextSpan(
+            text: value,
             style: TextStyle(
               color: valueColor,
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
           ),
         ],
       ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }
@@ -7194,6 +8195,281 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
                             foregroundColor: AppColors.textSecondary(context),
                             side: BorderSide(
                                 color: AppColors.borderColor(context)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text(
+                            'Clear All',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: _apply,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryDark,
+                            foregroundColor: AppColors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text(
+                            'Apply Filters',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        color: AppColors.textSecondary(context),
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.8,
+      ),
+    );
+  }
+}
+
+class _AnalyticsHeatmapFilterSheet extends StatefulWidget {
+  final _AnalyticsHeatmapFilter currentFilter;
+  final List<int> bankIds;
+  final List<Category> categories;
+
+  const _AnalyticsHeatmapFilterSheet({
+    required this.currentFilter,
+    required this.bankIds,
+    required this.categories,
+  });
+
+  @override
+  State<_AnalyticsHeatmapFilterSheet> createState() =>
+      _AnalyticsHeatmapFilterSheetState();
+}
+
+class _AnalyticsHeatmapFilterSheetState
+    extends State<_AnalyticsHeatmapFilterSheet> {
+  late _AnalyticsHeatmapMode _selectedMode;
+  late int? _selectedBankId;
+  late int? _selectedCategoryId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedMode = widget.currentFilter.mode;
+    _selectedBankId = widget.currentFilter.bankId;
+    _selectedCategoryId = widget.currentFilter.categoryId;
+  }
+
+  void _clearAll() {
+    setState(() {
+      _selectedMode = _AnalyticsHeatmapMode.all;
+      _selectedBankId = null;
+      _selectedCategoryId = null;
+    });
+  }
+
+  void _apply() {
+    Navigator.of(context).pop(
+      _AnalyticsHeatmapFilter(
+        mode: _selectedMode,
+        bankId: _selectedBankId,
+        categoryId: _selectedCategoryId,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).viewInsets.bottom;
+    final navBarPadding = MediaQuery.of(context).padding.bottom;
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.slate400,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 12, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Filter Heatmap',
+                    style: TextStyle(
+                      color: AppColors.textPrimary(context),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: Icon(
+                    AppIcons.close,
+                    color: AppColors.textSecondary(context),
+                  ),
+                  splashRadius: 20,
+                ),
+              ],
+            ),
+          ),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                12,
+                20,
+                16 + bottomPadding + navBarPadding,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sectionLabel('TYPE'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _FilterChip(
+                        label: 'All',
+                        selected: _selectedMode == _AnalyticsHeatmapMode.all,
+                        onTap: () => setState(
+                          () => _selectedMode = _AnalyticsHeatmapMode.all,
+                        ),
+                      ),
+                      _FilterChip(
+                        label: 'Expense',
+                        selected:
+                            _selectedMode == _AnalyticsHeatmapMode.expense,
+                        onTap: () => setState(
+                          () => _selectedMode = _AnalyticsHeatmapMode.expense,
+                        ),
+                      ),
+                      _FilterChip(
+                        label: 'Income',
+                        selected:
+                            _selectedMode == _AnalyticsHeatmapMode.income,
+                        onTap: () => setState(
+                          () => _selectedMode = _AnalyticsHeatmapMode.income,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (widget.bankIds.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    _sectionLabel('BANK'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _FilterChip(
+                          label: 'All Banks',
+                          selected: _selectedBankId == null,
+                          onTap: () => setState(() => _selectedBankId = null),
+                        ),
+                        for (final bankId in widget.bankIds)
+                          _FilterChip(
+                            label: _bankLabel(bankId),
+                            selected: _selectedBankId == bankId,
+                            onTap: () =>
+                                setState(() => _selectedBankId = bankId),
+                          ),
+                      ],
+                    ),
+                  ],
+                  if (widget.categories.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    _sectionLabel('CATEGORY'),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: MediaQuery.of(context).size.width,
+                      child: Transform.translate(
+                        offset: const Offset(-20, 0),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Row(
+                            children: [
+                              _FilterChip(
+                                label: 'All',
+                                selected: _selectedCategoryId == null,
+                                onTap: () => setState(
+                                  () => _selectedCategoryId = null,
+                                ),
+                              ),
+                              for (final category in widget.categories)
+                                if (category.id != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 8),
+                                    child: _FilterChip(
+                                      label: category.name,
+                                      selected:
+                                          _selectedCategoryId == category.id,
+                                      onTap: () => setState(
+                                        () =>
+                                            _selectedCategoryId = category.id,
+                                      ),
+                                    ),
+                                  ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _clearAll,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.textSecondary(context),
+                            side: BorderSide(
+                              color: AppColors.borderColor(context),
+                            ),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
