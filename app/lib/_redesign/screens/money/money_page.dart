@@ -156,6 +156,28 @@ class _TransactionFilter {
   }
 }
 
+class _LedgerFilter {
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final Set<int> bankIds;
+
+  const _LedgerFilter({
+    this.startDate,
+    this.endDate,
+    this.bankIds = const <int>{},
+  });
+
+  bool get isActive =>
+      startDate != null || endDate != null || bankIds.isNotEmpty;
+
+  int get activeCount {
+    int count = 0;
+    if (startDate != null || endDate != null) count++;
+    if (bankIds.isNotEmpty) count++;
+    return count;
+  }
+}
+
 class _AnalyticsHeatmapFilter {
   final _AnalyticsHeatmapMode mode;
   final int? bankId;
@@ -252,6 +274,48 @@ class _ActivityTransactionsViewData {
   });
 }
 
+class _LedgerViewCacheKey {
+  final int dataVersion;
+  final int? startDateMillis;
+  final int? endDateMillis;
+  final String bankIdsKey;
+
+  const _LedgerViewCacheKey({
+    required this.dataVersion,
+    required this.startDateMillis,
+    required this.endDateMillis,
+    required this.bankIdsKey,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is _LedgerViewCacheKey &&
+        other.dataVersion == dataVersion &&
+        other.startDateMillis == startDateMillis &&
+        other.endDateMillis == endDateMillis &&
+        other.bankIdsKey == bankIdsKey;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(dataVersion, startDateMillis, endDateMillis, bankIdsKey);
+}
+
+class _LedgerViewSummary {
+  final List<Object> flatItems;
+  final Map<String, double> derivedCashBalancesByReference;
+  final DateTime? startingDate;
+  final double? startingBalance;
+
+  const _LedgerViewSummary({
+    required this.flatItems,
+    required this.derivedCashBalancesByReference,
+    required this.startingDate,
+    required this.startingBalance,
+  });
+}
+
 class RedesignMoneyPageState extends State<RedesignMoneyPage>
     with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   @override
@@ -266,9 +330,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   String? _expandedAccountNumber;
   bool _showAccountBalances = true;
   final Set<String> _selectedRefs = {};
-  DateTime? _ledgerStartDate;
-  DateTime? _ledgerEndDate;
-  final Set<int> _ledgerBankIds = <int>{};
+  _LedgerFilter _ledgerFilter = const _LedgerFilter();
   final ScrollController _activityScrollController = ScrollController();
   int _currentPage = 0;
   static const int _pageSize = 20;
@@ -282,6 +344,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   late final Animation<double> _subTabFadeAnimation;
   _ActivityTransactionsViewCacheKey? _activityTransactionsViewCacheKey;
   _ActivityTransactionsViewData? _activityTransactionsViewCache;
+  _LedgerViewCacheKey? _ledgerViewCacheKey;
+  _LedgerViewSummary? _ledgerViewCache;
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
 
@@ -487,21 +551,6 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
 
   void _clearSelection() => setState(() => _selectedRefs.clear());
 
-  void _toggleLedgerBank(int bankId) {
-    setState(() {
-      if (_ledgerBankIds.contains(bankId)) {
-        _ledgerBankIds.remove(bankId);
-      } else {
-        _ledgerBankIds.add(bankId);
-      }
-    });
-  }
-
-  void _clearLedgerBankSelection() {
-    if (_ledgerBankIds.isEmpty) return;
-    setState(() => _ledgerBankIds.clear());
-  }
-
   Future<void> _deleteSelected(TransactionProvider provider) async {
     if (_selectedRefs.isEmpty) return;
     final count = _selectedRefs.length;
@@ -617,6 +666,9 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     final transactionsViewData = _subTab == _SubTab.transactions
         ? _resolveActivityTransactionsViewData(provider)
         : null;
+    final ledgerViewSummary = _subTab == _SubTab.ledger
+        ? _resolveLedgerViewSummary(provider)
+        : null;
     final totalPages = transactionsViewData?.totalPages ?? 1;
     final safePage = transactionsViewData?.safePage ?? 0;
     final flatItems = transactionsViewData?.flatItems ?? const <Object>[];
@@ -687,7 +739,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       ] else if (_subTab == _SubTab.analytics) ...[
         ..._buildAnalyticsSlivers(provider),
       ] else if (_subTab == _SubTab.ledger) ...[
-        ..._buildLedgerSlivers(provider),
+        ..._buildLedgerSlivers(provider, ledgerViewSummary!),
       ],
     ];
 
@@ -699,6 +751,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           monthAbbrev: monthAbbrev,
           monthIncome: monthTotals.income,
           monthExpense: monthTotals.expense,
+          ledgerViewSummary: ledgerViewSummary,
         ),
         Expanded(
           child: RefreshIndicator(
@@ -727,6 +780,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     required String monthAbbrev,
     required double monthIncome,
     required double monthExpense,
+    required _LedgerViewSummary? ledgerViewSummary,
   }) {
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -760,6 +814,26 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                 }),
                 onFilterTap: () => _openFilterSheet(provider),
                 activeFilterCount: _filter.activeCount,
+              ),
+            ] else if (_subTab == _SubTab.ledger) ...[
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _LedgerHeaderSummary(
+                      startingDate: ledgerViewSummary?.startingDate,
+                      startingBalance: ledgerViewSummary?.startingBalance,
+                      showBalance: _showAccountBalances,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  _FilterActionButton(
+                    onTap: () => _openLedgerFilterSheet(provider),
+                    activeFilterCount: _ledgerFilter.activeCount,
+                    size: 38,
+                  ),
+                ],
               ),
             ],
           ],
@@ -1176,7 +1250,20 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     );
   }
 
-  List<Widget> _buildLedgerSlivers(TransactionProvider provider) {
+  _LedgerViewSummary _resolveLedgerViewSummary(TransactionProvider provider) {
+    final sortedLedgerBankIds = _ledgerFilter.bankIds.toList()..sort();
+    final cacheKey = _LedgerViewCacheKey(
+      dataVersion: provider.dataVersion,
+      startDateMillis: _ledgerFilter.startDate?.millisecondsSinceEpoch,
+      endDateMillis: _ledgerFilter.endDate?.millisecondsSinceEpoch,
+      bankIdsKey: sortedLedgerBankIds.join(','),
+    );
+
+    final cachedData = _ledgerViewCache;
+    if (_ledgerViewCacheKey == cacheKey && cachedData != null) {
+      return cachedData;
+    }
+
     // Sort all transactions by time ascending for ledger view
     final allTxns = List<Transaction>.from(provider.allTransactions)
       ..sort((a, b) {
@@ -1191,22 +1278,25 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     for (final txn in allTxns) {
       if (txn.bankId != null) ledgerBankIds.add(txn.bankId!);
     }
-    final invalidLedgerBankIds = _ledgerBankIds
+    final invalidLedgerBankIds = _ledgerFilter.bankIds
         .where((id) => !ledgerBankIds.contains(id))
         .toList(growable: false);
     if (invalidLedgerBankIds.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           setState(() {
-            _ledgerBankIds.removeWhere((id) => !ledgerBankIds.contains(id));
+            _ledgerFilter = _LedgerFilter(
+              startDate: _ledgerFilter.startDate,
+              endDate: _ledgerFilter.endDate,
+              bankIds: _ledgerFilter.bankIds
+                  .where((id) => ledgerBankIds.contains(id))
+                  .toSet(),
+            );
           });
         }
       });
     }
-    final sortedLedgerBankIds = ledgerBankIds.toList()
-      ..sort((a, b) => _bankLabel(a).compareTo(_bankLabel(b)));
 
-    // Apply date range filter and find starting balance in one pass
     double? startingBalance;
     DateTime? startingBalanceDate;
     final filtered = <Transaction>[];
@@ -1216,27 +1306,27 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       final dt = _parseTransactionTime(txn.time);
 
       bool inRange = true;
-      if (_ledgerStartDate != null && dt != null) {
+      if (_ledgerFilter.startDate != null && dt != null) {
         final start = DateTime(
-          _ledgerStartDate!.year,
-          _ledgerStartDate!.month,
-          _ledgerStartDate!.day,
+          _ledgerFilter.startDate!.year,
+          _ledgerFilter.startDate!.month,
+          _ledgerFilter.startDate!.day,
         );
         if (dt.isBefore(start)) inRange = false;
       }
-      if (_ledgerEndDate != null && dt != null) {
+      if (_ledgerFilter.endDate != null && dt != null) {
         final endOfDay = DateTime(
-          _ledgerEndDate!.year,
-          _ledgerEndDate!.month,
-          _ledgerEndDate!.day,
+          _ledgerFilter.endDate!.year,
+          _ledgerFilter.endDate!.month,
+          _ledgerFilter.endDate!.day,
           23,
           59,
           59,
         );
         if (dt.isAfter(endOfDay)) inRange = false;
       }
-      if (_ledgerBankIds.isNotEmpty &&
-          (txn.bankId == null || !_ledgerBankIds.contains(txn.bankId!))) {
+      if (_ledgerFilter.bankIds.isNotEmpty &&
+          (txn.bankId == null || !_ledgerFilter.bankIds.contains(txn.bankId!))) {
         inRange = false;
       }
 
@@ -1290,38 +1380,26 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       flatItems.add(_LedgerFlatItem(txn));
     }
 
+    final data = _LedgerViewSummary(
+      flatItems: flatItems,
+      derivedCashBalancesByReference: derivedCashBalancesByReference,
+      startingDate: startingBalanceDate,
+      startingBalance: startingBalance,
+    );
+    _ledgerViewCacheKey = cacheKey;
+    _ledgerViewCache = data;
+    return data;
+  }
+
+  List<Widget> _buildLedgerSlivers(
+    TransactionProvider provider,
+    _LedgerViewSummary ledgerViewSummary,
+  ) {
+    final flatItems = ledgerViewSummary.flatItems;
+    final derivedCashBalancesByReference =
+        ledgerViewSummary.derivedCashBalancesByReference;
+
     return [
-      // Date pickers
-      SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-          child: _LedgerDatePickerRow(
-            startDate: _ledgerStartDate,
-            endDate: _ledgerEndDate,
-            bankIds: sortedLedgerBankIds,
-            selectedBankIds: _ledgerBankIds,
-            onStartDateChanged: (d) => setState(() => _ledgerStartDate = d),
-            onEndDateChanged: (d) => setState(() => _ledgerEndDate = d),
-            onBankToggled: _toggleLedgerBank,
-            onClearBankSelection: _clearLedgerBankSelection,
-          ),
-        ),
-      ),
-      // Starting balance
-      if (startingBalance != null)
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: Text(
-              '${startingBalanceDate != null ? _formatDateHeader(startingBalanceDate) : ''} Starting Balance: ${_showAccountBalances ? 'ETB ${formatNumberWithComma(startingBalance)}' : '*****'}',
-              style: TextStyle(
-                color: AppColors.textSecondary(context),
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
       // Timeline content
       // Keep rendering existing ledger rows during provider reloads so
       // category updates do not collapse scroll extent and jump to top.
@@ -1374,35 +1452,38 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
             final lineColor = AppColors.borderColor(context);
             return Padding(
               padding: const EdgeInsets.only(left: 20, right: 20),
-              child: IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SizedBox(
-                      width: 10,
-                      child: Center(
-                        child: Container(
-                          width: 1.5,
-                          color: lineColor,
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: 4.25,
+                    top: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 1.5,
+                      color: lineColor,
+                    ),
+                  ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => _openTransactionDetailsSheet(
+                              provider, entry.transaction),
+                          behavior: HitTestBehavior.opaque,
+                          child: _LedgerTransactionEntry(
+                            transaction: entry.transaction,
+                            showBalance: _showAccountBalances,
+                            derivedBalance: derivedCashBalancesByReference[
+                                entry.transaction.reference],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => _openTransactionDetailsSheet(
-                            provider, entry.transaction),
-                        behavior: HitTestBehavior.opaque,
-                        child: _LedgerTransactionEntry(
-                          transaction: entry.transaction,
-                          showBalance: _showAccountBalances,
-                          derivedBalance: derivedCashBalancesByReference[
-                              entry.transaction.reference],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
               ),
             );
           },
@@ -1641,6 +1722,27 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         _filter = result;
         _currentPage = 0;
       });
+    }
+  }
+
+  Future<void> _openLedgerFilterSheet(TransactionProvider provider) async {
+    final bankIds = <int>{};
+    for (final transaction in provider.allTransactions) {
+      if (transaction.bankId != null) bankIds.add(transaction.bankId!);
+    }
+
+    final result = await showModalBottomSheet<_LedgerFilter>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _LedgerFilterSheet(
+        currentFilter: _ledgerFilter,
+        bankIds: bankIds.toList()
+          ..sort((a, b) => _bankLabel(a).compareTo(_bankLabel(b))),
+      ),
+    );
+    if (result != null) {
+      setState(() => _ledgerFilter = result);
     }
   }
 
@@ -5187,8 +5289,6 @@ class _SearchFilterRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasFilters = activeFilterCount > 0;
-
     return Row(
       children: [
         Expanded(
@@ -5231,60 +5331,166 @@ class _SearchFilterRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        GestureDetector(
+        _FilterActionButton(
           onTap: onFilterTap,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: hasFilters
-                      ? AppColors.primaryDark.withValues(alpha: 0.1)
-                      : AppColors.cardColor(context),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: hasFilters
-                        ? AppColors.primaryDark
-                        : AppColors.borderColor(context),
-                  ),
+          activeFilterCount: activeFilterCount,
+        ),
+      ],
+    );
+  }
+}
+
+class _FilterActionButton extends StatelessWidget {
+  final VoidCallback onTap;
+  final int activeFilterCount;
+  final double size;
+
+  const _FilterActionButton({
+    required this.onTap,
+    this.activeFilterCount = 0,
+    this.size = 44,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasFilters = activeFilterCount > 0;
+    final badgeSize = size <= 40 ? 16.0 : 18.0;
+    final badgeOffset = size <= 40 ? -3.0 : -4.0;
+    final iconSize = size <= 40 ? 18.0 : 22.0;
+    final borderRadius = size <= 40 ? 9.0 : 10.0;
+    final badgeFontSize = size <= 40 ? 9.0 : 10.0;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: hasFilters
+                  ? AppColors.primaryDark.withValues(alpha: 0.1)
+                  : AppColors.cardColor(context),
+              borderRadius: BorderRadius.circular(borderRadius),
+              border: Border.all(
+                color: hasFilters
+                    ? AppColors.primaryDark
+                    : AppColors.borderColor(context),
+              ),
+            ),
+            child: Icon(
+              AppIcons.filter_list,
+              color: hasFilters
+                  ? AppColors.primaryDark
+                  : AppColors.textSecondary(context),
+              size: iconSize,
+            ),
+          ),
+          if (hasFilters)
+            Positioned(
+              top: badgeOffset,
+              right: badgeOffset,
+              child: Container(
+                width: badgeSize,
+                height: badgeSize,
+                decoration: const BoxDecoration(
+                  color: AppColors.primaryDark,
+                  shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  AppIcons.filter_list,
-                  color: hasFilters
-                      ? AppColors.primaryDark
-                      : AppColors.textSecondary(context),
-                  size: 22,
+                child: Center(
+                  child: Text(
+                    '$activeFilterCount',
+                    style: TextStyle(
+                      color: AppColors.white,
+                      fontSize: badgeFontSize,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
               ),
-              if (hasFilters)
-                Positioned(
-                  top: -4,
-                  right: -4,
-                  child: Container(
-                    width: 18,
-                    height: 18,
-                    decoration: const BoxDecoration(
-                      color: AppColors.primaryDark,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '$activeFilterCount',
-                        style: const TextStyle(
-                          color: AppColors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LedgerHeaderSummary extends StatelessWidget {
+  final DateTime? startingDate;
+  final double? startingBalance;
+  final bool showBalance;
+
+  const _LedgerHeaderSummary({
+    required this.startingDate,
+    required this.startingBalance,
+    required this.showBalance,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = <Widget>[];
+    final labelStyle = TextStyle(
+      color: AppColors.textTertiary(context),
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+    );
+    final valueStyle = TextStyle(
+      color: AppColors.textSecondary(context),
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+    );
+
+    if (startingDate != null) {
+      lines.add(
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: 'Starting Date: ',
+                style: labelStyle,
+              ),
+              TextSpan(
+                text: _formatDateHeader(startingDate!),
+                style: valueStyle,
+              ),
             ],
           ),
         ),
-      ],
+      );
+    }
+
+    if (startingBalance != null) {
+      if (lines.isNotEmpty) {
+        lines.add(const SizedBox(height: 4));
+      }
+      lines.add(
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: 'Starting Balance: ',
+                style: labelStyle,
+              ),
+              TextSpan(
+                text: showBalance
+                    ? 'ETB ${formatNumberWithComma(startingBalance)}'
+                    : '*****',
+                style: valueStyle,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (lines.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: lines,
     );
   }
 }
@@ -5848,155 +6054,6 @@ class _HeatmapDayInlineStat extends StatelessWidget {
       ),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-    );
-  }
-}
-
-// ─── Ledger Widgets ───────────────────────────────────────────────
-
-class _LedgerDatePickerRow extends StatelessWidget {
-  final DateTime? startDate;
-  final DateTime? endDate;
-  final List<int> bankIds;
-  final Set<int> selectedBankIds;
-  final ValueChanged<DateTime?> onStartDateChanged;
-  final ValueChanged<DateTime?> onEndDateChanged;
-  final ValueChanged<int> onBankToggled;
-  final VoidCallback onClearBankSelection;
-
-  const _LedgerDatePickerRow({
-    required this.startDate,
-    required this.endDate,
-    required this.bankIds,
-    required this.selectedBankIds,
-    required this.onStartDateChanged,
-    required this.onEndDateChanged,
-    required this.onBankToggled,
-    required this.onClearBankSelection,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _LedgerDateField(
-                label: 'START DATE:',
-                date: startDate,
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: startDate ?? DateTime.now(),
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime.now(),
-                  );
-                  if (picked != null) onStartDateChanged(picked);
-                },
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _LedgerDateField(
-                label: 'END DATE:',
-                date: endDate,
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: endDate ?? DateTime.now(),
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime.now(),
-                  );
-                  if (picked != null) onEndDateChanged(picked);
-                },
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        Text(
-          'BANK',
-          style: TextStyle(
-            color: AppColors.textSecondary(context),
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.5,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _FilterChip(
-              label: 'All Banks',
-              selected: selectedBankIds.isEmpty,
-              onTap: onClearBankSelection,
-            ),
-            for (final bankId in bankIds)
-              _FilterChip(
-                label: _bankLabel(bankId),
-                selected: selectedBankIds.contains(bankId),
-                onTap: () => onBankToggled(bankId),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _LedgerDateField extends StatelessWidget {
-  final String label;
-  final DateTime? date;
-  final VoidCallback onTap;
-
-  const _LedgerDateField({
-    required this.label,
-    required this.date,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final dateText = date != null ? _formatDateHeader(date!) : 'Select date';
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: AppColors.textSecondary(context),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppColors.cardColor(context),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.borderColor(context)),
-            ),
-            child: Text(
-              dateText,
-              style: TextStyle(
-                color: AppColors.textPrimary(context),
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -8195,6 +8252,287 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
                             foregroundColor: AppColors.textSecondary(context),
                             side: BorderSide(
                                 color: AppColors.borderColor(context)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text(
+                            'Clear All',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: _apply,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryDark,
+                            foregroundColor: AppColors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text(
+                            'Apply Filters',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        color: AppColors.textSecondary(context),
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.8,
+      ),
+    );
+  }
+}
+
+class _LedgerFilterSheet extends StatefulWidget {
+  final _LedgerFilter currentFilter;
+  final List<int> bankIds;
+
+  const _LedgerFilterSheet({
+    required this.currentFilter,
+    required this.bankIds,
+  });
+
+  @override
+  State<_LedgerFilterSheet> createState() => _LedgerFilterSheetState();
+}
+
+class _LedgerFilterSheetState extends State<_LedgerFilterSheet> {
+  DateTime? _startDate;
+  DateTime? _endDate;
+  late Set<int> _selectedBankIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _startDate = widget.currentFilter.startDate;
+    _endDate = widget.currentFilter.endDate;
+    _selectedBankIds = widget.currentFilter.bankIds.toSet();
+  }
+
+  void _clearAll() {
+    setState(() {
+      _startDate = null;
+      _endDate = null;
+      _selectedBankIds = <int>{};
+    });
+  }
+
+  void _toggleBank(int bankId) {
+    setState(() {
+      if (_selectedBankIds.contains(bankId)) {
+        _selectedBankIds.remove(bankId);
+      } else {
+        _selectedBankIds.add(bankId);
+      }
+    });
+  }
+
+  void _apply() {
+    Navigator.of(context).pop(
+      _LedgerFilter(
+        startDate: _startDate,
+        endDate: _endDate,
+        bankIds: _selectedBankIds.toSet(),
+      ),
+    );
+  }
+
+  Future<void> _pickDate({required bool isStart}) async {
+    final initial = (isStart ? _startDate : _endDate) ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      builder: (ctx, child) {
+        final dark = AppColors.isDark(ctx);
+        return Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: dark
+                ? ColorScheme.dark(
+                    primary: AppColors.primaryLight,
+                    onPrimary: AppColors.white,
+                    surface: AppColors.darkCard,
+                    onSurface: AppColors.white,
+                  )
+                : const ColorScheme.light(
+                    primary: AppColors.primaryDark,
+                    onPrimary: AppColors.white,
+                    surface: AppColors.white,
+                    onSurface: AppColors.slate900,
+                  ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        if (isStart) {
+          _startDate = picked;
+        } else {
+          _endDate = picked;
+        }
+      });
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return '${_months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).viewInsets.bottom;
+    final navBarPadding = MediaQuery.of(context).padding.bottom;
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.slate400,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 12, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Filter Ledger',
+                    style: TextStyle(
+                      color: AppColors.textPrimary(context),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: Icon(
+                    AppIcons.close,
+                    color: AppColors.textSecondary(context),
+                  ),
+                  splashRadius: 20,
+                ),
+              ],
+            ),
+          ),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                12,
+                20,
+                16 + bottomPadding + navBarPadding,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sectionLabel('DATE RANGE'),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _DatePickerField(
+                          hint: 'Start date',
+                          value: _startDate != null
+                              ? _formatDate(_startDate!)
+                              : null,
+                          onTap: () => _pickDate(isStart: true),
+                          onClear: _startDate != null
+                              ? () => setState(() => _startDate = null)
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _DatePickerField(
+                          hint: 'End date',
+                          value:
+                              _endDate != null ? _formatDate(_endDate!) : null,
+                          onTap: () => _pickDate(isStart: false),
+                          onClear: _endDate != null
+                              ? () => setState(() => _endDate = null)
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  _sectionLabel('BANK'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _FilterChip(
+                        label: 'All Banks',
+                        selected: _selectedBankIds.isEmpty,
+                        onTap: () => setState(() => _selectedBankIds.clear()),
+                      ),
+                      for (final bankId in widget.bankIds)
+                        _FilterChip(
+                          label: _bankLabel(bankId),
+                          selected: _selectedBankIds.contains(bankId),
+                          onTap: () => _toggleBank(bankId),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _clearAll,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.textSecondary(context),
+                            side: BorderSide(
+                              color: AppColors.borderColor(context),
+                            ),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
