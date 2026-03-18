@@ -28,6 +28,8 @@ class RedesignHomePage extends StatefulWidget {
 
 enum _ChartRange { week, month }
 
+const double _kHomeTrendLeftAxisReservedWidth = 40.0;
+
 class _RedesignHomePageState extends State<RedesignHomePage>
     with AutomaticKeepAliveClientMixin {
   @override
@@ -462,6 +464,10 @@ String _formatEtbValue(double value) {
   final formatted =
       formatNumberWithComma(rounded).replaceFirst(RegExp(r'\.00$'), '');
   return formatted;
+}
+
+String _formatCompactEtbValue(double value) {
+  return formatNumberAbbreviated(value).replaceAll(' ', '');
 }
 
 String _formatSignedEtb(double value) {
@@ -956,38 +962,41 @@ class _IncomeExpenseCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            children: [
-              Text(
-                '+ ETB ${_formatEtbValue(trendSeries.totalIncome)}',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.incomeSuccess,
-                  fontWeight: FontWeight.w700,
+          Padding(
+            padding: const EdgeInsets.only(left: _kHomeTrendLeftAxisReservedWidth),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                Text(
+                  '+ ETB ${_formatCompactEtbValue(trendSeries.totalIncome)}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: AppColors.incomeSuccess,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              Text(
-                '- ETB ${_formatEtbValue(trendSeries.totalExpense)}',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.red,
-                  fontWeight: FontWeight.w700,
+                Text(
+                  '- ETB ${_formatCompactEtbValue(trendSeries.totalExpense)}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: AppColors.red,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              Text(
-                'Peak: ETB ${_formatEtbValue(trendSeries.maxValue)}',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.textSecondary(context),
-                  fontWeight: FontWeight.w600,
+                Text(
+                  'Peak: ETB ${_formatCompactEtbValue(trendSeries.maxValue)}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: AppColors.textSecondary(context),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              Text(
-                'Last ${trendSeries.days} days',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.textSecondary(context),
+                Text(
+                  'Last ${trendSeries.days} days',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: AppColors.textSecondary(context),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -1143,7 +1152,7 @@ class _IncomeExpenseTrendChart extends StatelessWidget {
             sideTitles: SideTitles(
               showTitles: true,
               interval: interval,
-              reservedSize: 40,
+              reservedSize: _kHomeTrendLeftAxisReservedWidth,
               getTitlesWidget: (value, meta) =>
                   _buildHomeTrendAxisTitle(context, value, meta),
             ),
@@ -1220,12 +1229,7 @@ Widget _buildHomeTrendAxisTitle(
     child: Padding(
       padding: const EdgeInsets.only(right: 6),
       child: Text(
-        value.abs() < 0.001
-            ? '0K'
-            : formatNumberAbbreviated(value).replaceAll('k', 'K').replaceAll(
-                  ' ',
-                  '',
-                ),
+        value.abs() < 0.001 ? '0' : _formatCompactEtbValue(value),
         style: TextStyle(
           color: AppColors.textTertiary(context),
           fontSize: 11,
