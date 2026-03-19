@@ -19,8 +19,10 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:totals/services/account_registration_service.dart';
 import 'package:totals/services/account_sync_status_service.dart';
 import 'package:totals/services/bank_detection_service.dart';
+import 'package:totals/services/sms_config_service.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/widgets/add_cash_transaction_sheet.dart';
+import 'package:totals/widgets/inline_bank_selector.dart';
 import 'package:totals/_redesign/widgets/transaction_category_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
 import 'package:totals/_redesign/widgets/transaction_tile.dart';
@@ -485,7 +487,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     final categoryIds = <int>{};
     for (final transaction in provider.allTransactions) {
       if (transaction.bankId != null) bankIds.add(transaction.bankId!);
-      if (transaction.categoryId != null) categoryIds.add(transaction.categoryId!);
+      if (transaction.categoryId != null)
+        categoryIds.add(transaction.categoryId!);
     }
 
     final categories = categoryIds
@@ -533,6 +536,19 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     if (_topTab == nextTab) return;
     setState(() => _topTab = nextTab);
     HapticFeedback.selectionClick();
+  }
+
+  void _setActivityTransactionsPage(int page) {
+    if (_currentPage == page) return;
+    setState(() => _currentPage = page);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_activityScrollController.hasClients) {
+        return;
+      }
+      _activityScrollController.jumpTo(
+        _activityScrollController.position.minScrollExtent,
+      );
+    });
   }
 
   void openAccountsTab() {
@@ -666,12 +682,14 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     final transactionsViewData = _subTab == _SubTab.transactions
         ? _resolveActivityTransactionsViewData(provider)
         : null;
-    final ledgerViewSummary = _subTab == _SubTab.ledger
-        ? _resolveLedgerViewSummary(provider)
-        : null;
+    final ledgerViewSummary =
+        _subTab == _SubTab.ledger ? _resolveLedgerViewSummary(provider) : null;
     final totalPages = transactionsViewData?.totalPages ?? 1;
     final safePage = transactionsViewData?.safePage ?? 0;
     final flatItems = transactionsViewData?.flatItems ?? const <Object>[];
+    final transactionsListKey = ValueKey<_ActivityTransactionsViewCacheKey?>(
+      transactionsViewData == null ? null : _activityTransactionsViewCacheKey,
+    );
 
     final dynamicSlivers = <Widget>[
       if (_subTab == _SubTab.transactions) ...[
@@ -704,6 +722,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           )
         else ...[
           SliverPadding(
+            key: transactionsListKey,
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
             sliver: SliverList.builder(
               itemCount: flatItems.length,
@@ -724,14 +743,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                 child: _PaginationBar(
                   currentPage: safePage,
                   totalPages: totalPages,
-                  onPageChanged: (page) {
-                    setState(() => _currentPage = page);
-                    _activityScrollController.animateTo(
-                      0,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOut,
-                    );
-                  },
+                  onPageChanged: _setActivityTransactionsPage,
                 ),
               ),
             ),
@@ -1166,11 +1178,11 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         byDayNet[day] = (byDayNet[day] ?? 0.0) - transaction.amount;
       }
 
-      final includeBubbleCategory = categoryMode == _AnalyticsHeatmapMode.income
-          ? isCredit
-          : isDebit;
-      final skipBubbleCategory =
-          categoryMode == _AnalyticsHeatmapMode.income ? isMisc : isSelfTransfer || isMisc;
+      final includeBubbleCategory =
+          categoryMode == _AnalyticsHeatmapMode.income ? isCredit : isDebit;
+      final skipBubbleCategory = categoryMode == _AnalyticsHeatmapMode.income
+          ? isMisc
+          : isSelfTransfer || isMisc;
 
       if (includeBubbleCategory && !skipBubbleCategory) {
         final categoryName = (category?.name.trim().isNotEmpty ?? false)
@@ -1326,7 +1338,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         if (dt.isAfter(endOfDay)) inRange = false;
       }
       if (_ledgerFilter.bankIds.isNotEmpty &&
-          (txn.bankId == null || !_ledgerFilter.bankIds.contains(txn.bankId!))) {
+          (txn.bankId == null ||
+              !_ledgerFilter.bankIds.contains(txn.bankId!))) {
         inRange = false;
       }
 
@@ -4323,8 +4336,12 @@ Widget _buildAnalyticsDayAxisTitle(
   int dayCount,
 ) {
   final day = value.toInt();
-  final shouldShow =
-      day == 1 || day == dayCount || day == 7 || day == 14 || day == 21 || day == 28;
+  final shouldShow = day == 1 ||
+      day == dayCount ||
+      day == 7 ||
+      day == 14 ||
+      day == 21 ||
+      day == 28;
   if (day < 1 || day > dayCount || !shouldShow) {
     return const SizedBox.shrink();
   }
@@ -4417,90 +4434,90 @@ class _AnalyticsLineChartCard extends StatelessWidget {
                 height: 220,
                 child: LineChart(
                   LineChartData(
-                  minX: 1,
-                  maxX: dayCount.toDouble(),
-                  minY: -chartMax,
-                  maxY: chartMax,
-                  lineTouchData: LineTouchData(enabled: true),
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: interval,
-                    getDrawingHorizontalLine: (value) => FlLine(
-                      color: AppColors.borderColor(context),
-                      strokeWidth: value.abs() < 0.001 ? 1.2 : 0.8,
-                    ),
-                  ),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        interval: 1,
-                        reservedSize: 28,
-                        getTitlesWidget: (value, meta) =>
-                            _buildAnalyticsDayAxisTitle(
-                              context,
-                              value,
-                              meta,
-                              dayCount,
-                            ),
-                      ),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        interval: interval,
-                        reservedSize: 48,
-                        getTitlesWidget: (value, meta) =>
-                            _buildAnalyticsValueAxisTitle(
-                              context,
-                              value,
-                              meta,
-                            ),
-                      ),
-                    ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  extraLinesData: ExtraLinesData(
-                    horizontalLines: [
-                      HorizontalLine(
-                        y: 0,
+                    minX: 1,
+                    maxX: dayCount.toDouble(),
+                    minY: -chartMax,
+                    maxY: chartMax,
+                    lineTouchData: LineTouchData(enabled: true),
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      horizontalInterval: interval,
+                      getDrawingHorizontalLine: (value) => FlLine(
                         color: AppColors.borderColor(context),
-                        strokeWidth: 1,
+                        strokeWidth: value.abs() < 0.001 ? 1.2 : 0.8,
                       ),
-                    ],
-                  ),
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: [
-                        for (int index = 0; index < values.length; index++)
-                          FlSpot((index + 1).toDouble(), values[index]),
-                      ],
-                      isCurved: true,
-                      curveSmoothness: 0.24,
-                      color: const Color(0xFF6D7EE8),
-                      barWidth: 3,
-                      isStrokeCapRound: true,
-                      dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            const Color(0xFF6D7EE8).withValues(alpha: 0.24),
-                            const Color(0xFF6D7EE8).withValues(alpha: 0.02),
-                          ],
+                    ),
+                    titlesData: FlTitlesData(
+                      topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          interval: 1,
+                          reservedSize: 28,
+                          getTitlesWidget: (value, meta) =>
+                              _buildAnalyticsDayAxisTitle(
+                            context,
+                            value,
+                            meta,
+                            dayCount,
+                          ),
+                        ),
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          interval: interval,
+                          reservedSize: 48,
+                          getTitlesWidget: (value, meta) =>
+                              _buildAnalyticsValueAxisTitle(
+                            context,
+                            value,
+                            meta,
+                          ),
                         ),
                       ),
                     ),
-                  ],
+                    borderData: FlBorderData(show: false),
+                    extraLinesData: ExtraLinesData(
+                      horizontalLines: [
+                        HorizontalLine(
+                          y: 0,
+                          color: AppColors.borderColor(context),
+                          strokeWidth: 1,
+                        ),
+                      ],
+                    ),
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: [
+                          for (int index = 0; index < values.length; index++)
+                            FlSpot((index + 1).toDouble(), values[index]),
+                        ],
+                        isCurved: true,
+                        curveSmoothness: 0.24,
+                        color: const Color(0xFF6D7EE8),
+                        barWidth: 3,
+                        isStrokeCapRound: true,
+                        dotData: const FlDotData(show: false),
+                        belowBarData: BarAreaData(
+                          show: true,
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              const Color(0xFF6D7EE8).withValues(alpha: 0.24),
+                              const Color(0xFF6D7EE8).withValues(alpha: 0.02),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -4527,7 +4544,8 @@ class _AnalyticsBarChartCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final monthLabel = DateFormat('MMMM yyyy').format(snapshot.monthDate);
-    final dayCount = DateTime(snapshot.monthDate.year, snapshot.monthDate.month + 1, 0).day;
+    final dayCount =
+        DateTime(snapshot.monthDate.year, snapshot.monthDate.month + 1, 0).day;
     final weekCount = ((dayCount + 6) ~/ 7).clamp(4, 5).toInt();
     final incomeByWeek = List<double>.filled(weekCount, 0.0);
     final expenseByWeek = List<double>.filled(weekCount, 0.0);
@@ -4589,89 +4607,89 @@ class _AnalyticsBarChartCard extends StatelessWidget {
                 height: 220,
                 child: BarChart(
                   BarChartData(
-                  minY: -chartMax,
-                  maxY: chartMax,
-                  baselineY: 0,
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: interval,
-                    getDrawingHorizontalLine: (value) => FlLine(
-                      color: AppColors.borderColor(context),
-                      strokeWidth: value.abs() < 0.001 ? 1.2 : 0.8,
+                    minY: -chartMax,
+                    maxY: chartMax,
+                    baselineY: 0,
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      horizontalInterval: interval,
+                      getDrawingHorizontalLine: (value) => FlLine(
+                        color: AppColors.borderColor(context),
+                        strokeWidth: value.abs() < 0.001 ? 1.2 : 0.8,
+                      ),
                     ),
-                  ),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
+                    titlesData: FlTitlesData(
+                      topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 28,
+                          getTitlesWidget: (value, meta) {
+                            final week = value.toInt();
+                            if (week < 0 || week >= weekCount) {
+                              return const SizedBox.shrink();
+                            }
+                            return SideTitleWidget(
+                              axisSide: meta.axisSide,
+                              child: Text(
+                                'W${week + 1}',
+                                style: TextStyle(
+                                  color: AppColors.textTertiary(context),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          interval: interval,
+                          reservedSize: 48,
+                          getTitlesWidget: (value, meta) =>
+                              _buildAnalyticsValueAxisTitle(
+                            context,
+                            value,
+                            meta,
+                          ),
+                        ),
+                      ),
                     ),
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 28,
-                        getTitlesWidget: (value, meta) {
-                          final week = value.toInt();
-                          if (week < 0 || week >= weekCount) {
-                            return const SizedBox.shrink();
-                          }
-                          return SideTitleWidget(
-                            axisSide: meta.axisSide,
-                            child: Text(
-                              'W${week + 1}',
-                              style: TextStyle(
-                                color: AppColors.textTertiary(context),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
+                    borderData: FlBorderData(show: false),
+                    barTouchData: BarTouchData(enabled: true),
+                    barGroups: [
+                      for (int index = 0; index < weekCount; index++)
+                        BarChartGroupData(
+                          x: index,
+                          barsSpace: 5,
+                          barRods: [
+                            BarChartRodData(
+                              toY: incomeByWeek[index],
+                              width: 8,
+                              color: AppColors.incomeSuccess,
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(3),
                               ),
                             ),
-                          );
-                        },
-                      ),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        interval: interval,
-                        reservedSize: 48,
-                        getTitlesWidget: (value, meta) =>
-                            _buildAnalyticsValueAxisTitle(
-                              context,
-                              value,
-                              meta,
+                            BarChartRodData(
+                              toY: -expenseByWeek[index],
+                              width: 8,
+                              color: AppColors.red,
+                              borderRadius: const BorderRadius.vertical(
+                                bottom: Radius.circular(3),
+                              ),
                             ),
-                      ),
-                    ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  barTouchData: BarTouchData(enabled: true),
-                  barGroups: [
-                    for (int index = 0; index < weekCount; index++)
-                      BarChartGroupData(
-                        x: index,
-                        barsSpace: 5,
-                        barRods: [
-                          BarChartRodData(
-                            toY: incomeByWeek[index],
-                            width: 8,
-                            color: AppColors.incomeSuccess,
-                            borderRadius: const BorderRadius.vertical(
-                              top: Radius.circular(3),
-                            ),
-                          ),
-                          BarChartRodData(
-                            toY: -expenseByWeek[index],
-                            width: 8,
-                            color: AppColors.red,
-                            borderRadius: const BorderRadius.vertical(
-                              bottom: Radius.circular(3),
-                            ),
-                          ),
-                        ],
-                      ),
-                  ],
+                          ],
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -4699,7 +4717,8 @@ class _AnalyticsPieChartCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final monthLabel = DateFormat('MMMM yyyy').format(snapshot.monthDate);
     final categories = snapshot.categories.take(6).toList(growable: false);
-    final total = categories.fold<double>(0.0, (sum, stat) => sum + stat.amount);
+    final total =
+        categories.fold<double>(0.0, (sum, stat) => sum + stat.amount);
     final hasData = total > 0.001;
 
     return _AnalyticsHorizontalSwipeBlocker(
@@ -5940,10 +5959,10 @@ class _HeatmapDayLedgerSheet extends StatelessWidget {
                   ),
                   _HeatmapDayInlineStat(
                     label: 'Net',
-                    value: '${netPrefix}ETB ${_formatEtbAbbrev(netTotal.abs())}',
-                    valueColor: netTotal >= 0
-                        ? AppColors.incomeSuccess
-                        : AppColors.red,
+                    value:
+                        '${netPrefix}ETB ${_formatEtbAbbrev(netTotal.abs())}',
+                    valueColor:
+                        netTotal >= 0 ? AppColors.incomeSuccess : AppColors.red,
                   ),
                 ],
               ),
@@ -7400,7 +7419,9 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   final _formKey = GlobalKey<FormState>();
   final _accountNumberController = TextEditingController();
   final _holderNameController = TextEditingController();
+  final SmsConfigService _smsConfigService = SmsConfigService();
   List<bank_model.Bank> _banks = [];
+  Set<int> _supportedBankIds = <int>{};
   int? _selectedBankId;
   bool _isFormValid = false;
   bool _isSubmitting = false;
@@ -7421,7 +7442,33 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     super.dispose();
   }
 
-  void _loadBanks() {
+  List<BankSelectorOption> get _bankOptions {
+    return buildBankSelectorOptions(_banks, _supportedBankIds);
+  }
+
+  bool get _hasSupportedBanks {
+    return _bankOptions.any((option) => option.isSupported);
+  }
+
+  bool get _canSubmit {
+    return _isFormValid &&
+        !_isSubmitting &&
+        _selectedBankId != null &&
+        _hasSupportedBanks;
+  }
+
+  Future<Set<int>> _loadSupportedBankIds() async {
+    try {
+      final patterns = await _smsConfigService.getPatterns();
+      return patterns.map((pattern) => pattern.bankId).toSet();
+    } catch (e) {
+      debugPrint("debug: Error loading SMS patterns: $e");
+      return <int>{};
+    }
+  }
+
+  Future<void> _loadBanks() async {
+    final supportedBankIds = await _loadSupportedBankIds();
     final banks = List<bank_model.Bank>.from(_assetBanks);
     final initialBank = widget.initialBank;
     if (initialBank != null) {
@@ -7437,25 +7484,18 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     if (mounted) {
       setState(() {
         _banks = dedupedBanks;
+        _supportedBankIds = supportedBankIds;
         if (dedupedBanks.isEmpty) {
           _selectedBankId = null;
           return;
         }
-        final hasInitialBank = widget.initialBankId != null &&
-            dedupedBanks.any((bank) => bank.id == widget.initialBankId);
-        _selectedBankId =
-            hasInitialBank ? widget.initialBankId : dedupedBanks.first.id;
+        _selectedBankId = resolveSupportedBankId(
+          banks: dedupedBanks,
+          supportedBankIds: supportedBankIds,
+          preferredBankId: widget.initialBankId ?? initialBank?.id,
+        );
       });
     }
-  }
-
-  bank_model.Bank? _selectedBank() {
-    final selectedId = _selectedBankId;
-    if (selectedId == null) return null;
-    for (final bank in _banks) {
-      if (bank.id == selectedId) return bank;
-    }
-    return null;
   }
 
   void _validateForm() {
@@ -7463,6 +7503,41 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       _isFormValid = _accountNumberController.text.trim().isNotEmpty &&
           _holderNameController.text.trim().isNotEmpty;
     });
+  }
+
+  Widget _buildUnsupportedBankNotice() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.red.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.red.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline,
+            size: 18,
+            color: AppColors.red,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Only banks with parsing support can be selected right now. Unsupported banks stay visible in the selector but cannot be chosen.',
+              style: TextStyle(
+                color: AppColors.textPrimary(context),
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _submit() async {
@@ -7531,7 +7606,6 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final navBarInset = MediaQuery.of(context).padding.bottom;
-    final selectedBank = _selectedBank();
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -7603,44 +7677,18 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                 ),
               ),
               const SizedBox(height: 8),
-              GestureDetector(
-                onTap: _showBankPicker,
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceColor(context),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.borderColor(context)),
-                  ),
-                  child: Row(
-                    children: [
-                      if (selectedBank != null) ...[
-                        _BankLogoCircle(
-                          imagePath: selectedBank.image,
-                          size: 36,
-                        ),
-                        const SizedBox(width: 12),
-                      ],
-                      Expanded(
-                        child: Text(
-                          selectedBank?.shortName ?? 'Select a bank',
-                          style: TextStyle(
-                            color: selectedBank != null
-                                ? AppColors.textPrimary(context)
-                                : AppColors.textTertiary(context),
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      Icon(
-                        AppIcons.keyboard_arrow_down_rounded,
-                        color: AppColors.textSecondary(context),
-                      ),
-                    ],
-                  ),
-                ),
+              InlineBankSelector(
+                options: _bankOptions,
+                selectedBankId: _selectedBankId,
+                borderRadius: 12,
+                onChanged: (bankId) {
+                  setState(() => _selectedBankId = bankId);
+                },
               ),
+              if (!_hasSupportedBanks) ...[
+                const SizedBox(height: 12),
+                _buildUnsupportedBankNotice(),
+              ],
               const SizedBox(height: 20),
 
               // Account number
@@ -7810,8 +7858,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                   Expanded(
                     flex: 2,
                     child: ElevatedButton(
-                      onPressed:
-                          (_isFormValid && !_isSubmitting) ? _submit : null,
+                      onPressed: _canSubmit ? _submit : null,
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         backgroundColor: AppColors.primaryDark,
@@ -7847,109 +7894,6 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               const SizedBox(height: 12),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  void _showBankPicker() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => Container(
-        height: MediaQuery.of(context).size.height * 0.6,
-        decoration: BoxDecoration(
-          color: AppColors.background(sheetContext),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.slate400,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'Select Bank',
-                style: TextStyle(
-                  color: AppColors.textPrimary(sheetContext),
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            Expanded(
-              child: GridView.builder(
-                padding: EdgeInsets.fromLTRB(16, 16, 16,
-                    16 + MediaQuery.of(sheetContext).padding.bottom),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 14,
-                  mainAxisSpacing: 14,
-                  childAspectRatio: 0.85,
-                ),
-                itemCount: _banks.length,
-                itemBuilder: (context, index) {
-                  final bank = _banks[index];
-                  final isSelected = _selectedBankId == bank.id;
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() => _selectedBankId = bank.id);
-                      Navigator.pop(context);
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? AppColors.primaryLight.withValues(alpha: 0.1)
-                            : AppColors.surfaceColor(context),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: isSelected
-                              ? AppColors.primaryLight
-                              : AppColors.borderColor(context),
-                          width: isSelected ? 2 : 1,
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _BankLogoCircle(
-                            imagePath: bank.image,
-                            size: 44,
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            bank.shortName,
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: isSelected
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: isSelected
-                                  ? AppColors.primaryDark
-                                  : AppColors.textPrimary(context),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -8726,8 +8670,7 @@ class _AnalyticsHeatmapFilterSheetState
                       ),
                       _FilterChip(
                         label: 'Income',
-                        selected:
-                            _selectedMode == _AnalyticsHeatmapMode.income,
+                        selected: _selectedMode == _AnalyticsHeatmapMode.income,
                         onTap: () => setState(
                           () => _selectedMode = _AnalyticsHeatmapMode.income,
                         ),
@@ -8786,8 +8729,7 @@ class _AnalyticsHeatmapFilterSheetState
                                       selected:
                                           _selectedCategoryId == category.id,
                                       onTap: () => setState(
-                                        () =>
-                                            _selectedCategoryId = category.id,
+                                        () => _selectedCategoryId = category.id,
                                       ),
                                     ),
                                   ),

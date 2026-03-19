@@ -28,7 +28,8 @@ class RedesignHomePage extends StatefulWidget {
 
 enum _ChartRange { week, month }
 
-const double _kHomeTrendLeftAxisReservedWidth = 40.0;
+const double _kHomeTrendLeftAxisReservedWidth = 36.0;
+const double _kHomeTrendRightAxisReservedWidth = 12.0;
 
 class _RedesignHomePageState extends State<RedesignHomePage>
     with AutomaticKeepAliveClientMixin {
@@ -955,7 +956,7 @@ class _IncomeExpenseCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: 176,
+            height: 184,
             width: double.infinity,
             child: _IncomeExpenseTrendChart(
               trendSeries: trendSeries,
@@ -963,7 +964,8 @@ class _IncomeExpenseCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Padding(
-            padding: const EdgeInsets.only(left: _kHomeTrendLeftAxisReservedWidth),
+            padding:
+                const EdgeInsets.only(left: _kHomeTrendLeftAxisReservedWidth),
             child: Wrap(
               spacing: 10,
               runSpacing: 8,
@@ -1132,14 +1134,18 @@ class _IncomeExpenseTrendChart extends StatelessWidget {
           topTitles: const AxisTitles(
             sideTitles: SideTitles(showTitles: false),
           ),
-          rightTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
+          rightTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: _kHomeTrendRightAxisReservedWidth,
+              getTitlesWidget: (value, meta) => const SizedBox.shrink(),
+            ),
           ),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
               interval: 1,
-              reservedSize: 26,
+              reservedSize: 38,
               getTitlesWidget: (value, meta) => _buildHomeTrendBottomAxisTitle(
                 context,
                 value,
@@ -1158,7 +1164,15 @@ class _IncomeExpenseTrendChart extends StatelessWidget {
             ),
           ),
         ),
-        borderData: FlBorderData(show: false),
+        borderData: FlBorderData(
+          show: true,
+          border: Border(
+            bottom: BorderSide(
+              color: AppColors.borderColor(context),
+              width: 1,
+            ),
+          ),
+        ),
         lineBarsData: [
           LineChartBarData(
             spots: [
@@ -1266,7 +1280,7 @@ Widget _buildHomeTrendBottomAxisTitle(
   return SideTitleWidget(
     axisSide: meta.axisSide,
     child: Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.only(top: 10),
       child: Text(
         label,
         style: TextStyle(
