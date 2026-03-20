@@ -330,7 +330,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   _TransactionFilter _filter = const _TransactionFilter();
   int? _selectedBankId;
   String? _expandedAccountNumber;
-  bool _showAccountBalances = true;
+  bool _showAccountBalances = false;
   final Set<String> _selectedRefs = {};
   _LedgerFilter _ledgerFilter = const _LedgerFilter();
   final ScrollController _activityScrollController = ScrollController();
@@ -836,10 +836,9 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                     child: _LedgerHeaderSummary(
                       startingDate: ledgerViewSummary?.startingDate,
                       startingBalance: ledgerViewSummary?.startingBalance,
-                      showBalance: _showAccountBalances,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                   _FilterActionButton(
                     onTap: () => _openLedgerFilterSheet(provider),
                     activeFilterCount: _ledgerFilter.activeCount,
@@ -978,7 +977,6 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         child: _HeatmapDayLedgerSheet(
           date: day,
           transactions: transactions,
-          showBalance: _showAccountBalances,
           derivedBalancesByReference: derivedBalancesByReference,
           onTransactionTap: (transaction) =>
               _openTransactionDetailsSheet(provider, transaction),
@@ -1356,7 +1354,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
 
       // Find the chronologically previous transaction (next index in desc list)
       for (int j = oldestIdx + 1; j < allTxns.length; j++) {
-        final prevBal = double.tryParse(allTxns[j].currentBalance ?? '');
+        final prevBal = _parseRunningBalance(allTxns[j].currentBalance);
         if (prevBal != null) {
           startingBalance = prevBal;
           break;
@@ -1364,7 +1362,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       }
       // Fallback: derive from oldest transaction
       if (startingBalance == null) {
-        final oldestBal = double.tryParse(oldest.currentBalance ?? '');
+        final oldestBal = _parseRunningBalance(oldest.currentBalance);
         if (oldestBal != null) {
           if (oldest.type == 'DEBIT') {
             startingBalance = oldestBal + oldest.amount;
@@ -1488,7 +1486,6 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                           behavior: HitTestBehavior.opaque,
                           child: _LedgerTransactionEntry(
                             transaction: entry.transaction,
-                            showBalance: _showAccountBalances,
                             derivedBalance: derivedCashBalancesByReference[
                                 entry.transaction.reference],
                           ),
@@ -2179,6 +2176,15 @@ DateTime? _parseTransactionTime(String? raw) {
   }
 }
 
+double? _parseRunningBalance(String? raw) {
+  if (raw == null) return null;
+  final cleaned = raw.trim().replaceAll(',', '');
+  if (cleaned.isEmpty) return null;
+  final match = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(cleaned);
+  if (match == null) return null;
+  return double.tryParse(match.group(0)!);
+}
+
 Map<String, double> _deriveCashBalancesByReference({
   required List<Transaction> allTxns,
   required List<AccountSummary> accountSummaries,
@@ -2222,7 +2228,7 @@ Map<String, double> _deriveCashBalancesByReference({
       rollingBalance += transaction.amount;
     }
 
-    final parsed = double.tryParse(transaction.currentBalance ?? '');
+    final parsed = _parseRunningBalance(transaction.currentBalance);
     if (parsed != null) {
       rollingBalance = parsed;
       derived[transaction.reference] = parsed;
@@ -5438,12 +5444,10 @@ class _FilterActionButton extends StatelessWidget {
 class _LedgerHeaderSummary extends StatelessWidget {
   final DateTime? startingDate;
   final double? startingBalance;
-  final bool showBalance;
 
   const _LedgerHeaderSummary({
     required this.startingDate,
     required this.startingBalance,
-    required this.showBalance,
   });
 
   @override
@@ -5492,9 +5496,7 @@ class _LedgerHeaderSummary extends StatelessWidget {
                 style: labelStyle,
               ),
               TextSpan(
-                text: showBalance
-                    ? 'ETB ${formatNumberWithComma(startingBalance)}'
-                    : '*****',
+                text: 'ETB ${formatNumberWithComma(startingBalance)}',
                 style: valueStyle,
               ),
             ],
@@ -5850,14 +5852,12 @@ class _LedgerFlatItem {
 class _HeatmapDayLedgerSheet extends StatelessWidget {
   final DateTime date;
   final List<Transaction> transactions;
-  final bool showBalance;
   final Map<String, double> derivedBalancesByReference;
   final ValueChanged<Transaction> onTransactionTap;
 
   const _HeatmapDayLedgerSheet({
     required this.date,
     required this.transactions,
-    required this.showBalance,
     required this.derivedBalancesByReference,
     required this.onTransactionTap,
   });
@@ -6016,7 +6016,6 @@ class _HeatmapDayLedgerSheet extends StatelessWidget {
                                   onTap: () => onTransactionTap(transaction),
                                   child: _LedgerTransactionEntry(
                                     transaction: transaction,
-                                    showBalance: showBalance,
                                     derivedBalance: derivedBalancesByReference[
                                         transaction.reference],
                                   ),
@@ -6079,12 +6078,10 @@ class _HeatmapDayInlineStat extends StatelessWidget {
 
 class _LedgerTransactionEntry extends StatelessWidget {
   final Transaction transaction;
-  final bool showBalance;
   final double? derivedBalance;
 
   const _LedgerTransactionEntry({
     required this.transaction,
-    required this.showBalance,
     this.derivedBalance,
   });
 
@@ -6104,9 +6101,9 @@ class _LedgerTransactionEntry extends StatelessWidget {
     final dt = _parseTransactionTime(transaction.time);
     final timeStr = dt != null ? _formatLedgerTime(dt) : '';
 
-    final parsedBalance = double.tryParse(transaction.currentBalance ?? '');
+    final parsedBalance = _parseRunningBalance(transaction.currentBalance);
     final effectiveBalance = parsedBalance ?? derivedBalance;
-    final balanceStr = showBalance && effectiveBalance != null
+    final balanceStr = effectiveBalance != null
         ? formatNumberAbbreviated(effectiveBalance).replaceAll('k', 'K')
         : '-';
 
@@ -7425,6 +7422,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   int? _selectedBankId;
   bool _isFormValid = false;
   bool _isSubmitting = false;
+  bool _isLoadingBanks = true;
   bool _syncPreviousSms = true;
 
   @override
@@ -7485,6 +7483,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       setState(() {
         _banks = dedupedBanks;
         _supportedBankIds = supportedBankIds;
+        _isLoadingBanks = false;
         if (dedupedBanks.isEmpty) {
           _selectedBankId = null;
           return;
@@ -7618,282 +7617,297 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
         child: SingleChildScrollView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: EdgeInsets.only(bottom: bottomInset + navBarInset),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  margin: const EdgeInsets.only(top: 12, bottom: 16),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.slate400,
-                    borderRadius: BorderRadius.circular(2),
+          child: _isLoadingBanks
+              ? Padding(
+                  padding: EdgeInsets.only(
+                    top: 28,
+                    bottom: bottomInset + navBarInset + 20,
                   ),
-                ),
-              ),
-
-              // Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Add Account',
-                    style: TextStyle(
-                      color: AppColors.textPrimary(context),
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceColor(context),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        AppIcons.close,
-                        color: AppColors.textSecondary(context),
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // Bank selector
-              Text(
-                'Bank',
-                style: TextStyle(
-                  color: AppColors.isDark(context)
-                      ? AppColors.slate400
-                      : AppColors.slate700,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              InlineBankSelector(
-                options: _bankOptions,
-                selectedBankId: _selectedBankId,
-                borderRadius: 12,
-                onChanged: (bankId) {
-                  setState(() => _selectedBankId = bankId);
-                },
-              ),
-              if (!_hasSupportedBanks) ...[
-                const SizedBox(height: 12),
-                _buildUnsupportedBankNotice(),
-              ],
-              const SizedBox(height: 20),
-
-              // Account number
-              Text(
-                'Account Number',
-                style: TextStyle(
-                  color: AppColors.isDark(context)
-                      ? AppColors.slate400
-                      : AppColors.slate700,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _accountNumberController,
-                keyboardType: TextInputType.number,
-                style: TextStyle(
-                  color: AppColors.textPrimary(context),
-                  fontSize: 15,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Enter account number',
-                  hintStyle: TextStyle(color: AppColors.textTertiary(context)),
-                  filled: true,
-                  fillColor: AppColors.surfaceColor(context),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        BorderSide(color: AppColors.borderColor(context)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        BorderSide(color: AppColors.borderColor(context)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primaryLight),
-                  ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Required' : null,
-              ),
-              const SizedBox(height: 20),
-
-              // Account holder name
-              Text(
-                'Account Holder Name',
-                style: TextStyle(
-                  color: AppColors.isDark(context)
-                      ? AppColors.slate400
-                      : AppColors.slate700,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _holderNameController,
-                style: TextStyle(
-                  color: AppColors.textPrimary(context),
-                  fontSize: 15,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Enter account holder name',
-                  hintStyle: TextStyle(color: AppColors.textTertiary(context)),
-                  filled: true,
-                  fillColor: AppColors.surfaceColor(context),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        BorderSide(color: AppColors.borderColor(context)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        BorderSide(color: AppColors.borderColor(context)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primaryLight),
-                  ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Required' : null,
-              ),
-              const SizedBox(height: 20),
-
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceColor(context),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.borderColor(context)),
-                ),
-                child: Row(
+                  child: const Center(child: CircularProgressIndicator()),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      AppIcons.sms_outlined,
-                      color: AppColors.textSecondary(context),
-                      size: 20,
+                    Center(
+                      child: Container(
+                        margin: const EdgeInsets.only(top: 12, bottom: 16),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.slate400,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Sync SMS History',
-                            style: TextStyle(
-                              color: AppColors.textPrimary(context),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+
+                    // Header
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Add Account',
+                          style: TextStyle(
+                            color: AppColors.textPrimary(context),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceColor(context),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              AppIcons.close,
+                              color: AppColors.textSecondary(context),
+                              size: 20,
                             ),
                           ),
-                          Text(
-                            'Import past transactions for this account',
-                            style: TextStyle(
-                              color: AppColors.textSecondary(context),
-                              fontSize: 12,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Bank selector
+                    Text(
+                      'Bank',
+                      style: TextStyle(
+                        color: AppColors.isDark(context)
+                            ? AppColors.slate400
+                            : AppColors.slate700,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    InlineBankSelector(
+                      options: _bankOptions,
+                      selectedBankId: _selectedBankId,
+                      borderRadius: 12,
+                      onChanged: (bankId) {
+                        setState(() => _selectedBankId = bankId);
+                      },
+                    ),
+                    if (!_hasSupportedBanks) ...[
+                      const SizedBox(height: 12),
+                      _buildUnsupportedBankNotice(),
+                    ],
+                    const SizedBox(height: 20),
+
+                    // Account number
+                    Text(
+                      'Account Number',
+                      style: TextStyle(
+                        color: AppColors.isDark(context)
+                            ? AppColors.slate400
+                            : AppColors.slate700,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _accountNumberController,
+                      keyboardType: TextInputType.number,
+                      style: TextStyle(
+                        color: AppColors.textPrimary(context),
+                        fontSize: 15,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Enter account number',
+                        hintStyle:
+                            TextStyle(color: AppColors.textTertiary(context)),
+                        filled: true,
+                        fillColor: AppColors.surfaceColor(context),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: AppColors.borderColor(context)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: AppColors.borderColor(context)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              const BorderSide(color: AppColors.primaryLight),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 14),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Account holder name
+                    Text(
+                      'Account Holder Name',
+                      style: TextStyle(
+                        color: AppColors.isDark(context)
+                            ? AppColors.slate400
+                            : AppColors.slate700,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _holderNameController,
+                      style: TextStyle(
+                        color: AppColors.textPrimary(context),
+                        fontSize: 15,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Enter account holder name',
+                        hintStyle:
+                            TextStyle(color: AppColors.textTertiary(context)),
+                        filled: true,
+                        fillColor: AppColors.surfaceColor(context),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: AppColors.borderColor(context)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: AppColors.borderColor(context)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              const BorderSide(color: AppColors.primaryLight),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 14),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 20),
+
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceColor(context),
+                        borderRadius: BorderRadius.circular(12),
+                        border:
+                            Border.all(color: AppColors.borderColor(context)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            AppIcons.sms_outlined,
+                            color: AppColors.textSecondary(context),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Sync SMS History',
+                                  style: TextStyle(
+                                    color: AppColors.textPrimary(context),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  'Import past transactions for this account',
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary(context),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
                             ),
+                          ),
+                          Switch.adaptive(
+                            value: _syncPreviousSms,
+                            onChanged: (value) {
+                              setState(() => _syncPreviousSms = value);
+                            },
+                            activeColor: AppColors.primaryDark,
                           ),
                         ],
                       ),
                     ),
-                    Switch.adaptive(
-                      value: _syncPreviousSms,
-                      onChanged: (value) {
-                        setState(() => _syncPreviousSms = value);
-                      },
-                      activeColor: AppColors.primaryDark,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 28),
+                    const SizedBox(height: 28),
 
-              // Buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        side: BorderSide(color: AppColors.borderColor(context)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        'Cancel',
-                        style: TextStyle(
-                          color: AppColors.textSecondary(context),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton(
-                      onPressed: _canSubmit ? _submit : null,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: AppColors.primaryDark,
-                        foregroundColor: AppColors.white,
-                        elevation: 0,
-                        disabledBackgroundColor: AppColors.mutedFill(context),
-                        disabledForegroundColor:
-                            AppColors.textTertiary(context),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: _isSubmitting
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.white,
-                              ),
-                            )
-                          : const Text(
-                              'Add Account',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
+                    // Buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              side: BorderSide(
+                                  color: AppColors.borderColor(context)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
+                            child: Text(
+                              'Cancel',
+                              style: TextStyle(
+                                color: AppColors.textSecondary(context),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: _canSubmit ? _submit : null,
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              backgroundColor: AppColors.primaryDark,
+                              foregroundColor: AppColors.white,
+                              elevation: 0,
+                              disabledBackgroundColor:
+                                  AppColors.mutedFill(context),
+                              disabledForegroundColor:
+                                  AppColors.textTertiary(context),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: _isSubmitting
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppColors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Add Account',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-            ],
-          ),
+                    const SizedBox(height: 12),
+                  ],
+                ),
         ),
       ),
     );

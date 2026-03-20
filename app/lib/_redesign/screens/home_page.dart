@@ -41,6 +41,7 @@ class _RedesignHomePageState extends State<RedesignHomePage>
   _ChartRange _chartRange = _ChartRange.week;
   final Set<String> _selectedRefs = {};
   bool _isRefreshingTodaySms = false;
+  bool _isBootstrapping = true;
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
 
@@ -133,9 +134,14 @@ class _RedesignHomePageState extends State<RedesignHomePage>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final provider = Provider.of<TransactionProvider>(context, listen: false);
-      provider.loadData();
+      if (provider.dataVersion == 0) {
+        await provider.loadData();
+      }
+      if (mounted) {
+        setState(() => _isBootstrapping = false);
+      }
     });
   }
 
@@ -146,6 +152,8 @@ class _RedesignHomePageState extends State<RedesignHomePage>
 
     return Consumer<TransactionProvider>(
       builder: (context, provider, child) {
+        final showInitialSkeleton = provider.dataVersion == 0 &&
+            (_isBootstrapping || provider.isLoading);
         final summary = provider.summary;
         final totalBalance = summary?.totalBalance ?? 0.0;
         final todaySorted = provider.todayTransactions;
@@ -171,140 +179,144 @@ class _RedesignHomePageState extends State<RedesignHomePage>
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _TotalBalanceCard(
-                      totalBalance: totalBalance,
-                      todayIncome: todayTotals.income,
-                      todayExpense: todayTotals.expense,
-                      weekIncome: weekTotals.income,
-                      weekExpense: weekTotals.expense,
-                      showBalance: _showBalance,
-                      onToggleBalance: () {
-                        setState(() {
-                          _showBalance = !_showBalance;
-                        });
-                      },
-                      onCardTap: _openAccountsPage,
-                      onBreakdownTap: () => _openBalanceBreakdown(
-                        totalBalance: totalBalance,
-                        monthTransactions: monthTransactionsCount,
-                        selfTransferCount: selfTransferCount,
-                        monthTotals: monthTotals,
-                        thirtyDayTotals: thirtyDayTotals,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _InsightCard(message: insightMessage),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Today ($todayCount)',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary(context),
-                          ),
-                        ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            TextButton(
-                              onPressed: _openAllTodayTransactions,
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                foregroundColor: AppColors.primaryLight,
-                              ),
-                              child: const Text('See all'),
+                child: showInitialSkeleton
+                    ? const _HomeLoadingSkeleton()
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _TotalBalanceCard(
+                            totalBalance: totalBalance,
+                            todayIncome: todayTotals.income,
+                            todayExpense: todayTotals.expense,
+                            weekIncome: weekTotals.income,
+                            weekExpense: weekTotals.expense,
+                            showBalance: _showBalance,
+                            onToggleBalance: () {
+                              setState(() {
+                                _showBalance = !_showBalance;
+                              });
+                            },
+                            onCardTap: _openAccountsPage,
+                            onBreakdownTap: () => _openBalanceBreakdown(
+                              totalBalance: totalBalance,
+                              monthTransactions: monthTransactionsCount,
+                              selfTransferCount: selfTransferCount,
+                              monthTotals: monthTotals,
+                              thirtyDayTotals: thirtyDayTotals,
                             ),
-                            const SizedBox(width: 4),
-                            _RefreshButton(
-                              isLoading: _isRefreshingTodaySms,
-                              onTap: () => _refreshTodaySms(provider),
+                          ),
+                          const SizedBox(height: 12),
+                          _InsightCard(message: insightMessage),
+                          const SizedBox(height: 20),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Today ($todayCount)',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary(context),
+                                ),
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TextButton(
+                                    onPressed: _openAllTodayTransactions,
+                                    style: TextButton.styleFrom(
+                                      padding: EdgeInsets.zero,
+                                      foregroundColor: AppColors.primaryLight,
+                                    ),
+                                    child: const Text('See all'),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  _RefreshButton(
+                                    isLoading: _isRefreshingTodaySms,
+                                    onTap: () => _refreshTodaySms(provider),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          if (_isSelecting) ...[
+                            const SizedBox(height: 8),
+                            _SelectionBar(
+                              count: _selectedRefs.length,
+                              onDelete: () => _deleteSelected(provider),
+                              onClear: _clearSelection,
                             ),
                           ],
-                        ),
-                      ],
-                    ),
-                    if (_isSelecting) ...[
-                      const SizedBox(height: 8),
-                      _SelectionBar(
-                        count: _selectedRefs.length,
-                        onDelete: () => _deleteSelected(provider),
-                        onClear: _clearSelection,
+                          const SizedBox(height: 8),
+                          // Keep the empty/loaded state stable during background
+                          // reloads so returning to Home does not flicker.
+                          if (todayList.isEmpty)
+                            const _EmptyTransactions()
+                          else
+                            ...todayList.map((transaction) {
+                              final bankLabel =
+                                  provider.getBankShortName(transaction.bankId);
+                              final category = provider
+                                  .getCategoryById(transaction.categoryId);
+                              final isSelfTransfer =
+                                  provider.isSelfTransfer(transaction);
+                              final isMisc = category?.uncategorized == true;
+                              final categoryLabel = isSelfTransfer
+                                  ? 'Self'
+                                  : (category?.name ?? 'Categorize');
+                              final isCategorize =
+                                  isSelfTransfer || category != null;
+                              final isCredit = transaction.type == 'CREDIT';
+                              final amountLabel = _amountLabel(
+                                transaction.amount,
+                                isCredit: isCredit,
+                              );
+                              final selected =
+                                  _selectedRefs.contains(transaction.reference);
+                              return TransactionTile(
+                                bank: bankLabel,
+                                category: categoryLabel,
+                                categoryModel: category,
+                                isCategorized: isCategorize,
+                                isDebit: !isCredit,
+                                isSelfTransfer: isSelfTransfer,
+                                isMisc: isMisc,
+                                amount: amountLabel,
+                                amountColor: isCredit
+                                    ? AppColors.incomeSuccess
+                                    : AppColors.red,
+                                name: _transactionCounterparty(transaction),
+                                timestamp: _transactionTimeLabel(transaction),
+                                selected: selected,
+                                onTap: _isSelecting
+                                    ? () => _toggleSelection(transaction)
+                                    : () => _openTransactionDetailsSheet(
+                                          provider: provider,
+                                          transaction: transaction,
+                                        ),
+                                onCategoryTap: _isSelecting
+                                    ? () => _toggleSelection(transaction)
+                                    : () => _openTransactionCategorySheet(
+                                          provider: provider,
+                                          transaction: transaction,
+                                        ),
+                                onLongPress: () =>
+                                    _toggleSelection(transaction),
+                              );
+                            }),
+                          const SizedBox(height: 16),
+                          _IncomeExpenseCard(
+                            trendSeries: trendSeries,
+                            selectedRange: _chartRange,
+                            onRangeChanged: (value) {
+                              if (_chartRange == value) return;
+                              setState(() {
+                                _chartRange = value;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 24),
+                        ],
                       ),
-                    ],
-                    const SizedBox(height: 8),
-                    // Keep the empty/loaded state stable during background reloads
-                    // so returning to Home does not flicker.
-                    if (todayList.isEmpty)
-                      const _EmptyTransactions()
-                    else
-                      ...todayList.map((transaction) {
-                        final bankLabel =
-                            provider.getBankShortName(transaction.bankId);
-                        final category =
-                            provider.getCategoryById(transaction.categoryId);
-                        final isSelfTransfer =
-                            provider.isSelfTransfer(transaction);
-                        final isMisc = category?.uncategorized == true;
-                        final categoryLabel = isSelfTransfer
-                            ? 'Self'
-                            : (category?.name ?? 'Categorize');
-                        final isCategorize = isSelfTransfer || category != null;
-                        final isCredit = transaction.type == 'CREDIT';
-                        final amountLabel = _amountLabel(
-                          transaction.amount,
-                          isCredit: isCredit,
-                        );
-                        final selected =
-                            _selectedRefs.contains(transaction.reference);
-                        return TransactionTile(
-                          bank: bankLabel,
-                          category: categoryLabel,
-                          categoryModel: category,
-                          isCategorized: isCategorize,
-                          isDebit: !isCredit,
-                          isSelfTransfer: isSelfTransfer,
-                          isMisc: isMisc,
-                          amount: amountLabel,
-                          amountColor: isCredit
-                              ? AppColors.incomeSuccess
-                              : AppColors.red,
-                          name: _transactionCounterparty(transaction),
-                          timestamp: _transactionTimeLabel(transaction),
-                          selected: selected,
-                          onTap: _isSelecting
-                              ? () => _toggleSelection(transaction)
-                              : () => _openTransactionDetailsSheet(
-                                    provider: provider,
-                                    transaction: transaction,
-                                  ),
-                          onCategoryTap: _isSelecting
-                              ? () => _toggleSelection(transaction)
-                              : () => _openTransactionCategorySheet(
-                                    provider: provider,
-                                    transaction: transaction,
-                                  ),
-                          onLongPress: () => _toggleSelection(transaction),
-                        );
-                      }),
-                    const SizedBox(height: 16),
-                    _IncomeExpenseCard(
-                      trendSeries: trendSeries,
-                      selectedRange: _chartRange,
-                      onRangeChanged: (value) {
-                        if (_chartRange == value) return;
-                        setState(() {
-                          _chartRange = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-                ),
               ),
             ),
           ),
@@ -818,6 +830,474 @@ class _InsightCard extends StatelessWidget {
   }
 }
 
+class _HomeLoadingSkeleton extends StatefulWidget {
+  const _HomeLoadingSkeleton();
+
+  @override
+  State<_HomeLoadingSkeleton> createState() => _HomeLoadingSkeletonState();
+}
+
+class _HomeLoadingSkeletonState extends State<_HomeLoadingSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildBalanceCardSkeleton(context),
+        const SizedBox(height: 12),
+        _buildInsightCardSkeleton(context),
+        const SizedBox(height: 20),
+        _buildTodayHeaderSkeleton(context),
+        const SizedBox(height: 12),
+        for (int index = 0; index < 3; index++)
+          _buildTransactionSkeleton(context, index),
+        const SizedBox(height: 16),
+        _buildChartSkeleton(context),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _buildBalanceCardSkeleton(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.primaryDark,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'TOTAL BALANCE',
+                style: TextStyle(
+                  color: AppColors.white.withValues(alpha: 0.82),
+                  fontSize: 12,
+                  letterSpacing: 1.1,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Spacer(),
+              Icon(
+                AppIcons.visibility_off_outlined,
+                size: 22,
+                color: AppColors.white.withValues(alpha: 0.42),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'ETB ...',
+            style: TextStyle(
+              color: AppColors.white.withValues(alpha: 0.74),
+              fontSize: 32,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'How did I get here?',
+            style: TextStyle(
+              color: AppColors.white.withValues(alpha: 0.7),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            height: 1,
+            color: AppColors.white.withValues(alpha: 0.18),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _buildBalanceDeltaSkeleton(context, label: 'Today'),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildBalanceDeltaSkeleton(context, label: 'This week'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBalanceDeltaSkeleton(
+    BuildContext context, {
+    required String label,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: AppColors.white.withValues(alpha: 0.82),
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '+ ...',
+              style: TextStyle(
+                color: AppColors.incomeSuccess.withValues(alpha: 0.8),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 1,
+              height: 12,
+              color: AppColors.white.withValues(alpha: 0.24),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '- ...',
+              style: TextStyle(
+                color: AppColors.red.withValues(alpha: 0.8),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInsightCardSkeleton(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: AppColors.amber.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              AppIcons.lightbulb_outline,
+              size: 18,
+              color: AppColors.amber.withValues(alpha: 0.68),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'INSIGHT',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: AppColors.textSecondary(context),
+                        letterSpacing: 0.8,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Preparing your latest insight...',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary(context),
+                        height: 1.4,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTodayHeaderSkeleton(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          'Today',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary(context),
+              ),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'See all',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.primaryLight.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w500,
+                  ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              height: 40,
+              width: 40,
+              decoration: BoxDecoration(
+                color: AppColors.cardColor(context),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.borderColor(context)),
+              ),
+              child: Icon(
+                AppIcons.refresh,
+                size: 18,
+                color: AppColors.textTertiary(context),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTransactionSkeleton(BuildContext context, int index) {
+    const chipWidths = [84.0, 96.0, 78.0];
+    const amountWidths = [72.0, 82.0, 68.0];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _buildShimmerBox(
+                context,
+                width: 18,
+                height: 18,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              const SizedBox(width: 10),
+              _buildShimmerBox(
+                context,
+                width: chipWidths[index],
+                height: 20,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ],
+          ),
+          const Spacer(),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _buildShimmerBox(
+                context,
+                width: amountWidths[index],
+                height: 18,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              const SizedBox(height: 8),
+              _buildShimmerBox(
+                context,
+                width: 20,
+                height: 8,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartSkeleton(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Income vs Expense',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary(context),
+                ),
+              ),
+              const Spacer(),
+              const _StaticRangeToggle(
+                selectedRange: _ChartRange.week,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _buildShimmerBox(
+            context,
+            height: 184,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          const SizedBox(height: 10),
+          Padding(
+            padding:
+                const EdgeInsets.only(left: _kHomeTrendLeftAxisReservedWidth),
+            child: Text(
+              'Updating your chart...',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: AppColors.textSecondary(context),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShimmerBox(
+    BuildContext context, {
+    double? width,
+    required double height,
+    required BorderRadius borderRadius,
+    bool onPrimary = false,
+  }) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final pulse = Curves.easeInOut.transform(_controller.value);
+        final baseColor = onPrimary
+            ? AppColors.white.withValues(alpha: 0.10)
+            : AppColors.mutedFill(context).withValues(
+                alpha: AppColors.isDark(context) ? 0.46 : 0.58,
+              );
+        final activeColor = onPrimary
+            ? AppColors.white.withValues(alpha: 0.14)
+            : AppColors.mutedFill(context).withValues(
+                alpha: AppColors.isDark(context) ? 0.56 : 0.68,
+              );
+        final fillColor =
+            Color.lerp(baseColor, activeColor, pulse) ?? baseColor;
+
+        return Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            borderRadius: borderRadius,
+            color: fillColor,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _StaticRangeToggle extends StatelessWidget {
+  final _ChartRange selectedRange;
+
+  const _StaticRangeToggle({
+    required this.selectedRange,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final toggleBg = AppColors.mutedFill(context).withValues(alpha: 0.6);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: toggleBg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.all(2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _StaticRangeToggleButton(
+            label: '7D',
+            selected: selectedRange == _ChartRange.week,
+          ),
+          _StaticRangeToggleButton(
+            label: '30D',
+            selected: selectedRange == _ChartRange.month,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StaticRangeToggleButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+
+  const _StaticRangeToggleButton({
+    required this.label,
+    required this.selected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: selected ? AppColors.cardColor(context) : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: selected
+              ? AppColors.textPrimary(context)
+              : AppColors.textSecondary(context),
+        ),
+      ),
+    );
+  }
+}
+
 class _SelectionBar extends StatelessWidget {
   final int count;
   final VoidCallback onDelete;
@@ -852,7 +1332,7 @@ class _SelectionBar extends StatelessWidget {
           const Spacer(),
           GestureDetector(
             onTap: onDelete,
-            child: Icon(AppIcons.delete_outline_rounded,
+            child: const Icon(AppIcons.delete_outline_rounded,
                 size: 20, color: AppColors.red),
           ),
           const SizedBox(width: 16),
@@ -1119,7 +1599,7 @@ class _IncomeExpenseTrendChart extends StatelessWidget {
         minY: 0,
         maxY: chartMax,
         clipData: const FlClipData.all(),
-        lineTouchData: LineTouchData(enabled: false),
+        lineTouchData: const LineTouchData(enabled: false),
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,

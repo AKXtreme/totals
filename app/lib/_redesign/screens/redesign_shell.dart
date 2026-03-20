@@ -102,6 +102,10 @@ class RedesignShellState extends State<RedesignShell>
       },
     );
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _preloadHomeDataWhileLocked();
+    });
+
     // Set up callback to refresh UI when a foreground SMS transaction is saved
     _smsService.onTransactionSaved = (tx) {
       if (!mounted) return;
@@ -172,6 +176,14 @@ class RedesignShellState extends State<RedesignShell>
         code.contains('passcode_not_set') ||
         code.contains('not_enrolled') ||
         code.contains('not_available');
+  }
+
+  void _preloadHomeDataWhileLocked() {
+    if (!mounted || _isAuthenticated) return;
+
+    final provider = Provider.of<TransactionProvider>(context, listen: false);
+    if (provider.dataVersion > 0 || provider.isLoading) return;
+    unawaited(provider.loadData());
   }
 
   Future<void> _initSmsPermissions() async {

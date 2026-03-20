@@ -106,6 +106,7 @@ class TransactionProvider with ChangeNotifier {
   TransactionTrendSeries _weekTrendSeries = TransactionTrendSeries.empty(7);
   TransactionTrendSeries _monthTrendSeries = TransactionTrendSeries.empty(30);
   int _dataVersion = 0;
+  Future<void>? _activeLoadDataFuture;
 
   // Getters
   List<Transaction> get transactions => _transactions;
@@ -175,7 +176,21 @@ class TransactionProvider with ChangeNotifier {
     return category.name.trim().toLowerCase() == 'self';
   }
 
-  Future<void> loadData() async {
+  Future<void> loadData() {
+    final existing = _activeLoadDataFuture;
+    if (existing != null) return existing;
+
+    final future = _loadDataInternal();
+    _activeLoadDataFuture = future;
+    future.whenComplete(() {
+      if (identical(_activeLoadDataFuture, future)) {
+        _activeLoadDataFuture = null;
+      }
+    });
+    return future;
+  }
+
+  Future<void> _loadDataInternal() async {
     _isLoading = true;
     notifyListeners();
 

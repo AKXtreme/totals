@@ -53,6 +53,7 @@ class _RedesignLockScreenState extends State<RedesignLockScreen>
   Widget build(BuildContext context) {
     final provider = context.watch<TransactionProvider>();
     final bankSummaries = provider.bankSummaries;
+    final isPrimingHome = provider.dataVersion == 0 && provider.isLoading;
 
     // Resolve bank images (exclude cash wallet)
     final bankImages = <String>[];
@@ -105,7 +106,9 @@ class _RedesignLockScreenState extends State<RedesignLockScreen>
 
               // Subtitle
               Text(
-                'Your finances are locked',
+                isPrimingHome
+                    ? 'Preparing your latest totals...'
+                    : 'Your finances are locked',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
