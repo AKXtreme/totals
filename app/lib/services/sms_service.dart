@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:another_telephony/telephony.dart';
+import 'package:flutter/foundation.dart';
 import 'package:totals/models/bank.dart';
 import 'package:totals/services/sms_config_service.dart';
 import 'package:totals/services/bank_config_service.dart';
@@ -17,6 +18,7 @@ import 'package:totals/services/budget_alert_service.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/services/widget_service.dart';
 import 'package:totals/repositories/profile_repository.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:totals/utils/transaction_duplicate_detector.dart';
 
@@ -88,8 +90,7 @@ onBackgroundMessage(SmsMessage message) async {
           ? null
           : DateTime.fromMillisecondsSinceEpoch(message.date!);
       await SmsService.processMessage(body, address!,
-          notifyUser: true,
-          messageDate: receivedAt);
+          notifyUser: true, messageDate: receivedAt);
       print("debug: BG: Processing finished.");
     } else {
       print("debug: BG: Message NOT relevant.");
@@ -106,6 +107,8 @@ class SmsService {
   static List<Bank>? _cachedBanks;
   static const String _atmCashCutoffPrefPrefix =
       'atm_cash_transfer_cutoff_iso_profile_';
+  static const String _lastSmsCatchupPrefPrefix =
+      'sms_last_catchup_epoch_ms_profile_';
   static const int _dashenBankId = 4;
 
   // Callback for foreground-only UI updates.
@@ -138,8 +141,7 @@ class SmsService {
             : DateTime.fromMillisecondsSinceEpoch(message.date!);
         final tx = await SmsService.processMessage(
             message.body!, message.address!,
-            notifyUser: true,
-            messageDate: receivedAt);
+            notifyUser: true, messageDate: receivedAt);
         if (tx != null && onTransactionSaved != null) {
           onTransactionSaved!(tx);
         }
@@ -158,20 +160,79 @@ class SmsService {
     _registerIncomingSmsListener();
     await _getAtmCashTransferCutoff();
 
-    final now = DateTime.now();
-    final startOfDay = DateTime(now.year, now.month, now.day);
-    final endOfDay = startOfDay.add(const Duration(days: 1));
+    final scanEndedAt = DateTime.now();
+    final result = await _syncBankSmsRange(
+      start: _startOfDay(scanEndedAt),
+      includeStart: true,
+      end: scanEndedAt,
+      includeEnd: true,
+    );
+    if (!result.permissionDenied && result.errors == 0) {
+      await _setLastSmsCatchupAt(scanEndedAt);
+    }
+    return result;
+  }
 
-    final filter = SmsFilter.where(SmsColumn.DATE)
-        .greaterThanOrEqualTo(startOfDay.millisecondsSinceEpoch.toString())
-        .and(SmsColumn.DATE)
-        .lessThan(endOfDay.millisecondsSinceEpoch.toString());
+  Future<TodaySmsSyncResult> syncMissedBankSmsSinceLastCatchup() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return const TodaySmsSyncResult();
+    }
+
+    final permissionStatus = await Permission.sms.status;
+    if (!permissionStatus.isGranted) {
+      return const TodaySmsSyncResult(permissionDenied: true);
+    }
+
+    await _getAtmCashTransferCutoff();
+
+    final scanEndedAt = DateTime.now();
+    final startOfDay = _startOfDay(scanEndedAt);
+    final lastCatchupAt = await _getLastSmsCatchupAt();
+    final hasCursor = lastCatchupAt != null &&
+        lastCatchupAt.isAfter(startOfDay) &&
+        !lastCatchupAt.isAfter(scanEndedAt);
+
+    final result = await _syncBankSmsRange(
+      start: hasCursor ? lastCatchupAt : startOfDay,
+      includeStart: !hasCursor,
+      end: scanEndedAt,
+      includeEnd: true,
+    );
+
+    if (!result.permissionDenied && result.errors == 0) {
+      await _setLastSmsCatchupAt(scanEndedAt);
+    }
+
+    return result;
+  }
+
+  Future<TodaySmsSyncResult> _syncBankSmsRange({
+    required DateTime start,
+    required bool includeStart,
+    required DateTime end,
+    required bool includeEnd,
+  }) async {
+    final lowerBound = start.millisecondsSinceEpoch.toString();
+    final upperBound = end.millisecondsSinceEpoch.toString();
+
+    final startFilter = includeStart
+        ? SmsFilter.where(SmsColumn.DATE).greaterThanOrEqualTo(lowerBound)
+        : SmsFilter.where(SmsColumn.DATE).greaterThan(lowerBound);
+    final filter = includeEnd
+        ? startFilter.and(SmsColumn.DATE).lessThanOrEqualTo(upperBound)
+        : startFilter.and(SmsColumn.DATE).lessThan(upperBound);
 
     final messages = await _telephony.getInboxSms(
       filter: filter,
       sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.DESC)],
     );
 
+    return _processInboxMessages(messages);
+  }
+
+  Future<TodaySmsSyncResult> _processInboxMessages(
+    List<SmsMessage> messages,
+  ) async {
     int processed = 0;
     int added = 0;
     int duplicates = 0;
@@ -419,7 +480,8 @@ class SmsService {
       time: withdrawal.time ?? DateTime.now().toIso8601String(),
       bankId: CashConstants.bankId,
       type: 'CREDIT',
-      currentBalance: (currentCashBalance + withdrawal.amount).toStringAsFixed(2),
+      currentBalance:
+          (currentCashBalance + withdrawal.amount).toStringAsFixed(2),
       transactionLink: withdrawal.reference,
       accountNumber: CashConstants.defaultAccountNumber,
     );
@@ -447,7 +509,8 @@ class SmsService {
     return accountBase + txDelta;
   }
 
-  static Future<bool> _isWithdrawalBeforeCashCutoff(Transaction withdrawal) async {
+  static Future<bool> _isWithdrawalBeforeCashCutoff(
+      Transaction withdrawal) async {
     final withdrawalTime = DateTime.tryParse(withdrawal.time ?? '');
     if (withdrawalTime == null) return false;
     final cutoff = await _getAtmCashTransferCutoff();
@@ -475,6 +538,33 @@ class SmsService {
     await prefs.setString(key, cutoff.toIso8601String());
     await _cleanupHistoricalAtmCashTransactions(cutoff);
     return cutoff;
+  }
+
+  static DateTime _startOfDay(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  static Future<DateTime?> _getLastSmsCatchupAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getInt(await _lastSmsCatchupPrefKey());
+    if (raw == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(raw);
+  }
+
+  static Future<void> _setLastSmsCatchupAt(DateTime time) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      await _lastSmsCatchupPrefKey(),
+      time.millisecondsSinceEpoch,
+    );
+  }
+
+  static Future<String> _lastSmsCatchupPrefKey() async {
+    final profileRepo = ProfileRepository();
+    final activeProfileId = await profileRepo.getActiveProfileId();
+    return activeProfileId != null
+        ? '$_lastSmsCatchupPrefPrefix$activeProfileId'
+        : '${_lastSmsCatchupPrefPrefix}default';
   }
 
   static Future<void> _cleanupHistoricalAtmCashTransactions(

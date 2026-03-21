@@ -6,6 +6,7 @@ import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:workmanager/workmanager.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/notification_settings_service.dart';
+import 'package:totals/services/sms_service.dart';
 import 'package:totals/services/widget_service.dart';
 import 'package:totals/services/widget_data_provider.dart';
 import 'package:totals/services/widget_refresh_settings_service.dart';
@@ -43,10 +44,26 @@ void callbackDispatcher() {
       if (task != dailySpendingSummaryTask) return true;
 
       final settings = NotificationSettingsService.instance;
+      final smsService = SmsService();
       final spendingProvider = WidgetDataProvider();
       final scheduledTime = await settings.getDailySummaryTime();
 
       final now = DateTime.now();
+      try {
+        final catchupResult =
+            await smsService.syncMissedBankSmsSinceLastCatchup();
+        if (kDebugMode && catchupResult.added > 0) {
+          debugPrint(
+            'debug: Background SMS catch-up added '
+            '${catchupResult.added} transaction(s)',
+          );
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('debug: Background SMS catch-up failed: $e');
+        }
+      }
+
       if (!_isAfterOrEqualTimeOfDay(now, scheduledTime)) return true;
 
       final dailyEnabled = await settings.isDailySummaryEnabled();
@@ -94,8 +111,8 @@ void callbackDispatcher() {
           final totalSpent = await spendingProvider.getCurrentMonthSpending(
             now: now,
           );
-          final shown =
-              await NotificationService.instance.showMonthlySpendingNotification(
+          final shown = await NotificationService.instance
+              .showMonthlySpendingNotification(
             amount: totalSpent,
           );
           if (shown) {
