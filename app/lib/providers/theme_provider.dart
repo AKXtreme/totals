@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ThemeProvider extends ChangeNotifier {
   static const String _themeKey = 'theme_mode';
   static const String _uiScaleKey = 'ui_scale';
+  static const double _defaultUiScale = 0.9;
   static const List<ThemeMode> _themeCycleOrder = <ThemeMode>[
     ThemeMode.system,
     ThemeMode.light,
@@ -20,9 +21,12 @@ class ThemeProvider extends ChangeNotifier {
     0.9,
     0.95,
     1.0,
+    1.1,
+    1.25,
+    1.5,
   ];
   ThemeMode _themeMode = ThemeMode.system;
-  double _uiScale = 1.0;
+  double _uiScale = _defaultUiScale;
 
   ThemeMode get themeMode => _themeMode;
   double get uiScale => _uiScale;
@@ -88,11 +92,11 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   Future<void> setZoomedOut(bool value) async {
-    await setUiScale(value ? 0.75 : 1.0);
+    await setUiScale(value ? 0.75 : _defaultUiScale);
   }
 
   double _normalizeUiScale(double value) {
-    if (value <= 0) return 1.0;
+    if (value <= 0) return _defaultUiScale;
     double nearest = _uiScaleOptions.first;
     double nearestDelta = (value - nearest).abs();
     for (final option in _uiScaleOptions.skip(1)) {

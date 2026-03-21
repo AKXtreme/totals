@@ -95,6 +95,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
 
   bool get _isUnknownCounterparty => _storedCounterpartyValue == null;
 
+  String get _counterpartyRole => _isCredit ? 'sender' : 'recipient';
+
   String get _bankFullName {
     return _provider.getBankName(_tx.bankId);
   }
@@ -311,7 +313,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
       if (!mounted) return;
       setState(() => _isSavingCounterparty = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save sender or recipient')),
+        SnackBar(content: Text('Could not save $_counterpartyRole')),
       );
     }
   }
@@ -641,7 +643,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                             FocusManager.instance.primaryFocus?.unfocus();
                           },
                           decoration: InputDecoration(
-                            hintText: 'Add sender or recipient',
+                            hintText: 'Tap to add $_counterpartyRole',
                             hintStyle: TextStyle(
                               color: AppColors.textTertiary(context),
                             ),
