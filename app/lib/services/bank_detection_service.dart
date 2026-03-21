@@ -5,6 +5,7 @@ import 'package:totals/models/account.dart';
 import 'package:totals/models/bank.dart';
 import 'package:totals/repositories/account_repository.dart';
 import 'package:totals/services/bank_config_service.dart';
+import 'package:totals/services/sms_config_service.dart';
 
 /// Represents a bank detected from SMS messages
 class DetectedBank {
@@ -63,10 +64,21 @@ class BankDetectionService {
   final Telephony _telephony = Telephony.instance;
   final AccountRepository _accountRepo = AccountRepository();
   final BankConfigService _bankConfigService = BankConfigService();
+  final SmsConfigService _smsConfigService = SmsConfigService();
   List<Bank>? _cachedBanks;
 
   bool _hasDetectedBanksCache(List<DetectedBank>? banks) {
     return banks != null && banks.isNotEmpty;
+  }
+
+  Future<Set<int>> _getSupportedBankIds() async {
+    try {
+      final patterns = await _smsConfigService.getPatterns();
+      return patterns.map((pattern) => pattern.bankId).toSet();
+    } catch (e) {
+      print("debug: Error loading supported bank IDs: $e");
+      return <int>{};
+    }
   }
 
   /// Scans the SMS inbox and returns banks that the user has messages from
@@ -81,6 +93,7 @@ class BankDetectionService {
       List<Account> registeredAccounts = await _accountRepo.getAccounts();
       Set<int> registeredBankIds =
           registeredAccounts.map((a) => a.bank).toSet();
+      final supportedBankIds = await _getSupportedBankIds();
 
       // Try to get cached data first (unless force refresh)
       if (!forceRefresh) {
@@ -88,7 +101,9 @@ class BankDetectionService {
         if (_hasDetectedBanksCache(cachedBanks)) {
           // Filter out already registered banks from cache
           final filtered = cachedBanks!
-              .where((db) => !registeredBankIds.contains(db.bank.id))
+              .where((db) =>
+                  !registeredBankIds.contains(db.bank.id) &&
+                  supportedBankIds.contains(db.bank.id))
               .toList();
 
           return filtered;
@@ -99,7 +114,11 @@ class BankDetectionService {
 
       // No cache or force refresh - scan SMS
       // Force reload banks to ensure we have latest synced banks
-      return await _scanAndCacheBanks(registeredBankIds, forceReloadBanks: forceRefresh);
+      return await _scanAndCacheBanks(
+        registeredBankIds,
+        supportedBankIds: supportedBankIds,
+        forceReloadBanks: forceRefresh,
+      );
     } catch (e) {
       print("debug: Error detecting banks from SMS: $e");
       // Try to return cached data on error
@@ -108,8 +127,11 @@ class BankDetectionService {
         List<Account> registeredAccounts = await _accountRepo.getAccounts();
         Set<int> registeredBankIds =
             registeredAccounts.map((a) => a.bank).toSet();
+        final supportedBankIds = await _getSupportedBankIds();
         return cachedBanks
-            .where((db) => !registeredBankIds.contains(db.bank.id))
+            .where((db) =>
+                !registeredBankIds.contains(db.bank.id) &&
+                supportedBankIds.contains(db.bank.id))
             .toList();
       }
       return [];
@@ -199,7 +221,10 @@ class BankDetectionService {
 
   /// Scan SMS and cache results
   Future<List<DetectedBank>> _scanAndCacheBanks(
-      Set<int> registeredBankIds, {bool forceReloadBanks = false}) async {
+    Set<int> registeredBankIds, {
+    required Set<int> supportedBankIds,
+    bool forceReloadBanks = false,
+  }) async {
     // Fetch banks from database (reload if forced or not cached)
     if (_cachedBanks == null || forceReloadBanks) {
       _cachedBanks = await _bankConfigService.getBanks();
@@ -257,7 +282,9 @@ class BankDetectionService {
 
     // Return only unregistered banks
     List<DetectedBank> unregisteredBanks = allBanks
-        .where((db) => !registeredBankIds.contains(db.bank.id))
+        .where((db) =>
+            !registeredBankIds.contains(db.bank.id) &&
+            supportedBankIds.contains(db.bank.id))
         .toList();
 
     return unregisteredBanks;

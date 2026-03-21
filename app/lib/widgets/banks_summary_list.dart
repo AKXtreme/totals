@@ -150,7 +150,9 @@ class _BanksSummaryListState extends State<BanksSummaryList> {
             if (index < registeredCount + unregisteredCount) {
               final unregisteredIndex = index - registeredCount;
               return _buildUnregisteredBankCard(
-                  _unregisteredBanks[unregisteredIndex]);
+                _unregisteredBanks[unregisteredIndex],
+                syncStatusService,
+              );
             }
 
             // Add account button (last item)
@@ -418,9 +420,18 @@ class _BanksSummaryListState extends State<BanksSummaryList> {
     );
   }
 
-  Widget _buildUnregisteredBankCard(DetectedBank detectedBank) {
+  Widget _buildUnregisteredBankCard(
+    DetectedBank detectedBank,
+    AccountSyncStatusService syncStatusService,
+  ) {
+    final isSyncing =
+        syncStatusService.hasAnyAccountSyncing(detectedBank.bank.id);
+    final syncStatus =
+        syncStatusService.getSyncStatusForBank(detectedBank.bank.id) ??
+            'Adding account...';
+
     return GestureDetector(
-      onTap: () => _openRegistrationForm(detectedBank.bank),
+      onTap: isSyncing ? null : () => _openRegistrationForm(detectedBank.bank),
       child: Container(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
@@ -445,7 +456,9 @@ class _BanksSummaryListState extends State<BanksSummaryList> {
               Material(
                 color: Colors.transparent,
                 child: InkWell(
-                  onTap: () => _openRegistrationForm(detectedBank.bank),
+                  onTap: isSyncing
+                      ? null
+                      : () => _openRegistrationForm(detectedBank.bank),
                   borderRadius: BorderRadius.circular(16),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -504,7 +517,9 @@ class _BanksSummaryListState extends State<BanksSummaryList> {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
-                                "${detectedBank.messageCount} messages found",
+                                isSyncing
+                                    ? "Sync in progress"
+                                    : "${detectedBank.messageCount} messages found",
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
@@ -515,25 +530,57 @@ class _BanksSummaryListState extends State<BanksSummaryList> {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.add_circle_outline,
-                                  size: 16,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  "Tap to add",
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
+                            if (isSyncing)
+                              Row(
+                                children: [
+                                  SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Theme.of(context).colorScheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      syncStatus,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.add_circle_outline,
+                                    size: 16,
                                     color:
                                         Theme.of(context).colorScheme.primary,
                                   ),
-                                ),
-                              ],
-                            ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    "Tap to add",
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
                           ],
                         ),
                       ],
@@ -555,7 +602,7 @@ class _BanksSummaryListState extends State<BanksSummaryList> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    "ADD",
+                    isSyncing ? "SYNC" : "ADD",
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.bold,

@@ -2,6 +2,7 @@ import 'package:totals/models/transaction.dart';
 
 const int dashenCanonicalMaskPattern = 3;
 const int dashenLegacyMaskPattern = 4;
+const Duration dashenDeduplicationWindow = Duration(hours: 10);
 
 class TransactionDeduplicationPlan {
   final Transaction keeper;
@@ -115,7 +116,8 @@ Set<String> buildDashenDeduplicationSuffixes({
   return suffixes;
 }
 
-List<TransactionDeduplicationPlan> buildExactAmountAndBalanceDeduplicationPlans({
+List<TransactionDeduplicationPlan>
+    buildExactAmountAndBalanceDeduplicationPlans({
   required int bankId,
   required String type,
   required Iterable<Transaction> transactions,
@@ -202,7 +204,7 @@ List<List<Transaction>> _clusterDuplicateCandidates(
     final isSameCluster = clusterStartTime == null ||
         transactionTime == null ||
         transactionTime.difference(clusterStartTime).abs() <=
-            const Duration(minutes: 15);
+            dashenDeduplicationWindow;
 
     if (isSameCluster) {
       currentCluster.add(transaction);

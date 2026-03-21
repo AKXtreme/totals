@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -201,17 +203,40 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     });
   }
 
+  void _runCategoryMutation(
+    Future<void> operation, {
+    required String failureMessage,
+  }) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+    unawaited(
+      operation.catchError((Object _, StackTrace __) {
+        messenger
+          ?..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text(failureMessage)),
+          );
+      }),
+    );
+  }
+
   Future<void> _setCategory(Category category) async {
     if (category.id == null) return;
     _dismissComposerState(clearDraft: true);
-    await _provider.setCategoryForTransaction(_tx, category);
-    if (mounted) Navigator.pop(context);
+    _runCategoryMutation(
+      _provider.setCategoryForTransaction(_tx, category),
+      failureMessage: 'Could not update category. Changes were reverted.',
+    );
   }
 
   Future<void> _clearCategory() async {
     _dismissComposerState(clearDraft: true);
-    await _provider.clearCategoryForTransaction(_tx);
-    if (mounted) Navigator.pop(context);
+    _runCategoryMutation(
+      _provider.clearCategoryForTransaction(_tx),
+      failureMessage: 'Could not clear category. Changes were reverted.',
+    );
   }
 
   void _copyReference() {

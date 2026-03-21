@@ -19,8 +19,7 @@ class AccountRegistrationService {
   final AccountSyncStatusService _syncStatusService =
       AccountSyncStatusService.instance;
   final BankConfigService _bankConfigService = BankConfigService();
-  final NotificationService _notificationService =
-      NotificationService.instance;
+  final NotificationService _notificationService = NotificationService.instance;
   List<Bank>? _cachedBanks;
 
   /// Registers a new account and optionally syncs previous SMS messages
@@ -298,10 +297,7 @@ class AccountRegistrationService {
     final finalImportedCount = importedCount > duplicatesRemovedCount
         ? importedCount - duplicatesRemovedCount
         : 0;
-    final completionMessage = duplicatesRemovedCount > 0
-        ? "Imported $finalImportedCount transactions after removing "
-            "$duplicatesRemovedCount duplicate SMS transaction(s)."
-        : "Imported $finalImportedCount transactions.";
+    final completionMessage = "Imported $finalImportedCount transactions.";
 
     // Clear sync status when complete
     _syncStatusService.clearSyncStatus(accountNumber, bankId);

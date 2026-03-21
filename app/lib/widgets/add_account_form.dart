@@ -142,8 +142,6 @@ class _RegisterAccountFormState extends State<RegisterAccountForm> {
       Navigator.of(context).pop();
     }
 
-    widget.onSubmit();
-
     try {
       final service = AccountRegistrationService();
       final provider = Provider.of<TransactionProvider>(context, listen: false);
@@ -160,7 +158,20 @@ class _RegisterAccountFormState extends State<RegisterAccountForm> {
         },
       );
 
-      if (account != null && _syncPreviousSms) {
+      if (account == null) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('This account already exists'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      await provider.loadData();
+      widget.onSubmit();
+
+      if (_syncPreviousSms) {
         messenger.showSnackBar(
           const SnackBar(
             content: Text(
@@ -170,8 +181,6 @@ class _RegisterAccountFormState extends State<RegisterAccountForm> {
           ),
         );
       }
-
-      provider.loadData();
     } catch (e) {
       debugPrint("debug: Error registering account: $e");
     }

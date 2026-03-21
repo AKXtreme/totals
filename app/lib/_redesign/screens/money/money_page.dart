@@ -8008,7 +8008,6 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
-      widget.onAccountAdded();
 
       final service = AccountRegistrationService();
       final account = await service.registerAccount(
@@ -8031,6 +8030,9 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
         return;
       }
 
+      await provider.loadData();
+      widget.onAccountAdded();
+
       messenger.showSnackBar(
         SnackBar(
           content: Text(
@@ -8041,7 +8043,6 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
           behavior: SnackBarBehavior.floating,
         ),
       );
-      provider.loadData();
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(
@@ -8360,7 +8361,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 30),
                   ],
                 ),
         ),
