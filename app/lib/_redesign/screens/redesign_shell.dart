@@ -50,6 +50,9 @@ class RedesignShell extends StatefulWidget {
 
 class RedesignShellState extends State<RedesignShell>
     with WidgetsBindingObserver {
+  // Temporary kill switch for the automatic battery optimization prompt.
+  // Users can still request the exemption manually from notification settings.
+  static const bool _autoShowBatteryOptimizationPrompt = false;
   static const int _homeIndex = 0;
   static const int _moneyIndex = 1;
   static const int _budgetIndex = 2;
@@ -215,6 +218,7 @@ class RedesignShellState extends State<RedesignShell>
       'battery_optimization_prompt_dismissed';
 
   Future<void> _checkBatteryOptimization() async {
+    if (!_autoShowBatteryOptimizationPrompt) return;
     if (kIsWeb) return;
     if (defaultTargetPlatform != TargetPlatform.android) return;
     if (!mounted) return;
