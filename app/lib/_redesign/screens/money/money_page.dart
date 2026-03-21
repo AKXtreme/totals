@@ -913,49 +913,21 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   }
 
   bool _matchesAnalyticsHeatmapFilter(Transaction transaction) {
-    switch (_analyticsHeatmapFilter.mode) {
-      case _AnalyticsHeatmapMode.all:
-        break;
-      case _AnalyticsHeatmapMode.expense:
-        if (transaction.type != 'DEBIT') return false;
-        break;
-      case _AnalyticsHeatmapMode.income:
-        if (transaction.type != 'CREDIT') return false;
-        break;
-    }
-
-    if (_analyticsHeatmapFilter.bankId != null &&
-        transaction.bankId != _analyticsHeatmapFilter.bankId) {
-      return false;
-    }
-    if (_analyticsHeatmapFilter.categoryId != null &&
-        transaction.categoryId != _analyticsHeatmapFilter.categoryId) {
-      return false;
-    }
-    return true;
+    return _matchesAnalyticsHeatmapFilterValue(
+      transaction,
+      _analyticsHeatmapFilter,
+    );
   }
 
   List<Transaction> _transactionsForHeatmapDay(
     DateTime day,
     TransactionProvider provider,
   ) {
-    final start = DateTime(day.year, day.month, day.day);
-    final end = start.add(const Duration(days: 1));
-    final transactions = provider.allTransactions.where((transaction) {
-      final dt = _parseTransactionTime(transaction.time);
-      if (dt == null) return false;
-      if (dt.isBefore(start) || !dt.isBefore(end)) return false;
-      return _matchesAnalyticsHeatmapFilter(transaction);
-    }).toList()
-      ..sort((a, b) {
-        final aTime = _parseTransactionTime(a.time);
-        final bTime = _parseTransactionTime(b.time);
-        if (aTime == null && bTime == null) return 0;
-        if (aTime == null) return 1;
-        if (bTime == null) return -1;
-        return bTime.compareTo(aTime);
-      });
-    return transactions;
+    return _transactionsForHeatmapDayWithFilter(
+      day: day,
+      allTransactions: provider.allTransactions,
+      filter: _analyticsHeatmapFilter,
+    );
   }
 
   Future<void> _openHeatmapDayLedger(
@@ -963,23 +935,24 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     TransactionProvider provider,
   ) async {
     final transactions = _transactionsForHeatmapDay(day, provider);
-    final derivedBalancesByReference = _deriveCashBalancesByReference(
-      allTxns: provider.allTransactions,
-      accountSummaries: provider.accountSummaries,
-    );
+    if (transactions.isEmpty) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'No transactions were recorded on ${_formatDateHeader(day)}.',
+          ),
+        ),
+      );
+      return;
+    }
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => FractionallySizedBox(
-        heightFactor: 0.86,
-        child: _HeatmapDayLedgerSheet(
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _HeatmapDayLedgerPage(
           date: day,
-          transactions: transactions,
-          derivedBalancesByReference: derivedBalancesByReference,
-          onTransactionTap: (transaction) =>
-              _openTransactionDetailsSheet(provider, transaction),
+          filter: _analyticsHeatmapFilter,
         ),
       ),
     );
@@ -2185,6 +2158,55 @@ double? _parseRunningBalance(String? raw) {
   return double.tryParse(match.group(0)!);
 }
 
+bool _matchesAnalyticsHeatmapFilterValue(
+  Transaction transaction,
+  _AnalyticsHeatmapFilter filter,
+) {
+  switch (filter.mode) {
+    case _AnalyticsHeatmapMode.all:
+      break;
+    case _AnalyticsHeatmapMode.expense:
+      if (transaction.type != 'DEBIT') return false;
+      break;
+    case _AnalyticsHeatmapMode.income:
+      if (transaction.type != 'CREDIT') return false;
+      break;
+  }
+
+  if (filter.bankId != null && transaction.bankId != filter.bankId) {
+    return false;
+  }
+  if (filter.categoryId != null &&
+      transaction.categoryId != filter.categoryId) {
+    return false;
+  }
+  return true;
+}
+
+List<Transaction> _transactionsForHeatmapDayWithFilter({
+  required DateTime day,
+  required List<Transaction> allTransactions,
+  required _AnalyticsHeatmapFilter filter,
+}) {
+  final start = DateTime(day.year, day.month, day.day);
+  final end = start.add(const Duration(days: 1));
+  final transactions = allTransactions.where((transaction) {
+    final dt = _parseTransactionTime(transaction.time);
+    if (dt == null) return false;
+    if (dt.isBefore(start) || !dt.isBefore(end)) return false;
+    return _matchesAnalyticsHeatmapFilterValue(transaction, filter);
+  }).toList()
+    ..sort((a, b) {
+      final aTime = _parseTransactionTime(a.time);
+      final bTime = _parseTransactionTime(b.time);
+      if (aTime == null && bTime == null) return 0;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+      return bTime.compareTo(aTime);
+    });
+  return transactions;
+}
+
 Map<String, double> _deriveCashBalancesByReference({
   required List<Transaction> allTxns,
   required List<AccountSummary> accountSummaries,
@@ -3193,7 +3215,7 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
 
                       return KeyedSubtree(
                         key: ValueKey<String>(
-                          'heatmap-page-${widget.view.name}-${widget.mode.name}-${pageMonth.year}-${pageMonth.month}',
+                          'heatmap-page-${widget.mode.name}-${pageMonth.year}-${pageMonth.month}',
                         ),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -3201,28 +3223,15 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
                           ),
                           child: Column(
                             children: [
-                              if (widget.view ==
-                                  _AnalyticsHeatmapView.daily) ...[
-                                const _AnalyticsWeekdayHeader(),
-                                const SizedBox(height: _weekdayHeaderSpacing),
-                                _buildDailyGrid(
-                                  context: context,
-                                  visibleMonth: pageMonth,
-                                  now: now,
-                                  valuesByDay: valuesByBucket,
-                                  maxMagnitude: maxMagnitude,
-                                  onDaySelected:
-                                      index == 1 ? widget.onDaySelected : null,
-                                ),
-                              ] else ...[
-                                _buildMonthlyGrid(
-                                  context: context,
-                                  visibleMonth: pageMonth,
-                                  now: now,
-                                  valuesByMonth: valuesByBucket,
-                                  maxMagnitude: maxMagnitude,
-                                ),
-                              ],
+                              _buildAnimatedHeatmapPageBody(
+                                context: context,
+                                pageMonth: pageMonth,
+                                now: now,
+                                valuesByBucket: valuesByBucket,
+                                maxMagnitude: maxMagnitude,
+                                onDaySelected:
+                                    index == 1 ? widget.onDaySelected : null,
+                              ),
                             ],
                           ),
                         ),
@@ -3252,6 +3261,85 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildAnimatedHeatmapPageBody({
+    required BuildContext context,
+    required DateTime pageMonth,
+    required DateTime now,
+    required Map<int, double> valuesByBucket,
+    required double maxMagnitude,
+    ValueChanged<DateTime>? onDaySelected,
+  }) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 280),
+      reverseDuration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      layoutBuilder: (currentChild, previousChildren) {
+        return Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            ...previousChildren,
+            if (currentChild != null) currentChild,
+          ],
+        );
+      },
+      transitionBuilder: (child, animation) {
+        final isIncoming =
+            (child.key as ValueKey<_AnalyticsHeatmapView>).value == widget.view;
+        return AnimatedBuilder(
+          animation: animation,
+          child: child,
+          builder: (context, child) {
+            final t = animation.value;
+            final scaleProgress = Curves.easeOutCubic.transform(t);
+            final opacity = isIncoming
+                ? const Interval(0.14, 1.0, curve: Curves.easeOutCubic)
+                    .transform(t)
+                : Curves.easeOutCubic.transform(t);
+            final beginScale = isIncoming ? 0.94 : 0.98;
+            final scale = beginScale + ((1.0 - beginScale) * scaleProgress);
+
+            return Opacity(
+              opacity: opacity,
+              child: Transform.scale(
+                scale: scale,
+                alignment: Alignment.center,
+                child: child,
+              ),
+            );
+          },
+        );
+      },
+      child: KeyedSubtree(
+        key: ValueKey<_AnalyticsHeatmapView>(widget.view),
+        child: Column(
+          children: [
+            if (widget.view == _AnalyticsHeatmapView.daily) ...[
+              const _AnalyticsWeekdayHeader(),
+              const SizedBox(height: _weekdayHeaderSpacing),
+              _buildDailyGrid(
+                context: context,
+                visibleMonth: pageMonth,
+                now: now,
+                valuesByDay: valuesByBucket,
+                maxMagnitude: maxMagnitude,
+                onDaySelected: onDaySelected,
+              ),
+            ] else ...[
+              _buildMonthlyGrid(
+                context: context,
+                visibleMonth: pageMonth,
+                now: now,
+                valuesByMonth: valuesByBucket,
+                maxMagnitude: maxMagnitude,
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -3305,7 +3393,7 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
           itemAlignment: Alignment.centerLeft,
           axis: Axis.vertical,
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 4),
         _buildAnimatedSlidingLabelValues(
           textStyle: textStyle,
           labelWidth: _measureHeaderYearViewportWidth(context, textStyle),
@@ -6174,22 +6262,28 @@ class _LedgerFlatItem {
   const _LedgerFlatItem(this.transaction);
 }
 
-class _HeatmapDayLedgerSheet extends StatelessWidget {
+class _HeatmapDayLedgerPage extends StatelessWidget {
   final DateTime date;
-  final List<Transaction> transactions;
-  final Map<String, double> derivedBalancesByReference;
-  final ValueChanged<Transaction> onTransactionTap;
+  final _AnalyticsHeatmapFilter filter;
 
-  const _HeatmapDayLedgerSheet({
+  const _HeatmapDayLedgerPage({
     required this.date,
-    required this.transactions,
-    required this.derivedBalancesByReference,
-    required this.onTransactionTap,
+    required this.filter,
   });
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<TransactionProvider>();
     final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final transactions = _transactionsForHeatmapDayWithFilter(
+      day: date,
+      allTransactions: provider.allTransactions,
+      filter: filter,
+    );
+    final derivedBalancesByReference = _deriveCashBalancesByReference(
+      allTxns: provider.allTransactions,
+      accountSummaries: provider.accountSummaries,
+    );
     final weekdayLabel = DateFormat('EEEE').format(date);
     var incomeTotal = 0.0;
     var expenseTotal = 0.0;
@@ -6205,67 +6299,45 @@ class _HeatmapDayLedgerSheet extends StatelessWidget {
         '${_formatCount(transactions.length)} transaction${transactions.length == 1 ? '' : 's'}';
     final netPrefix = netTotal >= 0 ? '+' : '-';
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.background(context),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+    return Scaffold(
+      backgroundColor: AppColors.background(context),
+      appBar: AppBar(
+        backgroundColor: AppColors.background(context),
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        elevation: 0,
+        toolbarHeight: 74,
+        titleSpacing: 8,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _formatDateHeader(date),
+              style: TextStyle(
+                color: AppColors.textPrimary(context),
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '$weekdayLabel • $transactionLabel',
+              style: TextStyle(
+                color: AppColors.textSecondary(context),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
-      child: SafeArea(
+      body: SafeArea(
         top: false,
-        bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 8),
-                width: 44,
-                height: 4,
-                decoration: BoxDecoration(
-                  color:
-                      AppColors.textTertiary(context).withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _formatDateHeader(date),
-                    style: TextStyle(
-                      color: AppColors.textPrimary(context),
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '$weekdayLabel • $transactionLabel',
-                    style: TextStyle(
-                      color: AppColors.textSecondary(context),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(
-                'Ledger',
-                style: TextStyle(
-                  color: AppColors.textPrimary(context),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Wrap(
@@ -6338,7 +6410,11 @@ class _HeatmapDayLedgerSheet extends StatelessWidget {
                                 color: Colors.transparent,
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(12),
-                                  onTap: () => onTransactionTap(transaction),
+                                  onTap: () => showTransactionDetailsSheet(
+                                    context: context,
+                                    transaction: transaction,
+                                    provider: provider,
+                                  ),
                                   child: _LedgerTransactionEntry(
                                     transaction: transaction,
                                     derivedBalance: derivedBalancesByReference[
