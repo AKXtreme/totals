@@ -703,6 +703,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     title: 'Summary time',
                     subtitle: '${_dailyTime.format(context)} • shared for all summaries',
                     enabled: _dailyEnabled || _weeklyEnabled || _monthlyEnabled,
+                    showChevron: false,
                     onTap: (_dailyEnabled || _weeklyEnabled || _monthlyEnabled)
                         ? _pickDailyTime
                         : null,
@@ -714,6 +715,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     title: 'Send test daily summary',
                     subtitle: 'Send a sample daily summary notification now',
                     enabled: _dailyEnabled,
+                    showChevron: false,
                     onTap: _dailyEnabled ? _sendTestDailySummary : null,
                   ),
 
@@ -723,6 +725,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     title: 'Send test weekly summary',
                     subtitle: 'Send a sample weekly summary notification now',
                     enabled: _weeklyEnabled,
+                    showChevron: false,
                     onTap: _weeklyEnabled ? _sendTestWeeklySummary : null,
                   ),
 
@@ -732,6 +735,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     title: 'Send test monthly summary',
                     subtitle: 'Send a sample monthly summary notification now',
                     enabled: _monthlyEnabled,
+                    showChevron: false,
                     onTap: _monthlyEnabled ? _sendTestMonthlySummary : null,
                   ),
 
@@ -746,6 +750,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     iconColor: AppColors.amber,
                     title: 'Widget refresh time',
                     subtitle: _widgetRefreshTime.format(context),
+                    showChevron: false,
                     onTap: _pickWidgetRefreshTime,
                   ),
 
@@ -760,6 +765,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     iconColor: AppColors.primaryLight,
                     title: 'Request permission',
                     subtitle: 'Enable notifications if blocked',
+                    showChevron: false,
                     onTap: _requestNotificationPermission,
                   ),
 
@@ -770,6 +776,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     subtitle:
                         'Exclude from battery optimization to ensure '
                         'background notifications are delivered',
+                    showChevron: false,
                     onTap: _requestBatteryOptimizationExemption,
                   ),
                 ],
@@ -813,6 +820,7 @@ class _SettingTile extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool enabled;
+  final bool showChevron;
 
   const _SettingTile({
     required this.icon,
@@ -823,6 +831,7 @@ class _SettingTile extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.enabled = true,
+    this.showChevron = true,
   });
 
   @override
@@ -890,7 +899,7 @@ class _SettingTile extends StatelessWidget {
                   ),
                   if (trailing != null)
                     trailing!
-                  else if (onTap != null && enabled)
+                  else if (onTap != null && enabled && showChevron)
                     Icon(
                       Icons.chevron_right_rounded,
                       color: AppColors.textTertiary(context),

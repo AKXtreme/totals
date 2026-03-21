@@ -823,6 +823,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
                 iconColor: AppColors.incomeSuccess,
                 title: 'Export Data',
                 subtitle: 'Save or share a backup',
+                showChevron: false,
                 trailing: _isExporting
                     ? SizedBox(
                         width: 20,
@@ -841,6 +842,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
                 iconColor: AppColors.blue,
                 title: 'Import Data',
                 subtitle: 'Restore from a backup file',
+                showChevron: false,
                 trailing: _isImporting
                     ? SizedBox(
                         width: 20,
@@ -859,6 +861,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
                 iconColor: AppColors.red,
                 title: 'Clear Data',
                 subtitle: 'Delete selected app data',
+                showChevron: false,
                 onTap: () => showClearDatabaseDialog(context),
               ),
 
@@ -1019,6 +1022,7 @@ class _SettingTile extends StatelessWidget {
   final String subtitle;
   final Widget? trailing;
   final VoidCallback? onTap;
+  final bool showChevron;
 
   const _SettingTile({
     required this.icon,
@@ -1027,6 +1031,7 @@ class _SettingTile extends StatelessWidget {
     required this.subtitle,
     this.trailing,
     this.onTap,
+    this.showChevron = true,
   });
 
   @override
@@ -1083,7 +1088,7 @@ class _SettingTile extends StatelessWidget {
                 ),
                 if (trailing != null)
                   trailing!
-                else if (onTap != null)
+                else if (onTap != null && showChevron)
                   Icon(
                     AppIcons.chevron_right_rounded,
                     color: AppColors.textTertiary(context),
@@ -1317,11 +1322,6 @@ class _RedesignAboutPage extends StatelessWidget {
                             ),
                           ],
                         ),
-                      ),
-                      Icon(
-                        AppIcons.chevron_right_rounded,
-                        color: AppColors.textTertiary(context),
-                        size: 20,
                       ),
                     ],
                   ),

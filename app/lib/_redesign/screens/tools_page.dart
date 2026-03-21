@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:totals/_redesign/screens/redesign_shell.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/screens/accounts_page.dart';
 import 'package:totals/screens/verify_payments_page.dart';
@@ -66,17 +65,6 @@ class RedesignToolsPage extends StatelessWidget {
                   MaterialPageRoute(
                       builder: (_) => const VerifyPaymentsPage()),
                 ),
-              ),
-              _ToolTile(
-                icon: AppIcons.lock_outline_rounded,
-                iconColor: AppColors.amber,
-                title: 'Lock App',
-                subtitle: 'Require authentication to access',
-                onTap: () {
-                  final shell = context
-                      .findAncestorStateOfType<RedesignShellState>();
-                  shell?.lockApp();
-                },
               ),
             ],
           ),
