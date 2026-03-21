@@ -2953,13 +2953,11 @@ class _AnalyticsHeatmapCard extends StatefulWidget {
 
 class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
   static const Duration _pageSwipeDuration = Duration(milliseconds: 450);
-  static const double _sectionHeaderHeight = 36;
   static const double _sectionHeaderSpacing = 10;
   static const double _weekdayHeaderHeight = 16;
   static const double _weekdayHeaderSpacing = 8;
   static const double _sectionFooterSpacing = 10;
-  static const double _sectionFooterHeight = 28;
-  static const double _sectionHeightPadding = 6;
+  static const double _pageGridHorizontalInset = 12;
 
   late final PageController _pageController;
   late DateTime _visibleMonth;
@@ -3031,7 +3029,19 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
     return DateTime(month.year + delta, month.month, 1);
   }
 
-  void _handlePageChanged(int page) {
+  String _formatPeriodLabel(DateTime month) {
+    return widget.view == _AnalyticsHeatmapView.daily
+        ? _formatFullMonthName(month)
+        : '${month.year}';
+  }
+
+  String _formatHeaderPeriodLabel(DateTime month) {
+    return widget.view == _AnalyticsHeatmapView.daily
+        ? _formatMonthYear(month)
+        : '${month.year}';
+  }
+
+  void _commitPageChange(int page) {
     if (_isRecenteringPage || page == 1) return;
     final delta = page == 0 ? -1 : 1;
     final nextVisibleMonth = _shiftVisibleMonth(_visibleMonth, delta);
@@ -3045,7 +3055,10 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
       _pageController.jumpToPage(1);
     }
 
-    setState(() => _isRecenteringPage = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() => _isRecenteringPage = false);
+    });
     HapticFeedback.selectionClick();
     if (delta < 0) {
       widget.onPrevious();
@@ -3054,46 +3067,50 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
     }
   }
 
+  bool _handleHeatmapScrollNotification(ScrollNotification notification) {
+    if (_isRecenteringPage || notification.depth != 0) return false;
+    if (notification is! ScrollEndNotification) return false;
+
+    final metrics = notification.metrics;
+    if (metrics is! PageMetrics) return false;
+
+    final page = metrics.page?.round() ?? 1;
+    _commitPageChange(page);
+    return false;
+  }
+
   double _heatmapViewportHeight({
     required double width,
     required DateTime visibleMonth,
   }) {
     if (width <= 0) return 320;
+    final contentWidth = math.max(
+      0.0,
+      width - (_pageGridHorizontalInset * 2),
+    );
+    if (contentWidth <= 0) return 320;
 
     double gridHeight;
     if (widget.view == _AnalyticsHeatmapView.daily) {
-      final daysInMonth =
-          DateTime(visibleMonth.year, visibleMonth.month + 1, 0).day;
-      final startOffset = visibleMonth.weekday - 1;
-      final rowCount = ((startOffset + daysInMonth + 6) ~/ 7).clamp(4, 6);
       const crossCount = 7;
+      const rowCount = 6;
       const spacing = 4.0;
       const aspectRatio = 1.04;
-      final cellWidth = (width - (spacing * (crossCount - 1))) / crossCount;
+      final cellWidth =
+          (contentWidth - (spacing * (crossCount - 1))) / crossCount;
       final cellHeight = cellWidth / aspectRatio;
       gridHeight = (cellHeight * rowCount) + (spacing * (rowCount - 1));
-      return _sectionHeaderHeight +
-          _sectionHeaderSpacing +
-          _weekdayHeaderHeight +
-          _weekdayHeaderSpacing +
-          gridHeight +
-          _sectionFooterSpacing +
-          _sectionFooterHeight +
-          _sectionHeightPadding;
+      return _weekdayHeaderHeight + _weekdayHeaderSpacing + gridHeight;
     } else {
       const crossCount = 4;
       const spacing = 6.0;
       const aspectRatio = 1.35;
       const rowCount = 3;
-      final cellWidth = (width - (spacing * (crossCount - 1))) / crossCount;
+      final cellWidth =
+          (contentWidth - (spacing * (crossCount - 1))) / crossCount;
       final cellHeight = cellWidth / aspectRatio;
       gridHeight = (cellHeight * rowCount) + (spacing * (rowCount - 1));
-      return _sectionHeaderHeight +
-          _sectionHeaderSpacing +
-          gridHeight +
-          _sectionFooterSpacing +
-          _sectionFooterHeight +
-          _sectionHeightPadding;
+      return gridHeight;
     }
   }
 
@@ -3121,118 +3138,425 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
             ),
           ),
         );
-        return AnimatedSize(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeInOutCubic,
-          alignment: Alignment.topCenter,
-          child: SizedBox(
-            height: viewportHeight,
-            child: PageView.builder(
-              controller: _pageController,
-              onPageChanged: _handlePageChanged,
-              itemCount: 3,
-              physics: const PageScrollPhysics(),
-              itemBuilder: (context, index) {
-                final pageMonth = _shiftVisibleMonth(_visibleMonth, index - 1);
-                final valuesByBucket =
-                    widget.view == _AnalyticsHeatmapView.daily
-                        ? _buildDailyValues(pageMonth)
-                        : _buildMonthlyValues(pageMonth.year);
-                final maxMagnitude = valuesByBucket.values.fold<double>(
-                  0.0,
-                  (currentMax, value) => math.max(currentMax, value.abs()),
-                );
-
-                return KeyedSubtree(
-                  key: ValueKey<String>(
-                    'heatmap-page-${widget.view.name}-${widget.mode.name}-${pageMonth.year}-${pageMonth.month}',
+        return Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: _handleToggleView,
+                    behavior: HitTestBehavior.opaque,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _buildAnimatedHeaderPeriodLabel(context),
+                    ),
                   ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          GestureDetector(
-                            onTap: _handleToggleView,
-                            behavior: HitTestBehavior.opaque,
-                            child: Text(
-                              widget.view == _AnalyticsHeatmapView.daily
-                                  ? _formatMonthYear(pageMonth)
-                                  : '${pageMonth.year}',
-                              style: TextStyle(
-                                color: AppColors.textPrimary(context),
-                                fontSize: 28,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          _AnalyticsLegendDot(
-                            color: AppColors.incomeSuccess,
-                            label: 'Income',
-                          ),
-                          const SizedBox(width: 10),
-                          _AnalyticsLegendDot(
-                            color: AppColors.red,
-                            label: 'Expense',
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      if (widget.view == _AnalyticsHeatmapView.daily) ...[
-                        const _AnalyticsWeekdayHeader(),
-                        const SizedBox(height: 8),
-                        _buildDailyGrid(
-                          context: context,
-                          visibleMonth: pageMonth,
-                          now: now,
-                          valuesByDay: valuesByBucket,
-                          maxMagnitude: maxMagnitude,
-                          onDaySelected:
-                              index == 1 ? widget.onDaySelected : null,
-                        ),
-                      ] else ...[
-                        _buildMonthlyGrid(
-                          context: context,
-                          visibleMonth: pageMonth,
-                          now: now,
-                          valuesByMonth: valuesByBucket,
-                          maxMagnitude: maxMagnitude,
-                        ),
-                      ],
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _AnalyticsHeatmapNavButton(
-                            icon: AppIcons.chevron_left_rounded,
-                            onTap: _goToPreviousPeriod,
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            widget.view == _AnalyticsHeatmapView.daily
-                                ? _formatFullMonthName(pageMonth)
-                                : '${pageMonth.year}',
-                            style: TextStyle(
-                              color: AppColors.textSecondary(context),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          _AnalyticsHeatmapNavButton(
-                            icon: AppIcons.chevron_right_rounded,
-                            onTap: _goToNextPeriod,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                );
-              },
+                ),
+                const _AnalyticsLegendDot(
+                  color: AppColors.incomeSuccess,
+                  label: 'Income',
+                ),
+                const SizedBox(width: 10),
+                const _AnalyticsLegendDot(
+                  color: AppColors.red,
+                  label: 'Expense',
+                ),
+              ],
             ),
-          ),
+            const SizedBox(height: _sectionHeaderSpacing),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeInOutCubic,
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                height: viewportHeight,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _handleHeatmapScrollNotification,
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: 3,
+                    physics: const PageScrollPhysics(),
+                    itemBuilder: (context, index) {
+                      final pageMonth = _shiftVisibleMonth(
+                        _visibleMonth,
+                        index - 1,
+                      );
+                      final valuesByBucket =
+                          widget.view == _AnalyticsHeatmapView.daily
+                              ? _buildDailyValues(pageMonth)
+                              : _buildMonthlyValues(pageMonth.year);
+                      final maxMagnitude = valuesByBucket.values.fold<double>(
+                        0.0,
+                        (currentMax, value) =>
+                            math.max(currentMax, value.abs()),
+                      );
+
+                      return KeyedSubtree(
+                        key: ValueKey<String>(
+                          'heatmap-page-${widget.view.name}-${widget.mode.name}-${pageMonth.year}-${pageMonth.month}',
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: _pageGridHorizontalInset,
+                          ),
+                          child: Column(
+                            children: [
+                              if (widget.view ==
+                                  _AnalyticsHeatmapView.daily) ...[
+                                const _AnalyticsWeekdayHeader(),
+                                const SizedBox(height: _weekdayHeaderSpacing),
+                                _buildDailyGrid(
+                                  context: context,
+                                  visibleMonth: pageMonth,
+                                  now: now,
+                                  valuesByDay: valuesByBucket,
+                                  maxMagnitude: maxMagnitude,
+                                  onDaySelected:
+                                      index == 1 ? widget.onDaySelected : null,
+                                ),
+                              ] else ...[
+                                _buildMonthlyGrid(
+                                  context: context,
+                                  visibleMonth: pageMonth,
+                                  now: now,
+                                  valuesByMonth: valuesByBucket,
+                                  maxMagnitude: maxMagnitude,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: _sectionFooterSpacing),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _AnalyticsHeatmapNavButton(
+                  icon: AppIcons.chevron_left_rounded,
+                  onTap: _goToPreviousPeriod,
+                ),
+                const SizedBox(width: 6),
+                _buildAnimatedPeriodLabel(context),
+                const SizedBox(width: 6),
+                _AnalyticsHeatmapNavButton(
+                  icon: AppIcons.chevron_right_rounded,
+                  onTap: _goToNextPeriod,
+                ),
+              ],
+            ),
+          ],
         );
       },
+    );
+  }
+
+  Widget _buildAnimatedPeriodLabel(BuildContext context) {
+    final textStyle = TextStyle(
+      color: AppColors.textSecondary(context),
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+    );
+    return _buildAnimatedSlidingLabel(
+      context: context,
+      textStyle: textStyle,
+      labelWidth: _measurePeriodViewportWidth(context, textStyle),
+      labelHeight: 20,
+      labelBuilder: _formatPeriodLabel,
+    );
+  }
+
+  Widget _buildAnimatedHeaderPeriodLabel(BuildContext context) {
+    final textStyle = TextStyle(
+      color: AppColors.textPrimary(context),
+      fontSize: 28,
+      fontWeight: FontWeight.w700,
+    );
+    if (widget.view == _AnalyticsHeatmapView.monthly) {
+      return _buildAnimatedSlidingLabel(
+        context: context,
+        textStyle: textStyle,
+        labelWidth: _measureHeaderYearViewportWidth(context, textStyle),
+        labelHeight: 36,
+        labelBuilder: _formatHeaderPeriodLabel,
+        itemAlignment: Alignment.centerLeft,
+        axis: Axis.vertical,
+      );
+    }
+
+    final previousMonth = _shiftVisibleMonth(_visibleMonth, -1);
+    final nextMonth = _shiftVisibleMonth(_visibleMonth, 1);
+    final currentYear = '${_visibleMonth.year}';
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildAnimatedSlidingLabelValues(
+          textStyle: textStyle,
+          labelWidth: _measureHeaderMonthViewportWidth(context, textStyle),
+          labelHeight: 36,
+          previousLabel: _months[previousMonth.month - 1],
+          currentLabel: _months[_visibleMonth.month - 1],
+          nextLabel: _months[nextMonth.month - 1],
+          itemAlignment: Alignment.centerLeft,
+          axis: Axis.vertical,
+        ),
+        const SizedBox(width: 8),
+        _buildAnimatedSlidingLabelValues(
+          textStyle: textStyle,
+          labelWidth: _measureHeaderYearViewportWidth(context, textStyle),
+          labelHeight: 36,
+          previousLabel: previousMonth.year == _visibleMonth.year
+              ? currentYear
+              : '${previousMonth.year}',
+          currentLabel: currentYear,
+          nextLabel: nextMonth.year == _visibleMonth.year
+              ? currentYear
+              : '${nextMonth.year}',
+          itemAlignment: Alignment.centerLeft,
+          axis: Axis.vertical,
+          animateNegative: previousMonth.year != _visibleMonth.year,
+          animatePositive: nextMonth.year != _visibleMonth.year,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAnimatedSlidingLabel({
+    required BuildContext context,
+    required TextStyle textStyle,
+    required double labelWidth,
+    required double labelHeight,
+    required String Function(DateTime month) labelBuilder,
+    AlignmentGeometry itemAlignment = Alignment.center,
+    Axis axis = Axis.horizontal,
+  }) {
+    final previousMonth = _shiftVisibleMonth(_visibleMonth, -1);
+    final nextMonth = _shiftVisibleMonth(_visibleMonth, 1);
+    return _buildAnimatedSlidingLabelValues(
+      textStyle: textStyle,
+      labelWidth: labelWidth,
+      labelHeight: labelHeight,
+      previousLabel: labelBuilder(previousMonth),
+      currentLabel: labelBuilder(_visibleMonth),
+      nextLabel: labelBuilder(nextMonth),
+      itemAlignment: itemAlignment,
+      axis: axis,
+    );
+  }
+
+  Widget _buildAnimatedSlidingLabelValues({
+    required TextStyle textStyle,
+    required double labelWidth,
+    required double labelHeight,
+    required String previousLabel,
+    required String currentLabel,
+    required String nextLabel,
+    AlignmentGeometry itemAlignment = Alignment.center,
+    Axis axis = Axis.horizontal,
+    bool animateNegative = true,
+    bool animatePositive = true,
+  }) {
+    return SizedBox(
+      width: labelWidth,
+      height: labelHeight,
+      child: ClipRect(
+        child: AnimatedBuilder(
+          animation: _pageController,
+          builder: (context, _) {
+            final page = _pageController.hasClients
+                ? (_pageController.page ?? 1.0)
+                : 1.0;
+            final delta = (page - 1).clamp(-1.0, 1.0);
+            final shouldFreeze = (delta < 0 && !animateNegative) ||
+                (delta > 0 && !animatePositive) ||
+                delta == 0;
+            if (shouldFreeze) {
+              return _buildAnimatedPeriodLabelItem(
+                label: currentLabel,
+                style: textStyle,
+                width: labelWidth,
+                height: labelHeight,
+                alignment: itemAlignment,
+              );
+            }
+            final mainAxisExtent =
+                axis == Axis.horizontal ? labelWidth : labelHeight;
+            final stripWidth =
+                axis == Axis.horizontal ? labelWidth * 3 : labelWidth;
+            final stripHeight =
+                axis == Axis.horizontal ? labelHeight : labelHeight * 3;
+            final offset = axis == Axis.horizontal
+                ? Offset(-(1 + delta) * mainAxisExtent, 0)
+                : Offset(0, -(1 + delta) * mainAxisExtent);
+
+            return OverflowBox(
+              alignment: axis == Axis.horizontal
+                  ? Alignment.centerLeft
+                  : Alignment.topLeft,
+              minWidth: stripWidth,
+              maxWidth: stripWidth,
+              minHeight: stripHeight,
+              maxHeight: stripHeight,
+              child: Transform.translate(
+                offset: offset,
+                child: SizedBox(
+                  width: stripWidth,
+                  height: stripHeight,
+                  child: axis == Axis.horizontal
+                      ? Row(
+                          children: [
+                            _buildAnimatedPeriodLabelItem(
+                              label: previousLabel,
+                              style: textStyle,
+                              width: labelWidth,
+                              height: labelHeight,
+                              alignment: itemAlignment,
+                            ),
+                            _buildAnimatedPeriodLabelItem(
+                              label: currentLabel,
+                              style: textStyle,
+                              width: labelWidth,
+                              height: labelHeight,
+                              alignment: itemAlignment,
+                            ),
+                            _buildAnimatedPeriodLabelItem(
+                              label: nextLabel,
+                              style: textStyle,
+                              width: labelWidth,
+                              height: labelHeight,
+                              alignment: itemAlignment,
+                            ),
+                          ],
+                        )
+                      : Column(
+                          children: [
+                            _buildAnimatedPeriodLabelItem(
+                              label: previousLabel,
+                              style: textStyle,
+                              width: labelWidth,
+                              height: labelHeight,
+                              alignment: itemAlignment,
+                            ),
+                            _buildAnimatedPeriodLabelItem(
+                              label: currentLabel,
+                              style: textStyle,
+                              width: labelWidth,
+                              height: labelHeight,
+                              alignment: itemAlignment,
+                            ),
+                            _buildAnimatedPeriodLabelItem(
+                              label: nextLabel,
+                              style: textStyle,
+                              width: labelWidth,
+                              height: labelHeight,
+                              alignment: itemAlignment,
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  double _measurePeriodViewportWidth(BuildContext context, TextStyle style) {
+    final labels = widget.view == _AnalyticsHeatmapView.daily
+        ? List<String>.generate(
+            12,
+            (index) => _formatFullMonthName(DateTime(2024, index + 1, 1)),
+          )
+        : [
+            _formatPeriodLabel(_shiftVisibleMonth(_visibleMonth, -1)),
+            _formatPeriodLabel(_visibleMonth),
+            _formatPeriodLabel(_shiftVisibleMonth(_visibleMonth, 1)),
+          ];
+    return _measureLabelViewportWidth(
+      context: context,
+      style: style,
+      labels: labels,
+      extraWidth: 8,
+    );
+  }
+
+  double _measureHeaderMonthViewportWidth(
+    BuildContext context,
+    TextStyle style,
+  ) {
+    final labels = List<String>.from(_months);
+    return _measureLabelViewportWidth(
+      context: context,
+      style: style,
+      labels: labels,
+      extraWidth: 8,
+    );
+  }
+
+  double _measureHeaderYearViewportWidth(
+    BuildContext context,
+    TextStyle style,
+  ) {
+    final labels = [
+      '${_visibleMonth.year - 1}',
+      '${_visibleMonth.year}',
+      '${_visibleMonth.year + 1}',
+    ];
+    return _measureLabelViewportWidth(
+      context: context,
+      style: style,
+      labels: labels,
+      extraWidth: 8,
+    );
+  }
+
+  double _measureLabelViewportWidth({
+    required BuildContext context,
+    required TextStyle style,
+    required List<String> labels,
+    double extraWidth = 8,
+  }) {
+    var maxWidth = 0.0;
+
+    for (final label in labels) {
+      final painter = TextPainter(
+        text: TextSpan(text: label, style: style),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 1,
+      )..layout();
+      maxWidth = math.max(maxWidth, painter.width);
+    }
+
+    return maxWidth.ceilToDouble() + extraWidth;
+  }
+
+  Widget _buildAnimatedPeriodLabelItem({
+    required String label,
+    required TextStyle style,
+    required double width,
+    required double height,
+    AlignmentGeometry alignment = Alignment.center,
+  }) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: Align(
+        alignment: alignment,
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.fade,
+          softWrap: false,
+          style: style,
+        ),
+      ),
     );
   }
 
@@ -3327,7 +3651,7 @@ class _AnalyticsHeatmapCardState extends State<_AnalyticsHeatmapCard> {
     final daysInMonth =
         DateTime(visibleMonth.year, visibleMonth.month + 1, 0).day;
     final startOffset = visibleMonth.weekday - 1;
-    final totalCells = ((startOffset + daysInMonth + 6) ~/ 7) * 7;
+    const totalCells = 42;
 
     return GridView.builder(
       shrinkWrap: true,
@@ -3542,9 +3866,10 @@ class _AnalyticsHeatmapNavButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: Container(
-        width: 28,
-        height: 28,
+        width: 36,
+        height: 36,
         decoration: BoxDecoration(
           color: AppColors.surfaceColor(context),
           borderRadius: BorderRadius.circular(99),
@@ -3553,7 +3878,7 @@ class _AnalyticsHeatmapNavButton extends StatelessWidget {
         alignment: Alignment.center,
         child: Icon(
           icon,
-          size: 14,
+          size: 18,
           color: AppColors.textTertiary(context),
         ),
       ),
