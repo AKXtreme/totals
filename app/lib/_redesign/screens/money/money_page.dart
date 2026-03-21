@@ -348,8 +348,21 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   _ActivityTransactionsViewData? _activityTransactionsViewCache;
   _LedgerViewCacheKey? _ledgerViewCacheKey;
   _LedgerViewSummary? _ledgerViewCache;
+  final ValueNotifier<bool> _showActivityPinnedHeaderDivider =
+      ValueNotifier<bool>(false);
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
+
+  double get _activityPinnedHeaderDividerTriggerOffset {
+    switch (_subTab) {
+      case _SubTab.transactions:
+        return 16;
+      case _SubTab.analytics:
+        return 12;
+      case _SubTab.ledger:
+        return 16;
+    }
+  }
 
   @override
   void initState() {
@@ -363,6 +376,21 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       curve: Curves.easeOutCubic,
     );
     _subTabFadeController.value = 1;
+    _activityScrollController.addListener(_syncActivityPinnedHeaderDivider);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncActivityPinnedHeaderDivider();
+    });
+  }
+
+  void _syncActivityPinnedHeaderDivider([double? offset]) {
+    final pixels = offset ??
+        (_activityScrollController.hasClients
+            ? _activityScrollController.offset
+            : 0);
+    final shouldShow = pixels > _activityPinnedHeaderDividerTriggerOffset;
+    if (_showActivityPinnedHeaderDivider.value == shouldShow) return;
+    _showActivityPinnedHeaderDivider.value = shouldShow;
   }
 
   DateTime _normalizeAnalyticsHeatmapMonth(DateTime date) {
@@ -454,7 +482,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Choose which chart shows in the main analytics slot.',
+                    'Choose a chart.',
                     style: TextStyle(
                       color: AppColors.textSecondary(sheetContext),
                       fontSize: 13,
@@ -520,6 +548,10 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       if (nextTab != _SubTab.transactions) {
         _selectedRefs.clear();
       }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncActivityPinnedHeaderDivider();
     });
     _subTabFadeController.forward(from: 0);
     HapticFeedback.selectionClick();
@@ -621,6 +653,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
 
   @override
   void dispose() {
+    _activityScrollController.removeListener(_syncActivityPinnedHeaderDivider);
+    _showActivityPinnedHeaderDivider.dispose();
     _subTabFadeController.dispose();
     _searchController.dispose();
     _activityScrollController.dispose();
@@ -642,8 +676,6 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                 onTabChanged: _setTopTab,
               ),
             ),
-            Divider(
-                height: 1, thickness: 1, color: AppColors.borderColor(context)),
             Expanded(
               child: _topTab == _TopTab.activity
                   ? Selector<TransactionProvider, _ProviderContentVersion>(
@@ -797,58 +829,80 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     return DecoratedBox(
       decoration: BoxDecoration(
         color: AppColors.background(context),
-        border: Border(
-          bottom: BorderSide(color: AppColors.borderColor(context)),
-        ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-        child: Column(
-          children: [
-            _FinancialHealthCard(
-              healthScore: healthScore,
-              monthName: monthAbbrev,
-              monthIncome: monthIncome,
-              monthExpense: monthExpense,
-            ),
-            const SizedBox(height: 16),
-            _SubTabBar(
-              selectedTab: _subTab,
-              onTabChanged: _setSubTab,
-            ),
-            if (_subTab == _SubTab.transactions) ...[
-              const SizedBox(height: 12),
-              _SearchFilterRow(
-                controller: _searchController,
-                onChanged: (value) => setState(() {
-                  _searchQuery = value;
-                  _currentPage = 0;
-                }),
-                onFilterTap: () => _openFilterSheet(provider),
-                activeFilterCount: _filter.activeCount,
-              ),
-            ] else if (_subTab == _SubTab.ledger) ...[
-              const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _LedgerHeaderSummary(
-                      startingDate: ledgerViewSummary?.startingDate,
-                      startingBalance: ledgerViewSummary?.startingBalance,
-                    ),
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _FinancialHealthCard(
+                  healthScore: healthScore,
+                  monthName: monthAbbrev,
+                  monthIncome: monthIncome,
+                  monthExpense: monthExpense,
+                ),
+                const SizedBox(height: 16),
+                _SubTabBar(
+                  selectedTab: _subTab,
+                  onTabChanged: _setSubTab,
+                ),
+                if (_subTab == _SubTab.transactions) ...[
+                  const SizedBox(height: 12),
+                  _SearchFilterRow(
+                    controller: _searchController,
+                    onChanged: (value) => setState(() {
+                      _searchQuery = value;
+                      _currentPage = 0;
+                    }),
+                    onFilterTap: () => _openFilterSheet(provider),
+                    activeFilterCount: _filter.activeCount,
                   ),
-                  const SizedBox(width: 8),
-                  _FilterActionButton(
-                    onTap: () => _openLedgerFilterSheet(provider),
-                    activeFilterCount: _ledgerFilter.activeCount,
-                    size: 38,
+                ] else if (_subTab == _SubTab.ledger) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _LedgerHeaderSummary(
+                          startingDate: ledgerViewSummary?.startingDate,
+                          startingBalance: ledgerViewSummary?.startingBalance,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _FilterActionButton(
+                        onTap: () => _openLedgerFilterSheet(provider),
+                        activeFilterCount: _ledgerFilter.activeCount,
+                        size: 38,
+                      ),
+                    ],
                   ),
                 ],
+              ],
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _showActivityPinnedHeaderDivider,
+                builder: (context, showDivider, child) => AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  opacity: showDivider ? 1 : 0,
+                  child: child,
+                ),
+                child: Container(
+                  height: 1,
+                  color: AppColors.borderColor(context),
+                ),
               ),
-            ],
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }
