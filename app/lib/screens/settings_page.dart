@@ -47,7 +47,7 @@ Widget _buildHeaderBackground(BuildContext context) {
         colors: [
           theme.colorScheme.primary.withOpacity(0.24),
           theme.colorScheme.secondary.withOpacity(0.16),
-          theme.colorScheme.background,
+          theme.colorScheme.surface,
         ],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
@@ -99,6 +99,7 @@ class _SettingsPageState extends State<SettingsPage>
   final SmsConfigService _smsConfigService = SmsConfigService();
   bool _isExporting = false;
   bool _isExportingCsv = false;
+  bool _isExportingPdf = false;
   bool _isImporting = false;
   bool _isRefreshingWidget = false;
   bool _isFetchingSmsPatterns = false;
@@ -378,6 +379,143 @@ class _SettingsPageState extends State<SettingsPage>
       }
     } finally {
       if (mounted) setState(() => _isExportingCsv = false);
+    }
+  }
+
+  Future<void> _exportPdfData() async {
+    if (!mounted) return;
+
+    final action = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => AlertDialog(
+        title: const Text('Export Transactions as PDF'),
+        content: const Text(
+            'Export all transactions to a formatted PDF bank statement.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'save'),
+            child: const Text('Save to File'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'share'),
+            child: const Text('Share'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (action == null || !mounted) return;
+
+    setState(() => _isExportingPdf = true);
+    try {
+      final pdfBytes = await _exportImportService.exportTransactionsPdf();
+      final timestamp =
+          DateTime.now().toIso8601String().replaceAll(':', '-').split('.')[0];
+      final fileName = 'totals_statement_$timestamp.pdf';
+
+      if (action == 'save') {
+        if (!mounted) return;
+        if (Platform.isAndroid) {
+          try {
+            final directory = Directory('/storage/emulated/0/Download');
+            final dir = await directory.exists()
+                ? directory
+                : await getApplicationDocumentsDirectory();
+            final file = File('${dir.path}/$fileName');
+            await file.writeAsBytes(pdfBytes);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(
+                    await directory.exists()
+                        ? 'PDF saved to Downloads folder'
+                        : 'PDF saved to: ${dir.path}/$fileName',
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimary)),
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ));
+            }
+          } catch (e) {
+            final tempDir = await getTemporaryDirectory();
+            final tempFile = File('${tempDir.path}/$fileName');
+            await tempFile.writeAsBytes(pdfBytes);
+            if (mounted) {
+              await Share.shareXFiles([XFile(tempFile.path)],
+                  text: 'Totals Statement PDF', subject: 'Totals PDF');
+            }
+          }
+        } else {
+          final tempDir = await getTemporaryDirectory();
+          final tempFile = File('${tempDir.path}/$fileName');
+          await tempFile.writeAsBytes(pdfBytes);
+          if (!mounted) return;
+          try {
+            final result = await FilePicker.platform.saveFile(
+              dialogTitle: 'Save PDF Statement',
+              fileName: fileName,
+              type: FileType.custom,
+              allowedExtensions: ['pdf'],
+            );
+            if (result != null && result.isNotEmpty) {
+              await tempFile.copy(result);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('PDF saved successfully',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimary)),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ));
+              }
+            }
+          } finally {
+            try {
+              if (await tempFile.exists()) await tempFile.delete();
+            } catch (_) {}
+          }
+        }
+      } else {
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsBytes(pdfBytes);
+        if (!mounted) return;
+        await Share.shareXFiles([XFile(file.path)],
+            text: 'Totals Transaction Statement', subject: 'Totals PDF');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('PDF exported successfully',
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.onPrimary)),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('PDF export failed: $e',
+              style:
+                  TextStyle(color: Theme.of(context).colorScheme.onError)),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingPdf = false);
     }
   }
 
@@ -1203,7 +1341,7 @@ class _SettingsPageState extends State<SettingsPage>
             pinned: true,
             snap: false,
             elevation: 0,
-            backgroundColor: theme.colorScheme.background,
+            backgroundColor: theme.colorScheme.surface,
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
               title: Text(
@@ -1424,6 +1562,22 @@ class _SettingsPageState extends State<SettingsPage>
                                     )
                                   : null,
                               onTap: _isExportingCsv ? null : _exportCsvData,
+                            ),
+                            _buildDivider(context),
+                            _buildSettingTile(
+                              icon: Icons.picture_as_pdf_rounded,
+                              title: 'Export Transactions as PDF',
+                              trailing: _isExportingPdf
+                                  ? SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                    )
+                                  : null,
+                              onTap: _isExportingPdf ? null : _exportPdfData,
                             ),
                             _buildDivider(context),
                             _buildSettingTile(
@@ -1795,7 +1949,7 @@ class AboutPage extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+            color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.35),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: theme.colorScheme.outline.withOpacity(0.12),
@@ -1855,7 +2009,7 @@ class AboutPage extends StatelessWidget {
             floating: true,
             pinned: true,
             elevation: 0,
-            backgroundColor: theme.colorScheme.background,
+            backgroundColor: theme.colorScheme.surface,
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
               title: Text(
@@ -2043,7 +2197,7 @@ class _FAQPageState extends State<FAQPage> {
             floating: true,
             pinned: true,
             elevation: 0,
-            backgroundColor: theme.colorScheme.background,
+            backgroundColor: theme.colorScheme.surface,
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
               title: Text(
@@ -2138,7 +2292,7 @@ class _FAQPageState extends State<FAQPage> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.35),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: theme.colorScheme.outline.withOpacity(0.12),
@@ -2199,7 +2353,7 @@ class _FAQPageState extends State<FAQPage> {
         child: Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+            color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.35),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
               color: theme.colorScheme.outline.withOpacity(0.12),
