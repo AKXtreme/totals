@@ -136,3 +136,7 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/custom-fonts/#from-packages
+
+dependency_overrides:
+  another_telephony:
+    path: packages/another_telephony

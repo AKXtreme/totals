@@ -4,10 +4,9 @@ packages:
   another_telephony:
     dependency: "direct main"
     description:
-      name: another_telephony
-      sha256: "8d128b890c56a33d61516382b03e3f2b79831d30694f6c63eb09e8974b7573b9"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/another_telephony"
+      relative: true
+    source: path
     version: "0.3.0"
   archive:
     dependency: transitive
