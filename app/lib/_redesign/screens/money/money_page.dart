@@ -3179,61 +3179,81 @@ class _AnalyticsOverviewGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
+    const spacing = 10.0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final cardWidth = math.max(0.0, (availableWidth - spacing) / 2);
+        final cardHeight =
+            math.min(164.0, math.max(148.0, cardWidth * 0.9));
+
+        return Column(
           children: [
-            Expanded(
-              child: _AnalyticsMetricCard(
-                icon: AppIcons.trending_up_rounded,
-                iconBg: const Color(0xFFDCFCE7),
-                iconFg: AppColors.incomeSuccess,
-                title: 'TOTAL INCOME',
-                value: 'ETB ${_formatEtbAbbrev(snapshot.totalIncome)}',
-                subtitle: '${snapshot.incomeCount} deposits',
+            SizedBox(
+              height: cardHeight,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _AnalyticsMetricCard(
+                      icon: AppIcons.trending_up_rounded,
+                      iconBg: const Color(0xFFDCFCE7),
+                      iconFg: AppColors.incomeSuccess,
+                      title: 'TOTAL INCOME',
+                      value: 'ETB ${_formatEtbAbbrev(snapshot.totalIncome)}',
+                      subtitle: '${snapshot.incomeCount} deposits',
+                    ),
+                  ),
+                  const SizedBox(width: spacing),
+                  Expanded(
+                    child: _AnalyticsMetricCard(
+                      icon: AppIcons.trending_down_rounded,
+                      iconBg: const Color(0xFFFEE2E2),
+                      iconFg: AppColors.red,
+                      title: 'TOTAL EXPENSE',
+                      value: 'ETB ${_formatEtbAbbrev(snapshot.totalExpense)}',
+                      subtitle: '${snapshot.expenseCount} transactions',
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _AnalyticsMetricCard(
-                icon: AppIcons.trending_down_rounded,
-                iconBg: const Color(0xFFFEE2E2),
-                iconFg: AppColors.red,
-                title: 'TOTAL EXPENSE',
-                value: 'ETB ${_formatEtbAbbrev(snapshot.totalExpense)}',
-                subtitle: '${snapshot.expenseCount} transactions',
+            const SizedBox(height: spacing),
+            SizedBox(
+              height: cardHeight,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _AnalyticsMetricCard(
+                      icon: AppIcons.receipt_long_rounded,
+                      iconBg: const Color(0xFFEDE9FE),
+                      iconFg: const Color(0xFF6366F1),
+                      title: 'TRANSACTIONS',
+                      value: _formatCount(snapshot.totalTransactions),
+                      subtitle:
+                          '${snapshot.expenseCount} expense | ${snapshot.incomeCount} income',
+                    ),
+                  ),
+                  const SizedBox(width: spacing),
+                  Expanded(
+                    child: _AnalyticsMetricCard(
+                      icon: AppIcons.schedule_rounded,
+                      iconBg: const Color(0xFFFEF3C7),
+                      iconFg: const Color(0xFFD97706),
+                      title: 'TOTAL FEES',
+                      value: 'ETB ${_formatEtbAbbrev(snapshot.totalFees)}',
+                      subtitle: 'Service charges + VAT',
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _AnalyticsMetricCard(
-                icon: AppIcons.receipt_long_rounded,
-                iconBg: const Color(0xFFEDE9FE),
-                iconFg: const Color(0xFF6366F1),
-                title: 'TRANSACTIONS',
-                value: _formatCount(snapshot.totalTransactions),
-                subtitle:
-                    '${snapshot.expenseCount} expense | ${snapshot.incomeCount} income',
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _AnalyticsMetricCard(
-                icon: AppIcons.schedule_rounded,
-                iconBg: const Color(0xFFFEF3C7),
-                iconFg: const Color(0xFFD97706),
-                title: 'TOTAL FEES',
-                value: 'ETB ${_formatEtbAbbrev(snapshot.totalFees)}',
-                subtitle: 'Service charges + VAT',
-              ),
-            ),
-          ],
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -3257,6 +3277,18 @@ class _AnalyticsMetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final valueStyle = TextStyle(
+      color: AppColors.textPrimary(context),
+      fontSize: 28,
+      fontWeight: FontWeight.w800,
+      height: 1.0,
+    );
+    final subtitleStyle = TextStyle(
+      color: AppColors.textSecondary(context),
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+    );
+
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
       decoration: BoxDecoration(
@@ -3278,38 +3310,176 @@ class _AnalyticsMetricCard extends StatelessWidget {
             child: Icon(icon, size: 18, color: iconFg),
           ),
           const SizedBox(height: 10),
-          Text(
-            title,
-            style: TextStyle(
-              color: AppColors.textTertiary(context),
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.4,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: AppColors.textPrimary(context),
-              fontSize: 34,
-              fontWeight: FontWeight.w800,
-              height: 1.05,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: TextStyle(
-              color: AppColors.textSecondary(context),
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: AppColors.textTertiary(context),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: valueStyle,
+                ),
+                _AnalyticsAutoMarqueeText(
+                  text: subtitle,
+                  style: subtitleStyle,
+                ),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AnalyticsAutoMarqueeText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  final TextAlign textAlign;
+  final double gap;
+  final double pixelsPerSecond;
+
+  const _AnalyticsAutoMarqueeText({
+    required this.text,
+    required this.style,
+    this.textAlign = TextAlign.start,
+    this.gap = 24,
+    this.pixelsPerSecond = 26,
+  });
+
+  @override
+  State<_AnalyticsAutoMarqueeText> createState() =>
+      _AnalyticsAutoMarqueeTextState();
+}
+
+class _AnalyticsAutoMarqueeTextState extends State<_AnalyticsAutoMarqueeText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  Duration? _currentDuration;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _stopMarquee() {
+    if (_controller.isAnimating) {
+      _controller.stop();
+    }
+    _controller.value = 0;
+  }
+
+  void _startMarquee(double scrollDistance) {
+    if (scrollDistance <= 0 || !mounted) {
+      _stopMarquee();
+      return;
+    }
+    final millis = ((scrollDistance / widget.pixelsPerSecond) * 1000)
+        .round()
+        .clamp(3200, 22000)
+        .toInt();
+    final duration = Duration(milliseconds: millis);
+    if (_currentDuration != duration) {
+      _currentDuration = duration;
+      _controller.duration = duration;
+    }
+    if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.text.trim().isEmpty) {
+      _stopMarquee();
+      return const SizedBox.shrink();
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.maxWidth.isFinite || constraints.maxWidth <= 0) {
+          _stopMarquee();
+          return Text(
+            widget.text,
+            style: widget.style,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: widget.textAlign,
+          );
+        }
+
+        final painter = TextPainter(
+          text: TextSpan(text: widget.text, style: widget.style),
+          maxLines: 1,
+          textDirection: Directionality.of(context),
+        )..layout(maxWidth: double.infinity);
+
+        final textWidth = painter.width;
+        final shouldMarquee = textWidth > constraints.maxWidth + 0.5;
+
+        if (!shouldMarquee) {
+          _stopMarquee();
+          return Text(
+            widget.text,
+            style: widget.style,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: widget.textAlign,
+          );
+        }
+
+        final scrollDistance = textWidth + widget.gap;
+        _startMarquee(scrollDistance);
+
+        return ClipRect(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              final offsetX = -_controller.value * scrollDistance;
+              return Transform.translate(
+                offset: Offset(offsetX, 0),
+                child: child,
+              );
+            },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.text,
+                  style: widget.style,
+                  maxLines: 1,
+                  softWrap: false,
+                ),
+                SizedBox(width: widget.gap),
+                Text(
+                  widget.text,
+                  style: widget.style,
+                  maxLines: 1,
+                  softWrap: false,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
