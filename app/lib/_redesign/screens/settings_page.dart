@@ -17,6 +17,7 @@ import 'package:totals/widgets/clear_database_dialog.dart';
 import 'package:totals/repositories/profile_repository.dart';
 import 'package:totals/services/data_export_import_service.dart';
 import 'package:totals/services/notification_settings_service.dart';
+import 'package:totals/services/sms_config_service.dart';
 import 'package:totals/_redesign/theme/app_icons.dart';
 
 // ── Support links ───────────────────────────────────────────────────────────
@@ -53,6 +54,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
   final ProfileRepository _profileRepo = ProfileRepository();
   final DataExportImportService _exportImportService =
       DataExportImportService();
+  final SmsConfigService _smsConfigService = SmsConfigService();
 
   bool _useRedesign = true;
   bool _isLoadingRedesign = true;
@@ -60,6 +62,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
   bool _isLoadingAutoCategorize = true;
   bool _isExporting = false;
   bool _isImporting = false;
+  bool _isFetchingSmsPatterns = false;
 
   @override
   void initState() {
@@ -158,6 +161,42 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
           );
         }
       }
+    }
+  }
+
+  Future<void> _fetchSmsPatterns() async {
+    if (_isFetchingSmsPatterns) {
+      print("debug: Redesign settings SMS pattern fetch ignored - already in progress");
+      return;
+    }
+
+    print("debug: Redesign settings SMS pattern fetch requested by user");
+    setState(() => _isFetchingSmsPatterns = true);
+    try {
+      final count = await _smsConfigService.refreshPatternsFromInternet();
+      print("debug: Redesign settings SMS pattern fetch succeeded with $count patterns");
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fetched $count SMS patterns from the internet.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (error) {
+      print("debug: Redesign settings SMS pattern fetch failed: $error");
+      if (!mounted) return;
+      final message = error.toString().replaceFirst('Exception: ', '');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isFetchingSmsPatterns = false);
+      }
+      print("debug: Redesign settings SMS pattern fetch finished");
     }
   }
 
@@ -817,6 +856,25 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               // ── Data ────────────────────────────────────────────────────
               _SectionHeader(label: 'Data'),
               const SizedBox(height: 10),
+
+              _SettingTile(
+                icon: AppIcons.refresh,
+                iconColor: AppColors.blue,
+                title: 'Fetch SMS Patterns',
+                subtitle: 'Download the latest SMS parsing rules',
+                showChevron: false,
+                trailing: _isFetchingSmsPatterns
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primaryLight,
+                        ),
+                      )
+                    : null,
+                onTap: _isFetchingSmsPatterns ? null : _fetchSmsPatterns,
+              ),
 
               _SettingTile(
                 icon: AppIcons.upload_rounded,

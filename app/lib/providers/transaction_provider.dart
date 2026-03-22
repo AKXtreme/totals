@@ -671,9 +671,9 @@ class TransactionProvider with ChangeNotifier {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
     final tomorrowStart = todayStart.add(const Duration(days: 1));
-    // Keep Home graph/weekly totals aligned with "How did I get here":
-    // rolling 7-day window (today + previous 6 days), not calendar week.
-    final weekStart = todayStart.subtract(const Duration(days: 6));
+    // Calendar week: Monday to Sunday.
+    final daysSinceMonday = (todayStart.weekday - 1) % 7;
+    final weekStart = todayStart.subtract(Duration(days: daysSinceMonday));
     final monthStart = DateTime(now.year, now.month, 1);
     final nextMonthStart = DateTime(now.year, now.month + 1, 1);
     final last30Start = todayStart.subtract(const Duration(days: 29));

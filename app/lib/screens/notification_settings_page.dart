@@ -170,8 +170,10 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
 
   Future<void> _sendTestMonthlySummary() async {
     try {
+      final now = DateTime.now();
       final totalSpent =
-          await WidgetDataProvider().getLastCompletedMonthSpending();
+          await WidgetDataProvider().getCurrentMonthSpending();
+      print("debug: Monthly summary test — month: ${now.month}/${now.year}, totalSpent: $totalSpent");
       final shown =
           await NotificationService.instance.showMonthlySpendingTestNotification(
         amount: totalSpent,

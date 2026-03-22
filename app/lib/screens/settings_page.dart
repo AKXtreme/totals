@@ -16,6 +16,7 @@ import 'package:totals/screens/profile_management_page.dart';
 // import 'package:totals/screens/telebirr_bank_transfer_matches_page.dart';
 import 'package:totals/repositories/profile_repository.dart';
 import 'package:totals/services/notification_settings_service.dart';
+import 'package:totals/services/sms_config_service.dart';
 import 'package:totals/services/widget_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -96,9 +97,11 @@ class _SettingsPageState extends State<SettingsPage>
   final DataExportImportService _exportImportService =
       DataExportImportService();
   final ProfileRepository _profileRepo = ProfileRepository();
+  final SmsConfigService _smsConfigService = SmsConfigService();
   bool _isExporting = false;
   bool _isImporting = false;
   bool _isRefreshingWidget = false;
+  bool _isFetchingSmsPatterns = false;
   bool _autoCategorizeEnabled = false;
   bool _isLoadingAutoCategorize = true;
   bool _useRedesign = true;
@@ -196,6 +199,40 @@ class _SettingsPageState extends State<SettingsPage>
           );
         }
       }
+    }
+  }
+
+  Future<void> _fetchSmsPatterns() async {
+    if (_isFetchingSmsPatterns) {
+      print("debug: Legacy settings SMS pattern fetch ignored - already in progress");
+      return;
+    }
+
+    print("debug: Legacy settings SMS pattern fetch requested by user");
+    setState(() => _isFetchingSmsPatterns = true);
+    try {
+      final count = await _smsConfigService.refreshPatternsFromInternet();
+      print("debug: Legacy settings SMS pattern fetch succeeded with $count patterns");
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fetched $count SMS patterns from the internet.'),
+        ),
+      );
+    } catch (error) {
+      print("debug: Legacy settings SMS pattern fetch failed: $error");
+      if (!mounted) return;
+      final message = error.toString().replaceFirst('Exception: ', '');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isFetchingSmsPatterns = false);
+      }
+      print("debug: Legacy settings SMS pattern fetch finished");
     }
   }
 
@@ -1022,6 +1059,24 @@ class _SettingsPageState extends State<SettingsPage>
                             ),
                             _buildDivider(context),
                             */
+                            _buildSettingTile(
+                              icon: Icons.sync_rounded,
+                              title: 'Fetch SMS patterns',
+                              trailing: _isFetchingSmsPatterns
+                                  ? SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                    )
+                                  : null,
+                              onTap: _isFetchingSmsPatterns
+                                  ? null
+                                  : _fetchSmsPatterns,
+                            ),
+                            _buildDivider(context),
                             _buildSettingTile(
                               icon: Icons.upload_rounded,
                               title: 'Export Data',
