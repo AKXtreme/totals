@@ -21,7 +21,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 16,
+      version: 17,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -669,6 +669,16 @@ class DatabaseHelper {
         print("debug: Error adding timeFrame column (might already exist): $e");
       }
     }
+
+    if (oldVersion < 17) {
+      // Add note column to transactions table for version 17
+      try {
+        await db.execute('ALTER TABLE transactions ADD COLUMN note TEXT');
+        print("debug: Added note column to transactions table");
+      } catch (e) {
+        print("debug: Error adding note column (might already exist): $e");
+      }
+    }
   }
 
   Future<void> _seedBuiltInCategories(Database db) async {
@@ -905,20 +915,16 @@ class DatabaseHelper {
         activeProfileId = profileResult.first['id'] as int?;
       }
 
-      if (activeProfileId == null) {
-        activeProfileId = await db.insert(
+      activeProfileId ??= await db.insert(
           'profiles',
           {
             'name': 'Personal',
             'createdAt': DateTime.now().toIso8601String(),
           },
         );
-      }
 
       await prefs.setInt('active_profile_id', activeProfileId);
     }
-
-    if (activeProfileId == null) return;
 
     if (tableNames.contains('accounts')) {
       await db.update(

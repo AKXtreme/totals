@@ -81,6 +81,7 @@ class TransactionRepository {
       'accountNumber': map['accountNumber'],
       'categoryId': map['categoryId'],
       'profileId': map['profileId'],
+      'note': map['note'],
     });
   }
 
@@ -144,6 +145,7 @@ class TransactionRepository {
       'transactionLink': transactionToSave.transactionLink,
       'accountNumber': transactionToSave.accountNumber,
       'categoryId': transactionToSave.categoryId,
+      'note': transactionToSave.note,
       'year': year,
       'month': month,
       'day': day,

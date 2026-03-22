@@ -14,6 +14,7 @@ class Transaction {
   final int? profileId;
   final double? serviceCharge;
   final double? vat;
+  final String? note;
 
   Transaction({
     required this.amount,
@@ -31,6 +32,7 @@ class Transaction {
     this.profileId,
     this.serviceCharge,
     this.vat,
+    this.note,
   });
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
@@ -56,6 +58,7 @@ class Transaction {
       profileId: json['profileId'] as int?,
       serviceCharge: toDouble(json['serviceCharge']),
       vat: toDouble(json['vat']),
+      note: json['note'] as String?,
     );
   }
 
@@ -75,6 +78,7 @@ class Transaction {
         if (profileId != null) 'profileId': profileId,
         if (serviceCharge != null) 'serviceCharge': serviceCharge,
         if (vat != null) 'vat': vat,
+        if (note != null) 'note': note,
       };
 
   Transaction copyWith({
@@ -93,7 +97,9 @@ class Transaction {
     int? profileId,
     double? serviceCharge,
     double? vat,
+    String? note,
     bool clearCategoryId = false, // Flag to explicitly clear categoryId
+    bool clearNote = false,
   }) {
     return Transaction(
       amount: amount ?? this.amount,
@@ -107,12 +113,13 @@ class Transaction {
       type: type ?? this.type,
       transactionLink: transactionLink ?? this.transactionLink,
       accountNumber: accountNumber ?? this.accountNumber,
-      categoryId: clearCategoryId 
-          ? null 
+      categoryId: clearCategoryId
+          ? null
           : (categoryId ?? this.categoryId),
       profileId: profileId ?? this.profileId,
       serviceCharge: serviceCharge ?? this.serviceCharge,
       vat: vat ?? this.vat,
+      note: clearNote ? null : (note ?? this.note),
     );
   }
 }
