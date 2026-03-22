@@ -27,6 +27,7 @@ enum ParseStatus {
   noBank,
   noPattern,
   duplicate,
+  unregisteredBank,
 }
 
 class ParseResult {
@@ -278,6 +279,7 @@ class SmsService {
             noPattern++;
             break;
           case ParseStatus.noBank:
+          case ParseStatus.unregisteredBank:
             skipped++;
             break;
         }
@@ -665,6 +667,19 @@ class SmsService {
       return const ParseResult(
         status: ParseStatus.noBank,
         reason: "No matching bank",
+      );
+    }
+
+    // Check if the user has a registered account for this bank
+    final registeredAccounts = await AccountRepository().getAccounts();
+    final hasRegisteredAccount =
+        registeredAccounts.any((a) => a.bank == bank!.id);
+    if (!hasRegisteredAccount) {
+      print(
+          "debug: No registered account for bank ${bank.name} (${bank.id}) - skipping.");
+      return const ParseResult(
+        status: ParseStatus.unregisteredBank,
+        reason: "No registered account for this bank",
       );
     }
 

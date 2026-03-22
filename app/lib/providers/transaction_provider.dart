@@ -61,6 +61,75 @@ class TransactionTrendSeries {
   }
 }
 
+class FinancialHealthSnapshot {
+  final int score;
+  final int cashFlowScore;
+  final int runwayScore;
+  final int stabilityScore;
+  final int fixedCostScore;
+  final double trailingIncome;
+  final double trailingExpense;
+  final double savingsRate;
+  final double totalBalance;
+  final double averageMonthlyExpense;
+  final double runwayMonths;
+  final double stabilityAverageDeviation;
+  final int stabilitySampleCount;
+  final double categorizedCoverage;
+  final double essentialBurden;
+
+  const FinancialHealthSnapshot({
+    required this.score,
+    required this.cashFlowScore,
+    required this.runwayScore,
+    required this.stabilityScore,
+    required this.fixedCostScore,
+    required this.trailingIncome,
+    required this.trailingExpense,
+    required this.savingsRate,
+    required this.totalBalance,
+    required this.averageMonthlyExpense,
+    required this.runwayMonths,
+    required this.stabilityAverageDeviation,
+    required this.stabilitySampleCount,
+    required this.categorizedCoverage,
+    required this.essentialBurden,
+  });
+
+  const FinancialHealthSnapshot.neutral()
+      : score = 50,
+        cashFlowScore = 50,
+        runwayScore = 50,
+        stabilityScore = 50,
+        fixedCostScore = 50,
+        trailingIncome = 0.0,
+        trailingExpense = 0.0,
+        savingsRate = 0.0,
+        totalBalance = 0.0,
+        averageMonthlyExpense = 0.0,
+        runwayMonths = 0.0,
+        stabilityAverageDeviation = 0.0,
+        stabilitySampleCount = 0,
+        categorizedCoverage = 0.0,
+        essentialBurden = 0.0;
+
+  double get trailingNet => trailingIncome - trailingExpense;
+  bool get hasStabilityHistory => stabilitySampleCount >= 2;
+  bool get usesCategoryData => categorizedCoverage >= 0.4;
+}
+
+class _StabilityHealthMetrics {
+  final double score;
+  final double averageDeviation;
+  final int sampleCount;
+
+  const _StabilityHealthMetrics({
+    required this.score,
+    required this.averageDeviation,
+    required this.sampleCount,
+  });
+}
+
 class TransactionProvider with ChangeNotifier {
   final TransactionRepository _transactionRepo = TransactionRepository();
   final AccountRepository _accountRepo = AccountRepository();
@@ -105,6 +174,8 @@ class TransactionProvider with ChangeNotifier {
       'No monthly activity yet. Keep using Totals to unlock insights.';
   TransactionTrendSeries _weekTrendSeries = TransactionTrendSeries.empty(7);
   TransactionTrendSeries _monthTrendSeries = TransactionTrendSeries.empty(30);
+  FinancialHealthSnapshot _financialHealth =
+      const FinancialHealthSnapshot.neutral();
   int _dataVersion = 0;
   Future<void>? _activeLoadDataFuture;
 
@@ -127,6 +198,7 @@ class TransactionProvider with ChangeNotifier {
   String get monthlyInsight => _monthlyInsight;
   TransactionTrendSeries get weekTrendSeries => _weekTrendSeries;
   TransactionTrendSeries get monthTrendSeries => _monthTrendSeries;
+  FinancialHealthSnapshot get financialHealth => _financialHealth;
   int get dataVersion => _dataVersion;
   Map<int, String> get bankNamesById => _bankNamesById;
   Map<int, String> get bankShortNamesById => _bankShortNamesById;
@@ -605,6 +677,7 @@ class TransactionProvider with ChangeNotifier {
     final monthStart = DateTime(now.year, now.month, 1);
     final nextMonthStart = DateTime(now.year, now.month + 1, 1);
     final last30Start = todayStart.subtract(const Duration(days: 29));
+    final last90Start = todayStart.subtract(const Duration(days: 89));
 
     final todayEntries = <MapEntry<Transaction, DateTime>>[];
     final monthTransactions = <Transaction>[];
@@ -626,6 +699,13 @@ class TransactionProvider with ChangeNotifier {
 
     final monthNetByOffset = List<double>.filled(4, 0);
     final monthHasTransactions = List<bool>.filled(4, false);
+    final healthMonthIncomeByOffset = List<double>.filled(4, 0);
+    final healthMonthExpenseByOffset = List<double>.filled(4, 0);
+
+    var ninetyDayIncome = 0.0;
+    var ninetyDayExpense = 0.0;
+    var ninetyDayCategorizedExpense = 0.0;
+    var ninetyDayEssentialExpense = 0.0;
 
     for (final transaction in transactions) {
       final dt = _parseTransactionTimeLocal(transaction.time);
@@ -640,6 +720,8 @@ class TransactionProvider with ChangeNotifier {
           !dateOnly.isBefore(monthStart) && dateOnly.isBefore(nextMonthStart);
       final isLast30 =
           !dateOnly.isBefore(last30Start) && !dateOnly.isAfter(todayStart);
+      final isLast90 =
+          !dateOnly.isBefore(last90Start) && !dateOnly.isAfter(todayStart);
       final isSelfTransfer = _isSelfTransfer(transaction);
 
       if (isToday) {
@@ -668,6 +750,7 @@ class TransactionProvider with ChangeNotifier {
       if (!isCredit && !isDebit) continue;
 
       final amount = transaction.amount;
+      final category = _categoryById[transaction.categoryId];
 
       if (isToday) {
         if (isCredit) {
@@ -721,6 +804,25 @@ class TransactionProvider with ChangeNotifier {
 
       if (monthOffset >= 0 && monthOffset <= 3) {
         monthNetByOffset[monthOffset] += isCredit ? amount : -amount;
+        if (isCredit) {
+          healthMonthIncomeByOffset[monthOffset] += amount;
+        } else {
+          healthMonthExpenseByOffset[monthOffset] += amount;
+        }
+      }
+
+      if (isLast90) {
+        if (isCredit) {
+          ninetyDayIncome += amount;
+        } else {
+          ninetyDayExpense += amount;
+          if (category != null && !category.uncategorized) {
+            ninetyDayCategorizedExpense += amount;
+            if (category.essential) {
+              ninetyDayEssentialExpense += amount;
+            }
+          }
+        }
       }
     }
 
@@ -745,6 +847,19 @@ class TransactionProvider with ChangeNotifier {
         _buildTrendSeriesFromBuckets(monthIncomeBuckets, monthExpenseBuckets);
     _monthlyInsight =
         _buildMonthlyInsightFromNets(monthNetByOffset, monthHasTransactions);
+    _financialHealth = _buildFinancialHealthSnapshot(
+      trailingIncome: ninetyDayIncome,
+      trailingExpense: ninetyDayExpense,
+      categorizedExpense: ninetyDayCategorizedExpense,
+      essentialExpense: ninetyDayEssentialExpense,
+      monthlyIncomeByOffset: healthMonthIncomeByOffset,
+      monthlyExpenseByOffset: healthMonthExpenseByOffset,
+      totalBalance: _summary?.totalBalance ??
+          _accountSummaries.fold<double>(
+            0.0,
+            (sum, summary) => sum + summary.balance,
+          ),
+    );
   }
 
   DateTime? _parseTransactionTimeLocal(String? raw) {
@@ -785,6 +900,171 @@ class TransactionProvider with ChangeNotifier {
       totalExpense: totalExpense,
       days: days,
     );
+  }
+
+  // Composite redesign score: recent cash flow, liquidity runway,
+  // stability across prior full months, and essential-cost pressure.
+  FinancialHealthSnapshot _buildFinancialHealthSnapshot({
+    required double trailingIncome,
+    required double trailingExpense,
+    required double categorizedExpense,
+    required double essentialExpense,
+    required List<double> monthlyIncomeByOffset,
+    required List<double> monthlyExpenseByOffset,
+    required double totalBalance,
+  }) {
+    final savingsRate = trailingIncome <= 0
+        ? 0.0
+        : ((trailingIncome - trailingExpense) / trailingIncome)
+            .clamp(-1.0, 1.0);
+    final averageMonthlyExpense = trailingExpense / 3.0;
+    final runwayMonths = averageMonthlyExpense <= 0
+        ? (totalBalance > 0 ? double.infinity : 0.0)
+        : (totalBalance <= 0 ? 0.0 : totalBalance / averageMonthlyExpense);
+    final categorizedCoverage = trailingExpense <= 0
+        ? 0.0
+        : (categorizedExpense / trailingExpense).clamp(0.0, 1.0);
+    final essentialBurden = trailingIncome <= 0
+        ? 0.0
+        : (essentialExpense / trailingIncome).clamp(0.0, 2.0);
+    final stabilityMetrics = _buildStabilityMetrics(
+      monthlyIncomeByOffset: monthlyIncomeByOffset,
+      monthlyExpenseByOffset: monthlyExpenseByOffset,
+    );
+    final cashFlowScore = _computeCashFlowScore(
+      savingsRate: savingsRate,
+    );
+    final runwayScore = _computeRunwayScore(
+      runwayMonths: runwayMonths,
+      totalBalance: totalBalance,
+      averageMonthlyExpense: averageMonthlyExpense,
+    );
+    final stabilityScore = stabilityMetrics.score;
+    final fixedCostScore = _computeFixedCostScore(
+      trailingIncome: trailingIncome,
+      trailingExpense: trailingExpense,
+      categorizedCoverage: categorizedCoverage,
+      essentialBurden: essentialBurden,
+    );
+
+    final weightedScore = 0.40 * cashFlowScore +
+        0.30 * runwayScore +
+        0.20 * stabilityScore +
+        0.10 * fixedCostScore;
+
+    return FinancialHealthSnapshot(
+      score: weightedScore.round().clamp(0, 100),
+      cashFlowScore: cashFlowScore.round().clamp(0, 100),
+      runwayScore: runwayScore.round().clamp(0, 100),
+      stabilityScore: stabilityScore.round().clamp(0, 100),
+      fixedCostScore: fixedCostScore.round().clamp(0, 100),
+      trailingIncome: trailingIncome,
+      trailingExpense: trailingExpense,
+      savingsRate: savingsRate,
+      totalBalance: totalBalance,
+      averageMonthlyExpense: averageMonthlyExpense,
+      runwayMonths: runwayMonths,
+      stabilityAverageDeviation: stabilityMetrics.averageDeviation,
+      stabilitySampleCount: stabilityMetrics.sampleCount,
+      categorizedCoverage: categorizedCoverage,
+      essentialBurden: essentialBurden,
+    );
+  }
+
+  double _computeCashFlowScore({
+    required double savingsRate,
+  }) {
+    return _scoreLinear(savingsRate, min: -0.20, max: 0.20);
+  }
+
+  double _computeRunwayScore({
+    required double runwayMonths,
+    required double totalBalance,
+    required double averageMonthlyExpense,
+  }) {
+    if (averageMonthlyExpense <= 0) {
+      if (totalBalance > 0) return 75;
+      return 50;
+    }
+
+    return _scoreLinear(runwayMonths, min: 0.0, max: 6.0);
+  }
+
+  _StabilityHealthMetrics _buildStabilityMetrics({
+    required List<double> monthlyIncomeByOffset,
+    required List<double> monthlyExpenseByOffset,
+  }) {
+    final monthlySavingsRates = <double>[];
+
+    for (var offset = 1; offset < monthlyIncomeByOffset.length; offset++) {
+      final income = monthlyIncomeByOffset[offset];
+      final expense = monthlyExpenseByOffset[offset];
+      if (income <= 0 && expense <= 0) continue;
+
+      if (income <= 0) {
+        monthlySavingsRates.add(-1.0);
+        continue;
+      }
+
+      monthlySavingsRates.add(
+        ((income - expense) / income).clamp(-1.0, 1.0),
+      );
+    }
+
+    if (monthlySavingsRates.length < 2) {
+      return const _StabilityHealthMetrics(
+        score: 50,
+        averageDeviation: 0.0,
+        sampleCount: 0,
+      );
+    }
+
+    final mean = monthlySavingsRates.fold<double>(
+          0.0,
+          (sum, value) => sum + value,
+        ) /
+        monthlySavingsRates.length;
+    final averageDeviation = monthlySavingsRates.fold<double>(
+          0.0,
+          (sum, value) => sum + (value - mean).abs(),
+        ) /
+        monthlySavingsRates.length;
+
+    return _StabilityHealthMetrics(
+      score: _inverseScoreLinear(averageDeviation, min: 0.05, max: 0.35),
+      averageDeviation: averageDeviation,
+      sampleCount: monthlySavingsRates.length,
+    );
+  }
+
+  double _computeFixedCostScore({
+    required double trailingIncome,
+    required double trailingExpense,
+    required double categorizedCoverage,
+    required double essentialBurden,
+  }) {
+    if (trailingExpense <= 0 || trailingIncome <= 0) return 50;
+
+    if (categorizedCoverage < 0.4) return 50;
+
+    return _inverseScoreLinear(essentialBurden, min: 0.50, max: 0.85);
+  }
+
+  double _scoreLinear(
+    double value, {
+    required double min,
+    required double max,
+  }) {
+    if (max <= min) return 50;
+    return (((value - min) / (max - min)).clamp(0.0, 1.0)) * 100.0;
+  }
+
+  double _inverseScoreLinear(
+    double value, {
+    required double min,
+    required double max,
+  }) {
+    return 100.0 - _scoreLinear(value, min: min, max: max);
   }
 
   String _buildMonthlyInsightFromNets(

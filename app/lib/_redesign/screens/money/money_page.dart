@@ -707,10 +707,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   }
 
   Widget _buildActivityContent(TransactionProvider provider) {
-    final monthTotals = provider.monthTotals;
-    final healthScore =
-        _computeHealthScore(monthTotals.income, monthTotals.expense);
-    final monthAbbrev = _currentMonthAbbrev();
+    final healthSnapshot = provider.financialHealth;
     final transactionsViewData = _subTab == _SubTab.transactions
         ? _resolveActivityTransactionsViewData(provider)
         : null;
@@ -791,10 +788,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       children: [
         _buildActivityPinnedHeader(
           provider: provider,
-          healthScore: healthScore,
-          monthAbbrev: monthAbbrev,
-          monthIncome: monthTotals.income,
-          monthExpense: monthTotals.expense,
+          financialHealth: healthSnapshot,
           ledgerViewSummary: ledgerViewSummary,
         ),
         Expanded(
@@ -820,10 +814,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
 
   Widget _buildActivityPinnedHeader({
     required TransactionProvider provider,
-    required int healthScore,
-    required String monthAbbrev,
-    required double monthIncome,
-    required double monthExpense,
+    required FinancialHealthSnapshot financialHealth,
     required _LedgerViewSummary? ledgerViewSummary,
   }) {
     return DecoratedBox(
@@ -838,10 +829,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
               mainAxisSize: MainAxisSize.min,
               children: [
                 _FinancialHealthCard(
-                  healthScore: healthScore,
-                  monthName: monthAbbrev,
-                  monthIncome: monthIncome,
-                  monthExpense: monthExpense,
+                  financialHealth: financialHealth,
+                  onTap: () => _showFinancialHealthSheet(financialHealth),
                 ),
                 const SizedBox(height: 16),
                 _SubTabBar(
@@ -1783,6 +1772,17 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     }
   }
 
+  void _showFinancialHealthSheet(FinancialHealthSnapshot financialHealth) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _FinancialHealthSheet(
+        financialHealth: financialHealth,
+      ),
+    );
+  }
+
   List<Transaction> _filterTransactions(List<Transaction> transactions) {
     var result = transactions;
 
@@ -2136,10 +2136,6 @@ const _months = [
   'Dec',
 ];
 
-String _currentMonthAbbrev() {
-  return _months[DateTime.now().month - 1].toUpperCase();
-}
-
 String _formatDateHeader(DateTime date) {
   return '${_months[date.month - 1]} ${date.day}, ${date.year}';
 }
@@ -2315,12 +2311,6 @@ Map<String, double> _deriveCashBalancesByReference({
   return derived;
 }
 
-int _computeHealthScore(double income, double expense) {
-  if (income <= 0) return 0;
-  final ratio = (income - expense) / income;
-  return (ratio * 100).round().clamp(0, 100);
-}
-
 Color _healthColor(int score) {
   if (score < 30) return AppColors.red;
   if (score < 60) return AppColors.amber;
@@ -2372,6 +2362,17 @@ String _formatCount(int count) {
 
 String _formatEtbAbbrev(double value) {
   return formatNumberAbbreviated(value).replaceAll(' ', '');
+}
+
+String _formatRatioPercent(double ratio) {
+  if (!ratio.isFinite) return '0%';
+  return '${(ratio * 100).round()}%';
+}
+
+String _formatRunwayMonths(double value) {
+  if (!value.isFinite) return 'No recent spend';
+  if (value >= 10) return '${value.round()} mo';
+  return '${value.toStringAsFixed(1)} mo';
 }
 
 String _formatCompactSignedEtb(double value) {
@@ -2516,130 +2517,450 @@ class _TopTabItem extends StatelessWidget {
 }
 
 class _FinancialHealthCard extends StatelessWidget {
-  final int healthScore;
-  final String monthName;
-  final double monthIncome;
-  final double monthExpense;
+  final FinancialHealthSnapshot financialHealth;
+  final VoidCallback onTap;
 
   const _FinancialHealthCard({
-    required this.healthScore,
-    required this.monthName,
-    required this.monthIncome,
-    required this.monthExpense,
+    required this.financialHealth,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final healthScore = financialHealth.score;
     final theme = Theme.of(context);
     final scoreColor = _healthColor(healthScore);
-    final incomeFormatted =
-        formatNumberAbbreviated(monthIncome).replaceAll('k', 'K');
-    final expenseFormatted =
-        formatNumberAbbreviated(monthExpense).replaceAll('k', 'K');
+    final incomeFormatted = _formatEtbAbbrev(financialHealth.trailingIncome);
+    final expenseFormatted = _formatEtbAbbrev(financialHealth.trailingExpense);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.cardColor(context),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.borderColor(context)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'FINANCIAL HEALTH',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: AppColors.textSecondary(context),
+                        letterSpacing: 0.8,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$healthScore',
+                          style: TextStyle(
+                            color: scoreColor,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          ' / 100',
+                          style: TextStyle(
+                            color: AppColors.textSecondary(context),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'CASH FLOW (90 DAYS)',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: AppColors.textSecondary(context),
+                        letterSpacing: 0.8,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '+ETB $incomeFormatted',
+                          style: const TextStyle(
+                            color: AppColors.incomeSuccess,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          ' | ',
+                          style: TextStyle(
+                            color: AppColors.textTertiary(context),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          '-ETB $expenseFormatted',
+                          style: const TextStyle(
+                            color: AppColors.red,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline_rounded,
+                          size: 14,
+                          color: AppColors.textTertiary(context),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Tap to see how this score works',
+                            style: TextStyle(
+                              color: AppColors.textTertiary(context),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 56,
+                height: 56,
+                child: CustomPaint(
+                  painter: _HealthGaugePainter(
+                    score: healthScore,
+                    color: scoreColor,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '$healthScore',
+                      style: TextStyle(
+                        color: scoreColor,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FinancialHealthSheet extends StatelessWidget {
+  final FinancialHealthSnapshot financialHealth;
+
+  const _FinancialHealthSheet({
+    required this.financialHealth,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final scoreColor = _healthColor(financialHealth.score);
+    final netFlow = financialHealth.trailingNet;
+    final netFlowLabel =
+        '${netFlow >= 0 ? '+' : '-'}ETB ${_formatEtbAbbrev(netFlow.abs())}';
+    final netFlowColor =
+        netFlow >= 0 ? AppColors.incomeSuccess : AppColors.red;
+    final runwaySummary = financialHealth.averageMonthlyExpense <= 0
+        ? (financialHealth.totalBalance > 0
+            ? 'No recent expense history, so runway stays favorable.'
+            : 'No recent expense history yet, so runway stays neutral.')
+        : 'ETB ${_formatEtbAbbrev(financialHealth.totalBalance)} balance'
+            ' / ETB ${_formatEtbAbbrev(financialHealth.averageMonthlyExpense)} avg monthly expense'
+            ' = ${_formatRunwayMonths(financialHealth.runwayMonths)}';
+    final stabilitySummary = financialHealth.hasStabilityHistory
+        ? 'Based on ${financialHealth.stabilitySampleCount} prior full months.'
+            ' Average savings-rate swing:'
+            ' ${_formatRatioPercent(financialHealth.stabilityAverageDeviation)}'
+        : 'Not enough full-month history yet, so stability stays neutral.';
+    final fixedCostSummary = financialHealth.usesCategoryData
+        ? 'Essentials are ${_formatRatioPercent(financialHealth.essentialBurden)}'
+            ' of trailing income with'
+            ' ${_formatRatioPercent(financialHealth.categorizedCoverage)}'
+            ' categorized expense coverage.'
+        : 'Only ${_formatRatioPercent(financialHealth.categorizedCoverage)}'
+            ' of trailing expense is categorized, so fixed costs stay neutral'
+            ' until coverage reaches 40%.';
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.9,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.background(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottomPadding),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color:
+                        AppColors.textTertiary(context).withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Financial Health',
+                      style: TextStyle(
+                        color: AppColors.textPrimary(context),
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: Icon(
+                      AppIcons.close,
+                      color: AppColors.textSecondary(context),
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                'This score blends your last 90 days of cash flow with balance runway, recent consistency, and essential-cost pressure.',
+                style: TextStyle(
+                  color: AppColors.textSecondary(context),
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.cardColor(context),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppColors.borderColor(context),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: scoreColor.withValues(alpha: 0.25),
+                          width: 4,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          '${financialHealth.score}',
+                          style: TextStyle(
+                            color: scoreColor,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Last 90 days cash flow used in this score',
+                            style: TextStyle(
+                              color: AppColors.textSecondary(context),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.7,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '+ETB ${_formatEtbAbbrev(financialHealth.trailingIncome)}'
+                            ' | -ETB ${_formatEtbAbbrev(financialHealth.trailingExpense)}',
+                            style: TextStyle(
+                              color: AppColors.textPrimary(context),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Net $netFlowLabel'
+                            '  •  Savings rate ${_formatRatioPercent(financialHealth.savingsRate)}',
+                            style: TextStyle(
+                              color: netFlowColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              _FinancialHealthMetricTile(
+                title: 'Cash Flow',
+                weight: '40%',
+                score: financialHealth.cashFlowScore,
+                detail:
+                    'Uses the last 90 days of income vs expense. Higher savings rate means a higher score.',
+                summary:
+                    '+ETB ${_formatEtbAbbrev(financialHealth.trailingIncome)}'
+                    ' | -ETB ${_formatEtbAbbrev(financialHealth.trailingExpense)}'
+                    ' | Net $netFlowLabel',
+              ),
+              const SizedBox(height: 12),
+              _FinancialHealthMetricTile(
+                title: 'Runway',
+                weight: '30%',
+                score: financialHealth.runwayScore,
+                detail:
+                    'Compares your current total balance to your average monthly expense from the same 90-day window.',
+                summary: runwaySummary,
+              ),
+              const SizedBox(height: 12),
+              _FinancialHealthMetricTile(
+                title: 'Stability',
+                weight: '20%',
+                score: financialHealth.stabilityScore,
+                detail:
+                    'Measures how much your savings rate changes across prior full months. Lower swing means higher stability.',
+                summary: stabilitySummary,
+              ),
+              const SizedBox(height: 12),
+              _FinancialHealthMetricTile(
+                title: 'Fixed Costs',
+                weight: '10%',
+                score: financialHealth.fixedCostScore,
+                detail:
+                    'Uses categorized expense to estimate how heavy essentials are relative to income.',
+                summary: fixedCostSummary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FinancialHealthMetricTile extends StatelessWidget {
+  final String title;
+  final String weight;
+  final int score;
+  final String detail;
+  final String summary;
+
+  const _FinancialHealthMetricTile({
+    required this.title,
+    required this.weight,
+    required this.score,
+    required this.detail,
+    required this.summary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scoreColor = _healthColor(score);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.cardColor(context),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.borderColor(context)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'FINANCIAL HEALTH',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: AppColors.textSecondary(context),
-                    letterSpacing: 0.8,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
                 Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
+                    Expanded(
+                      child: Text(
+                        '$title ($weight)',
+                        style: TextStyle(
+                          color: AppColors.textPrimary(context),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
                     Text(
-                      '$healthScore',
+                      '$score/100',
                       style: TextStyle(
                         color: scoreColor,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      ' / 100',
-                      style: TextStyle(
-                        color: AppColors.textSecondary(context),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
                 Text(
-                  'CASH FLOW ($monthName)',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: AppColors.textSecondary(context),
-                    letterSpacing: 0.8,
+                  summary,
+                  style: TextStyle(
+                    color: AppColors.textPrimary(context),
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
+                    height: 1.35,
                   ),
                 ),
                 const SizedBox(height: 4),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '+ETB $incomeFormatted',
-                      style: const TextStyle(
-                        color: AppColors.incomeSuccess,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      ' | ',
-                      style: TextStyle(
-                        color: AppColors.textTertiary(context),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    Text(
-                      '- ETB $expenseFormatted',
-                      style: const TextStyle(
-                        color: AppColors.red,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          SizedBox(
-            width: 56,
-            height: 56,
-            child: CustomPaint(
-              painter: _HealthGaugePainter(
-                score: healthScore,
-                color: scoreColor,
-              ),
-              child: Center(
-                child: Text(
-                  '$healthScore',
+                Text(
+                  detail,
                   style: TextStyle(
-                    color: scoreColor,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
+                    color: AppColors.textSecondary(context),
+                    fontSize: 12,
+                    height: 1.4,
                   ),
                 ),
-              ),
+              ],
             ),
           ),
         ],
