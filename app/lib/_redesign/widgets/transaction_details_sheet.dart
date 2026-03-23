@@ -79,6 +79,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     final creditor = _tx.creditor?.trim();
     if (receiver != null && receiver.isNotEmpty) return receiver;
     if (creditor != null && creditor.isNotEmpty) return creditor;
+    if (_provider.isSelfTransfer(_tx)) return 'You';
     return _bankFullName;
   }
 

@@ -174,7 +174,7 @@ class _TodaysTransactionsPageState extends State<TodaysTransactionsPage> {
                       amountColor: isCredit
                           ? AppColors.incomeSuccess
                           : AppColors.red,
-                      name: _counterparty(tx),
+                      name: _counterparty(tx, isSelfTransfer: isSelfTransfer),
                       timestamp: _timeLabel(tx),
                       selected: selected,
                       onTap: _isSelecting
@@ -200,12 +200,12 @@ String _amountLabel(double amount, {required bool isCredit}) {
   return '${isCredit ? '+' : '-'} ETB $formatted';
 }
 
-String _counterparty(Transaction tx) {
+String _counterparty(Transaction tx, {bool isSelfTransfer = false}) {
   final receiver = tx.receiver?.trim();
   final creditor = tx.creditor?.trim();
   if (receiver != null && receiver.isNotEmpty) return receiver.toUpperCase();
   if (creditor != null && creditor.isNotEmpty) return creditor.toUpperCase();
-  return 'UNKNOWN';
+  return isSelfTransfer ? 'YOU' : 'UNKNOWN';
 }
 
 String _timeLabel(Transaction tx) {

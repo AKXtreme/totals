@@ -284,7 +284,7 @@ class _RedesignHomePageState extends State<RedesignHomePage>
                                 amountColor: isCredit
                                     ? AppColors.incomeSuccess
                                     : AppColors.red,
-                                name: _transactionCounterparty(transaction),
+                                name: _transactionCounterparty(transaction, isSelfTransfer: isSelfTransfer),
                                 timestamp: _transactionTimeLabel(transaction),
                                 selected: selected,
                                 onTap: _isSelecting
@@ -493,12 +493,12 @@ String _amountLabel(double amount, {required bool isCredit}) {
   return '${isCredit ? '+' : '-'} ETB $formatted';
 }
 
-String _transactionCounterparty(Transaction transaction) {
+String _transactionCounterparty(Transaction transaction, {bool isSelfTransfer = false}) {
   final receiver = transaction.receiver?.trim();
   final creditor = transaction.creditor?.trim();
   if (receiver != null && receiver.isNotEmpty) return receiver.toUpperCase();
   if (creditor != null && creditor.isNotEmpty) return creditor.toUpperCase();
-  return 'UNKNOWN';
+  return isSelfTransfer ? 'YOU' : 'UNKNOWN';
 }
 
 String _transactionTimeLabel(Transaction transaction) {
@@ -2062,7 +2062,11 @@ class _BalanceBreakdownSheetState extends State<_BalanceBreakdownSheet> {
                             .replaceAll('k', 'K');
                         final amountColor =
                             isCredit ? AppColors.incomeSuccess : AppColors.red;
-                        final name = _transactionCounterparty(txn);
+                        final isSelfTransfer =
+                            widget.provider.isSelfTransfer(txn);
+                        final name = isSelfTransfer
+                            ? 'YOU'
+                            : _transactionCounterparty(txn);
                         final bank =
                             widget.provider.getBankShortName(txn.bankId);
                         final dt = _parseTransactionTime(txn.time);

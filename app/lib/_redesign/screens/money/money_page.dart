@@ -920,7 +920,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       isMisc: isMisc,
       amount: _amountLabel(transaction.amount, isCredit: isCredit),
       amountColor: isCredit ? AppColors.incomeSuccess : AppColors.red,
-      name: _transactionCounterparty(transaction),
+      name: _transactionCounterparty(transaction, isSelfTransfer: isSelfTransfer),
       timestamp: _transactionTimeLabel(transaction),
       selected: selected,
       onTap: _isSelecting
@@ -1504,6 +1504,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                             transaction: entry.transaction,
                             derivedBalance: derivedCashBalancesByReference[
                                 entry.transaction.reference],
+                            isSelfTransfer:
+                                provider.isSelfTransfer(entry.transaction),
                           ),
                         ),
                       ),
@@ -2339,12 +2341,12 @@ String _amountLabel(double amount, {required bool isCredit}) {
   return '${isCredit ? '+' : '-'} ETB $formatted';
 }
 
-String _transactionCounterparty(Transaction transaction) {
+String _transactionCounterparty(Transaction transaction, {bool isSelfTransfer = false}) {
   final receiver = transaction.receiver?.trim();
   final creditor = transaction.creditor?.trim();
   if (receiver != null && receiver.isNotEmpty) return receiver.toUpperCase();
   if (creditor != null && creditor.isNotEmpty) return creditor.toUpperCase();
-  return 'UNKNOWN';
+  return isSelfTransfer ? 'YOU' : 'UNKNOWN';
 }
 
 String _transactionTimeLabel(Transaction transaction) {
@@ -2687,8 +2689,7 @@ class _FinancialHealthSheet extends StatelessWidget {
     final netFlow = financialHealth.trailingNet;
     final netFlowLabel =
         '${netFlow >= 0 ? '+' : '-'}ETB ${_formatEtbAbbrev(netFlow.abs())}';
-    final netFlowColor =
-        netFlow >= 0 ? AppColors.incomeSuccess : AppColors.red;
+    final netFlowColor = netFlow >= 0 ? AppColors.incomeSuccess : AppColors.red;
     final runwaySummary = financialHealth.averageMonthlyExpense <= 0
         ? (financialHealth.totalBalance > 0
             ? 'No recent expense history, so runway stays favorable.'
@@ -3186,8 +3187,7 @@ class _AnalyticsOverviewGrid extends StatelessWidget {
             ? constraints.maxWidth
             : MediaQuery.sizeOf(context).width;
         final cardWidth = math.max(0.0, (availableWidth - spacing) / 2);
-        final cardHeight =
-            math.min(164.0, math.max(148.0, cardWidth * 0.9));
+        final cardHeight = math.min(164.0, math.max(148.0, cardWidth * 0.9));
 
         return Column(
           children: [
@@ -3311,30 +3311,33 @@ class _AnalyticsMetricCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: AppColors.textTertiary(context),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: AppColors.textTertiary(context),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.4,
+                    ),
                   ),
-                ),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: valueStyle,
-                ),
-                _AnalyticsAutoMarqueeText(
-                  text: subtitle,
-                  style: subtitleStyle,
-                ),
-              ],
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: valueStyle,
+                  ),
+                  _AnalyticsAutoMarqueeText(
+                    text: subtitle,
+                    style: subtitleStyle,
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -6964,6 +6967,8 @@ class _HeatmapDayLedgerPage extends StatelessWidget {
                                     transaction: transaction,
                                     derivedBalance: derivedBalancesByReference[
                                         transaction.reference],
+                                    isSelfTransfer:
+                                        provider.isSelfTransfer(transaction),
                                   ),
                                 ),
                               ),
@@ -7025,10 +7030,12 @@ class _HeatmapDayInlineStat extends StatelessWidget {
 class _LedgerTransactionEntry extends StatelessWidget {
   final Transaction transaction;
   final double? derivedBalance;
+  final bool isSelfTransfer;
 
   const _LedgerTransactionEntry({
     required this.transaction,
     this.derivedBalance,
+    this.isSelfTransfer = false,
   });
 
   @override
@@ -7041,7 +7048,9 @@ class _LedgerTransactionEntry extends StatelessWidget {
     final amount = transaction.amount;
     final amountStr = formatNumberAbbreviated(amount).replaceAll('k', 'K');
 
-    final name = _transactionCounterparty(transaction);
+    final name = isSelfTransfer
+        ? 'YOU'
+        : _transactionCounterparty(transaction);
     final bankName = _bankLabel(transaction.bankId);
 
     final dt = _parseTransactionTime(transaction.time);
