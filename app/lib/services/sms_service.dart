@@ -13,7 +13,9 @@ import 'package:totals/models/account.dart';
 import 'package:totals/models/failed_parse.dart';
 import 'package:totals/repositories/failed_parse_repository.dart';
 import 'package:flutter/widgets.dart';
+import 'package:totals/services/failed_parse_review_service.dart';
 import 'package:totals/services/notification_service.dart';
+import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/budget_alert_service.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/services/widget_service.dart';
@@ -366,6 +368,84 @@ class SmsService {
     return double.tryParse(cleaned) ?? 0.0;
   }
 
+  static Future<void> _recordFailedParse({
+    required String address,
+    required String body,
+    required String reason,
+    DateTime? timestamp,
+  }) async {
+    await FailedParseRepository().add(
+      FailedParse(
+        address: address,
+        body: body,
+        reason: reason,
+        timestamp: (timestamp ?? DateTime.now()).toIso8601String(),
+      ),
+    );
+  }
+
+  static bool _looksLikeTransactionMessage(String messageBody) {
+    final normalized =
+        messageBody.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.isEmpty) return false;
+
+    const transactionKeywords = <String>[
+      'debited',
+      'credited',
+      'deposit',
+      'withdraw',
+      'withdrawal',
+      'transfer',
+      'transferred',
+      'payment',
+      'paid',
+      'purchase',
+      'received',
+      'sent',
+      'spent',
+      'cash out',
+      'cashout',
+      'atm',
+      'trx',
+      'txn',
+      'transaction',
+    ];
+    const supportingKeywords = <String>[
+      'balance',
+      'amount',
+      'amt',
+      'available balance',
+      'ref',
+      'reference',
+      'account',
+      'ac',
+      'a/c',
+      'card',
+      'merchant',
+      'pos',
+      'wallet',
+      'etb',
+      'birr',
+      'br',
+    ];
+
+    final hasTransactionKeyword = _containsAny(normalized, transactionKeywords);
+    final hasSupportingKeyword = _containsAny(normalized, supportingKeywords);
+    final hasMonetaryAmount = RegExp(
+      r'(?:etb|birr|br)\s*\d|\d[\d,]*(?:\.\d{1,2})?\s*(?:etb|birr|br)',
+      caseSensitive: false,
+    ).hasMatch(messageBody);
+
+    return hasTransactionKeyword && (hasSupportingKeyword || hasMonetaryAmount);
+  }
+
+  static bool _containsAny(String text, List<String> values) {
+    for (final value in values) {
+      if (text.contains(value)) return true;
+    }
+    return false;
+  }
+
   static Bank? _bankById(List<Bank> banks, int bankId) {
     for (final bank in banks) {
       if (bank.id == bankId) return bank;
@@ -673,7 +753,7 @@ class SmsService {
     // Check if the user has a registered account for this bank
     final registeredAccounts = await AccountRepository().getAccounts();
     final hasRegisteredAccount =
-        registeredAccounts.any((a) => a.bank == bank!.id);
+        registeredAccounts.any((a) => a.bank == bank.id);
     if (!hasRegisteredAccount) {
       print(
           "debug: No registered account for bank ${bank.name} (${bank.id}) - skipping.");
@@ -698,16 +778,47 @@ class SmsService {
 
     if (details == null) {
       print("debug: No matching pattern found for message from $senderAddress");
-      if (recordFailure) {
-        await FailedParseRepository().add(FailedParse(
+      if (recordFailure && _looksLikeTransactionMessage(messageBody)) {
+        if (notifyUser) {
+          final reviewEnabled = await NotificationSettingsService.instance
+              .isFailedParseReviewNotificationsEnabled();
+          if (reviewEnabled) {
+            final reviewId =
+                await FailedParseReviewService.instance.storeCandidate(
+              bank: bank,
+              address: senderAddress,
+              body: messageBody,
+              messageDate: messageDate,
+            );
+            final shown = await NotificationService.instance
+                .showFailedParseReviewNotification(
+              reviewId: reviewId,
+              bankName: bank.shortName,
+              messageBody: messageBody,
+            );
+            if (!shown) {
+              await FailedParseReviewService.instance
+                  .discardCandidate(reviewId);
+              await _recordFailedParse(
+                address: senderAddress,
+                body: messageBody,
+                reason: FailedParse.noMatchingPatternReason,
+                timestamp: messageDate,
+              );
+            }
+          }
+        } else {
+          await _recordFailedParse(
             address: senderAddress,
             body: messageBody,
-            reason: "No matching pattern",
-            timestamp: DateTime.now().toIso8601String()));
+            reason: FailedParse.noMatchingPatternReason,
+            timestamp: messageDate,
+          );
+        }
       }
       return const ParseResult(
         status: ParseStatus.noPattern,
-        reason: "No matching pattern",
+        reason: FailedParse.noMatchingPatternReason,
       );
     }
 
@@ -738,11 +849,12 @@ class SmsService {
         }
       }
       if (recordFailure) {
-        await FailedParseRepository().add(FailedParse(
-            address: senderAddress,
-            body: messageBody,
-            reason: "Duplicate transaction $newRef",
-            timestamp: DateTime.now().toIso8601String()));
+        await _recordFailedParse(
+          address: senderAddress,
+          body: messageBody,
+          reason: "Duplicate transaction $newRef",
+          timestamp: messageDate,
+        );
       }
       return ParseResult(
         status: ParseStatus.duplicate,
@@ -754,11 +866,12 @@ class SmsService {
         _isDashenExpenseDuplicate(details, existingTx)) {
       print("debug: Duplicate Dashen debit skipped by amount and balance");
       if (recordFailure) {
-        await FailedParseRepository().add(FailedParse(
-            address: senderAddress,
-            body: messageBody,
-            reason: "Duplicate Dashen debit by amount and balance",
-            timestamp: DateTime.now().toIso8601String()));
+        await _recordFailedParse(
+          address: senderAddress,
+          body: messageBody,
+          reason: "Duplicate Dashen debit by amount and balance",
+          timestamp: messageDate,
+        );
       }
       return const ParseResult(
         status: ParseStatus.duplicate,

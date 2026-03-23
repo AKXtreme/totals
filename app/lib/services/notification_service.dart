@@ -12,6 +12,7 @@ import 'package:totals/models/category.dart' as models;
 import 'package:totals/models/transaction.dart';
 import 'package:totals/repositories/category_repository.dart';
 import 'package:totals/repositories/transaction_repository.dart';
+import 'package:totals/services/failed_parse_review_service.dart';
 import 'package:totals/services/receiver_category_service.dart';
 import 'package:totals/services/notification_intent_bus.dart';
 import 'package:totals/services/notification_settings_service.dart';
@@ -25,6 +26,7 @@ class NotificationService {
   static final NotificationService instance = NotificationService._();
 
   static const String _transactionChannelId = 'transactions';
+  static const String _failedParseReviewChannelId = 'failed_parse_review';
   static const String _spendingSummaryChannelId = 'spending_summaries';
   static const String _accountSyncChannelId = 'account_sync';
   static const String _budgetChannelId = 'budgets';
@@ -56,14 +58,21 @@ class NotificationService {
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
 
-    final androidPlugin =
-        _plugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
         _transactionChannelId,
         'Transactions',
         description: 'Notifications when a new transaction is detected',
+        importance: Importance.high,
+      ),
+    );
+    await androidPlugin?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _failedParseReviewChannelId,
+        'Failed parse review',
+        description: 'Prompts to confirm unparsed bank transactions',
         importance: Importance.high,
       ),
     );
@@ -99,7 +108,8 @@ class NotificationService {
     _handleNotificationResponse(response);
   }
 
-  Future<void> _handleNotificationResponse(NotificationResponse response) async {
+  Future<void> _handleNotificationResponse(
+      NotificationResponse response) async {
     try {
       if (response.notificationResponseType ==
           NotificationResponseType.selectedNotificationAction) {
@@ -107,6 +117,10 @@ class NotificationService {
         final actionId = response.actionId;
         if (actionId != null && actionId.contains('|cat:')) {
           await _handleQuickCategorizeAction(actionId, response.id);
+          return;
+        }
+        if (actionId != null && actionId.startsWith('fp|')) {
+          await _handleFailedParseReviewAction(actionId, response.id);
           return;
         }
       }
@@ -128,14 +142,16 @@ class NotificationService {
     }
   }
 
-  Future<void> _handleQuickCategorizeAction(String actionId, int? notificationId) async {
+  Future<void> _handleQuickCategorizeAction(
+      String actionId, int? notificationId) async {
     try {
       await ensureInitialized();
       // Parse: tx:<reference>|cat:<categoryId>
       final parts = actionId.split('|cat:');
       if (parts.length != 2) return;
 
-      final reference = Uri.decodeComponent(parts[0].substring(3)); // Remove 'tx:'
+      final reference =
+          Uri.decodeComponent(parts[0].substring(3)); // Remove 'tx:'
       final categoryId = int.tryParse(parts[1]);
       if (categoryId == null) return;
 
@@ -197,6 +213,35 @@ class NotificationService {
     } catch (e) {
       if (kDebugMode) {
         print('debug: Quick categorize failed: $e');
+      }
+    }
+  }
+
+  Future<void> _handleFailedParseReviewAction(
+    String actionId,
+    int? notificationId,
+  ) async {
+    try {
+      await ensureInitialized();
+      final parts = actionId.split('|');
+      if (parts.length != 3 || parts[0] != 'fp') return;
+
+      final decision = parts[1];
+      final candidateId = parts[2];
+      if (candidateId.trim().isEmpty) return;
+
+      if (decision == 'yes') {
+        await FailedParseReviewService.instance.confirmCandidate(candidateId);
+      } else {
+        await FailedParseReviewService.instance.discardCandidate(candidateId);
+      }
+
+      if (notificationId != null) {
+        await _plugin.cancel(notificationId);
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('debug: Failed parse review action failed: $e');
       }
     }
   }
@@ -263,14 +308,12 @@ class NotificationService {
       if (kIsWeb) return;
 
       if (defaultTargetPlatform == TargetPlatform.android) {
-        final androidPlugin =
-            _plugin.resolvePlatformSpecificImplementation<
-                AndroidFlutterLocalNotificationsPlugin>();
+        final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
         await androidPlugin?.requestNotificationsPermission();
       } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-        final iosPlugin =
-            _plugin.resolvePlatformSpecificImplementation<
-                IOSFlutterLocalNotificationsPlugin>();
+        final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>();
         await iosPlugin?.requestPermissions(
           alert: true,
           badge: true,
@@ -295,7 +338,8 @@ class NotificationService {
           .isTransactionNotificationsEnabled();
       if (!enabled) {
         if (kDebugMode) {
-          print('debug: Transaction notification skipped — disabled in settings');
+          print(
+              'debug: Transaction notification skipped — disabled in settings');
         }
         return;
       }
@@ -342,6 +386,54 @@ class NotificationService {
       if (kDebugMode) {
         print('debug: Failed to show transaction notification: $e');
       }
+    }
+  }
+
+  Future<bool> showFailedParseReviewNotification({
+    required String reviewId,
+    required String bankName,
+    required String messageBody,
+  }) async {
+    try {
+      await ensureInitialized();
+
+      final preview = _previewMessage(messageBody);
+      await _plugin.show(
+        _failedParseReviewNotificationId(reviewId),
+        '$bankName transaction review',
+        'Was this a transaction?\n$preview',
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            _failedParseReviewChannelId,
+            'Failed parse review',
+            channelDescription: 'Prompts to confirm unparsed bank transactions',
+            importance: Importance.high,
+            priority: Priority.high,
+            styleInformation: BigTextStyleInformation(
+              'Was this a transaction?\n$preview',
+            ),
+            actions: [
+              AndroidNotificationAction(
+                'fp|yes|$reviewId',
+                'Yes',
+                showsUserInterface: false,
+              ),
+              AndroidNotificationAction(
+                'fp|no|$reviewId',
+                'No',
+                showsUserInterface: false,
+              ),
+            ],
+          ),
+          iOS: const DarwinNotificationDetails(),
+        ),
+      );
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        print('debug: Failed to show failed parse review notification: $e');
+      }
+      return false;
     }
   }
 
@@ -409,8 +501,7 @@ class NotificationService {
           android: AndroidNotificationDetails(
             _spendingSummaryChannelId,
             'Spending summaries',
-            channelDescription:
-                'Daily, weekly, and monthly spending summaries',
+            channelDescription: 'Daily, weekly, and monthly spending summaries',
             importance: Importance.defaultImportance,
             priority: Priority.defaultPriority,
           ),
@@ -518,8 +609,9 @@ class NotificationService {
       final title = bankLabel == null ? 'Syncing account' : '$bankLabel sync';
       final maskedAccount = _maskAccountNumber(accountNumber);
       final progressStage = _formatSyncProgressStage(stage, percent);
-      final body =
-          maskedAccount == null ? progressStage : '$progressStage - $maskedAccount';
+      final body = maskedAccount == null
+          ? progressStage
+          : '$progressStage - $maskedAccount';
 
       await _plugin.show(
         _accountSyncNotificationId(accountNumber, bankId),
@@ -563,8 +655,9 @@ class NotificationService {
     try {
       await ensureInitialized();
 
-      final title =
-          bankLabel == null ? 'Account sync complete' : '$bankLabel sync complete';
+      final title = bankLabel == null
+          ? 'Account sync complete'
+          : '$bankLabel sync complete';
       final body = message ?? 'Your transactions are up to date.';
       final id = _accountSyncNotificationId(accountNumber, bankId);
 
@@ -678,6 +771,10 @@ class NotificationService {
     return raw.hashCode & 0x7fffffff;
   }
 
+  static int _failedParseReviewNotificationId(String reviewId) {
+    return 200000 + (reviewId.hashCode & 0x7fffffff);
+  }
+
   static String _buildTitle(Bank? bank, Transaction transaction) {
     final bankLabel = bank?.shortName ?? 'Totals';
     final kind = switch (transaction.type) {
@@ -705,6 +802,12 @@ class NotificationService {
     return '$amount • $counterparty • Tap to categorize';
   }
 
+  String _previewMessage(String messageBody) {
+    final collapsed = messageBody.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (collapsed.length <= 180) return collapsed;
+    return '${collapsed.substring(0, 177)}...';
+  }
+
   static String? _firstNonEmpty(List<String?> values) {
     for (final v in values) {
       final trimmed = v?.trim();
@@ -728,7 +831,8 @@ class NotificationService {
   static String _formatSyncProgressStage(String stage, int percent) {
     final trimmed = stage.trim();
     final normalizedStage = trimmed.replaceFirst(
-      RegExp(r'^Parsing\s+\d+\s*/\s*\d+\s+messages\.\.\.$', caseSensitive: false),
+      RegExp(r'^Parsing\s+\d+\s*/\s*\d+\s+messages\.\.\.$',
+          caseSensitive: false),
       'Parsing messages...',
     );
     if (normalizedStage.isEmpty) {
@@ -837,9 +941,16 @@ void notificationTapBackground(NotificationResponse response) {
   }
 
   final actionId = response.actionId;
-  if (actionId == null || !actionId.contains('|cat:')) return;
+  if (actionId == null) return;
 
-  unawaited(_handleQuickCategorizeFromBackground(actionId, response.id));
+  if (actionId.contains('|cat:')) {
+    unawaited(_handleQuickCategorizeFromBackground(actionId, response.id));
+    return;
+  }
+
+  if (actionId.startsWith('fp|')) {
+    unawaited(_handleFailedParseReviewFromBackground(actionId, response.id));
+  }
 }
 
 Future<void> _handleQuickCategorizeFromBackground(
@@ -848,6 +959,16 @@ Future<void> _handleQuickCategorizeFromBackground(
 ) async {
   await WidgetService.initialize();
   await NotificationService.instance._handleQuickCategorizeAction(
+    actionId,
+    notificationId,
+  );
+}
+
+Future<void> _handleFailedParseReviewFromBackground(
+  String actionId,
+  int? notificationId,
+) async {
+  await NotificationService.instance._handleFailedParseReviewAction(
     actionId,
     notificationId,
   );

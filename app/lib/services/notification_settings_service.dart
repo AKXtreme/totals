@@ -9,18 +9,22 @@ class NotificationSettingsService {
       NotificationSettingsService._();
 
   static const _kTransactionEnabled = 'notifications_transaction_enabled';
+  static const _kFailedParseReviewEnabled =
+      'notifications_failed_parse_review_enabled';
   static const _kBudgetEnabled = 'notifications_budget_enabled';
   static const _kDailyEnabled = 'notifications_daily_enabled';
   static const _kDailyHour = 'notifications_daily_hour';
   static const _kDailyMinute = 'notifications_daily_minute';
-  static const _kDailyLastSentEpochMs = 'notifications_daily_last_sent_epoch_ms';
+  static const _kDailyLastSentEpochMs =
+      'notifications_daily_last_sent_epoch_ms';
   static const _kWeeklyEnabled = 'notifications_weekly_enabled';
   static const _kWeeklyLastSentEpochMs =
       'notifications_weekly_last_sent_epoch_ms';
   static const _kMonthlyEnabled = 'notifications_monthly_enabled';
   static const _kMonthlyLastSentEpochMs =
       'notifications_monthly_last_sent_epoch_ms';
-  static const _kAutoCategorizeReceiverEnabled = 'auto_categorize_receiver_enabled';
+  static const _kAutoCategorizeReceiverEnabled =
+      'auto_categorize_receiver_enabled';
   static const _kQuickCategorizeIncomeIds = 'quick_categorize_income_ids';
   static const _kQuickCategorizeExpenseIds = 'quick_categorize_expense_ids';
   static const List<String> _kDefaultQuickIncomeBuiltInKeys = [
@@ -42,6 +46,16 @@ class NotificationSettingsService {
   Future<void> setTransactionNotificationsEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kTransactionEnabled, enabled);
+  }
+
+  Future<bool> isFailedParseReviewNotificationsEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kFailedParseReviewEnabled) ?? true;
+  }
+
+  Future<void> setFailedParseReviewNotificationsEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kFailedParseReviewEnabled, enabled);
   }
 
   Future<bool> isBudgetAlertsEnabled() async {
@@ -168,8 +182,7 @@ class NotificationSettingsService {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_kQuickCategorizeIncomeIds);
     if (raw == null) {
-      final defaults =
-          await _resolveDefaultQuickCategorizeIds(flow: 'income');
+      final defaults = await _resolveDefaultQuickCategorizeIds(flow: 'income');
       await prefs.setStringList(
         _kQuickCategorizeIncomeIds,
         defaults.map((id) => id.toString()).toList(),
@@ -192,8 +205,7 @@ class NotificationSettingsService {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_kQuickCategorizeExpenseIds);
     if (raw == null) {
-      final defaults =
-          await _resolveDefaultQuickCategorizeIds(flow: 'expense');
+      final defaults = await _resolveDefaultQuickCategorizeIds(flow: 'expense');
       await prefs.setStringList(
         _kQuickCategorizeExpenseIds,
         defaults.map((id) => id.toString()).toList(),

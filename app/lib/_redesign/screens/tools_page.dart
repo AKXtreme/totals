@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/screens/accounts_page.dart';
+import 'package:totals/screens/failed_parses_page.dart';
 import 'package:totals/screens/verify_payments_page.dart';
 import 'package:totals/screens/web_page.dart';
 import 'package:totals/_redesign/theme/app_icons.dart';
@@ -62,8 +63,17 @@ class RedesignToolsPage extends StatelessWidget {
                 subtitle: 'Scan and verify transaction receipts',
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                      builder: (_) => const VerifyPaymentsPage()),
+                  MaterialPageRoute(builder: (_) => const VerifyPaymentsPage()),
+                ),
+              ),
+              _ToolTile(
+                icon: AppIcons.sms_outlined,
+                iconColor: AppColors.amber,
+                title: 'Failed Parsings',
+                subtitle: 'Review bank transactions without patterns',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const FailedParsesPage()),
                 ),
               ),
             ],

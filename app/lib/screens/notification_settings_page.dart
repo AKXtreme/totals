@@ -23,6 +23,7 @@ class NotificationSettingsPage extends StatefulWidget {
 class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   bool _loading = true;
   bool _transactionEnabled = true;
+  bool _failedParseReviewEnabled = true;
   bool _budgetEnabled = true;
   bool _dailyEnabled = true;
   bool _weeklyEnabled = false;
@@ -42,6 +43,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   Future<void> _load() async {
     final settings = NotificationSettingsService.instance;
     final tx = await settings.isTransactionNotificationsEnabled();
+    final failedParseReview =
+        await settings.isFailedParseReviewNotificationsEnabled();
     final budget = await settings.isBudgetAlertsEnabled();
     final daily = await settings.isDailySummaryEnabled();
     final weekly = await settings.isWeeklySummaryEnabled();
@@ -55,6 +58,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     if (!mounted) return;
     setState(() {
       _transactionEnabled = tx;
+      _failedParseReviewEnabled = failedParseReview;
       _budgetEnabled = budget;
       _dailyEnabled = daily;
       _weeklyEnabled = weekly;
@@ -74,6 +78,12 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     setState(() => _transactionEnabled = value);
     await NotificationSettingsService.instance
         .setTransactionNotificationsEnabled(value);
+  }
+
+  Future<void> _setFailedParseReviewEnabled(bool value) async {
+    setState(() => _failedParseReviewEnabled = value);
+    await NotificationSettingsService.instance
+        .setFailedParseReviewNotificationsEnabled(value);
   }
 
   Future<void> _setBudgetEnabled(bool value) async {
@@ -171,11 +181,11 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   Future<void> _sendTestMonthlySummary() async {
     try {
       final now = DateTime.now();
-      final totalSpent =
-          await WidgetDataProvider().getCurrentMonthSpending();
-      print("debug: Monthly summary test — month: ${now.month}/${now.year}, totalSpent: $totalSpent");
-      final shown =
-          await NotificationService.instance.showMonthlySpendingTestNotification(
+      final totalSpent = await WidgetDataProvider().getCurrentMonthSpending();
+      print(
+          "debug: Monthly summary test — month: ${now.month}/${now.year}, totalSpent: $totalSpent");
+      final shown = await NotificationService.instance
+          .showMonthlySpendingTestNotification(
         amount: totalSpent,
       );
 
@@ -193,10 +203,9 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
 
   // ── Helpers ─────────────────────────────────────────────────────────────
 
-  List<Category> _categoriesForFlow(String flow) =>
-      _allCategories
-          .where((c) => c.flow.toLowerCase() == flow && !c.uncategorized)
-          .toList();
+  List<Category> _categoriesForFlow(String flow) => _allCategories
+      .where((c) => c.flow.toLowerCase() == flow && !c.uncategorized)
+      .toList();
 
   List<Category> _selectedCategoriesFor(String flow) {
     final ids = flow == 'income' ? _quickIncomeIds : _quickExpenseIds;
@@ -287,13 +296,11 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                       itemBuilder: (ctx, index) {
                         final cat = available[index];
                         final selected = currentIds.contains(cat.id);
-                        final atLimit =
-                            currentIds.length >= 3 && !selected;
+                        final atLimit = currentIds.length >= 3 && !selected;
 
                         return Material(
                           color: selected
-                              ? AppColors.primaryLight
-                                  .withValues(alpha: 0.08)
+                              ? AppColors.primaryLight.withValues(alpha: 0.08)
                               : AppColors.surfaceColor(ctx),
                           borderRadius: BorderRadius.circular(12),
                           child: InkWell(
@@ -333,8 +340,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                                               ? AppColors.primaryLight
                                               : AppColors.textTertiary(ctx))
                                           .withValues(alpha: 0.12),
-                                      borderRadius:
-                                          BorderRadius.circular(10),
+                                      borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Icon(
                                       iconForCategoryKey(cat.iconKey),
@@ -394,18 +400,16 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                         child: OutlinedButton(
                           onPressed: () => Navigator.pop(ctx),
                           style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                                color: AppColors.borderColor(ctx)),
+                            side: BorderSide(color: AppColors.borderColor(ctx)),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 12),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                           child: Text(
                             'Cancel',
-                            style: TextStyle(
-                                color: AppColors.textSecondary(ctx)),
+                            style:
+                                TextStyle(color: AppColors.textSecondary(ctx)),
                           ),
                         ),
                       ),
@@ -415,17 +419,13 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                           onPressed: () async {
                             Navigator.pop(ctx);
                             if (flow == 'income') {
-                              setState(
-                                  () => _quickIncomeIds = currentIds);
+                              setState(() => _quickIncomeIds = currentIds);
                               await NotificationSettingsService.instance
-                                  .setQuickCategorizeIncomeIds(
-                                      currentIds);
+                                  .setQuickCategorizeIncomeIds(currentIds);
                             } else {
-                              setState(
-                                  () => _quickExpenseIds = currentIds);
+                              setState(() => _quickExpenseIds = currentIds);
                               await NotificationSettingsService.instance
-                                  .setQuickCategorizeExpenseIds(
-                                      currentIds);
+                                  .setQuickCategorizeExpenseIds(currentIds);
                             }
                           },
                           style: ElevatedButton.styleFrom(
@@ -435,13 +435,11 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 12),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                           child: const Text(
                             'Save',
-                            style:
-                                TextStyle(fontWeight: FontWeight.w700),
+                            style: TextStyle(fontWeight: FontWeight.w700),
                           ),
                         ),
                       ),
@@ -614,6 +612,19 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                   ),
 
                   _SettingTile(
+                    icon: Icons.sms_failed_rounded,
+                    iconColor: AppColors.amber,
+                    title: 'Failed parsing review',
+                    subtitle:
+                        'Ask whether an unparsed registered-bank message was a transaction',
+                    trailing: Switch(
+                      value: _failedParseReviewEnabled,
+                      onChanged: _setFailedParseReviewEnabled,
+                      activeColor: AppColors.primaryLight,
+                    ),
+                  ),
+
+                  _SettingTile(
                     icon: Icons.pie_chart_outline_rounded,
                     iconColor: AppColors.amber,
                     title: 'Budget alerts',
@@ -677,8 +688,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     icon: Icons.view_week_outlined,
                     iconColor: AppColors.amber,
                     title: 'Weekly summary',
-                    subtitle:
-                        "Weekly 'Last week's spending' notification",
+                    subtitle: "Weekly 'Last week's spending' notification",
                     trailing: Switch(
                       value: _weeklyEnabled,
                       onChanged: _setWeeklyEnabled,
@@ -690,8 +700,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     icon: Icons.calendar_month_outlined,
                     iconColor: AppColors.incomeSuccess,
                     title: 'Monthly summary',
-                    subtitle:
-                        "Monthly 'Last month's spending' notification",
+                    subtitle: "Monthly 'Last month's spending' notification",
                     trailing: Switch(
                       value: _monthlyEnabled,
                       onChanged: _setMonthlyEnabled,
@@ -703,7 +712,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     icon: Icons.schedule_rounded,
                     iconColor: AppColors.primaryLight,
                     title: 'Summary time',
-                    subtitle: '${_dailyTime.format(context)} • shared for all summaries',
+                    subtitle:
+                        '${_dailyTime.format(context)} • shared for all summaries',
                     enabled: _dailyEnabled || _weeklyEnabled || _monthlyEnabled,
                     showChevron: false,
                     onTap: (_dailyEnabled || _weeklyEnabled || _monthlyEnabled)
@@ -775,8 +785,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     icon: Icons.battery_saver_rounded,
                     iconColor: AppColors.incomeSuccess,
                     title: 'Battery optimization',
-                    subtitle:
-                        'Exclude from battery optimization to ensure '
+                    subtitle: 'Exclude from battery optimization to ensure '
                         'background notifications are delivered',
                     showChevron: false,
                     onTap: _requestBatteryOptimizationExemption,
@@ -852,12 +861,10 @@ class _SettingTile extends StatelessWidget {
             onTap: enabled ? onTap : null,
             borderRadius: BorderRadius.circular(12),
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                border:
-                    Border.all(color: AppColors.borderColor(context)),
+                border: Border.all(color: AppColors.borderColor(context)),
               ),
               child: Row(
                 children: [

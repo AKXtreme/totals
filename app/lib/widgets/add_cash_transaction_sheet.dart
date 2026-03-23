@@ -485,6 +485,7 @@ class _AddCashTransactionContentState
                         ],
                       ),
                     ),
+                    const SizedBox(height: 30),
                   ],
                 ),
               ),
