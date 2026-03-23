@@ -315,7 +315,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   }
 
   Future<void> _saveCounterparty() async {
-    if (_isSavingCounterparty || !_isUnknownCounterparty) return;
+    if (_isSavingCounterparty) return;
 
     final trimmed = _counterpartyController.text.trim();
     final normalized = trimmed.isEmpty ? null : trimmed;
@@ -652,7 +652,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: SizedBox(
                   width: double.infinity,
-                  child: _isUnknownCounterparty
+                  child: !_provider.isSelfTransfer(_tx)
                       ? TextField(
                           controller: _counterpartyController,
                           focusNode: _counterpartyFocus,
