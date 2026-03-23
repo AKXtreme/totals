@@ -130,13 +130,17 @@ class _TransactionFilter {
   final String? type; // null = All, 'DEBIT' = Expense, 'CREDIT' = Income
   final int? bankId; // null = All Banks
   final int? categoryId; // null = All Categories
+  final double? minAmount;
+  final double? maxAmount;
   final DateTime? startDate;
   final DateTime? endDate;
 
-  const _TransactionFilter({
+  _TransactionFilter({
     this.type,
     this.bankId,
     this.categoryId,
+    this.minAmount,
+    this.maxAmount,
     this.startDate,
     this.endDate,
   });
@@ -145,6 +149,8 @@ class _TransactionFilter {
       type != null ||
       bankId != null ||
       categoryId != null ||
+      minAmount != null ||
+      maxAmount != null ||
       startDate != null ||
       endDate != null;
 
@@ -153,6 +159,7 @@ class _TransactionFilter {
     if (type != null) count++;
     if (bankId != null) count++;
     if (categoryId != null) count++;
+    if (minAmount != null || maxAmount != null) count++;
     if (startDate != null || endDate != null) count++;
     return count;
   }
@@ -230,6 +237,8 @@ class _ActivityTransactionsViewCacheKey {
   final String? type;
   final int? bankId;
   final int? categoryId;
+  final double? minAmount;
+  final double? maxAmount;
   final int? startDateMillis;
   final int? endDateMillis;
   final int currentPage;
@@ -240,6 +249,8 @@ class _ActivityTransactionsViewCacheKey {
     required this.type,
     required this.bankId,
     required this.categoryId,
+    required this.minAmount,
+    required this.maxAmount,
     required this.startDateMillis,
     required this.endDateMillis,
     required this.currentPage,
@@ -254,6 +265,8 @@ class _ActivityTransactionsViewCacheKey {
         other.type == type &&
         other.bankId == bankId &&
         other.categoryId == categoryId &&
+        other.minAmount == minAmount &&
+        other.maxAmount == maxAmount &&
         other.startDateMillis == startDateMillis &&
         other.endDateMillis == endDateMillis &&
         other.currentPage == currentPage;
@@ -261,7 +274,8 @@ class _ActivityTransactionsViewCacheKey {
 
   @override
   int get hashCode => Object.hash(dataVersion, searchQuery, type, bankId,
-      categoryId, startDateMillis, endDateMillis, currentPage);
+      categoryId, minAmount, maxAmount, startDateMillis, endDateMillis,
+      currentPage);
 }
 
 class _ActivityTransactionsViewData {
@@ -327,7 +341,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   _SubTab _subTab = _SubTab.transactions;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  _TransactionFilter _filter = const _TransactionFilter();
+  _TransactionFilter _filter = _TransactionFilter();
   int? _selectedBankId;
   String? _expandedAccountNumber;
   bool _showAccountBalances = false;
@@ -1528,6 +1542,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       type: _filter.type,
       bankId: _filter.bankId,
       categoryId: _filter.categoryId,
+      minAmount: _filter.minAmount,
+      maxAmount: _filter.maxAmount,
       startDateMillis: _filter.startDate?.millisecondsSinceEpoch,
       endDateMillis: _filter.endDate?.millisecondsSinceEpoch,
       currentPage: _currentPage,
@@ -1801,6 +1817,14 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     // Category filter
     if (_filter.categoryId != null) {
       result = result.where((t) => t.categoryId == _filter.categoryId).toList();
+    }
+
+    // Amount range filter
+    if (_filter.minAmount != null) {
+      result = result.where((t) => t.amount >= _filter.minAmount!).toList();
+    }
+    if (_filter.maxAmount != null) {
+      result = result.where((t) => t.amount <= _filter.maxAmount!).toList();
     }
 
     // Date range filter
@@ -8892,6 +8916,8 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
   late String? _selectedType;
   late int? _selectedBankId;
   late int? _selectedCategoryId;
+  late final TextEditingController _minAmountController;
+  late final TextEditingController _maxAmountController;
   DateTime? _startDate;
   DateTime? _endDate;
 
@@ -8901,8 +8927,21 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
     _selectedType = widget.currentFilter.type;
     _selectedBankId = widget.currentFilter.bankId;
     _selectedCategoryId = widget.currentFilter.categoryId;
+    _minAmountController = TextEditingController(
+      text: _formatAmountInput(widget.currentFilter.minAmount),
+    );
+    _maxAmountController = TextEditingController(
+      text: _formatAmountInput(widget.currentFilter.maxAmount),
+    );
     _startDate = widget.currentFilter.startDate;
     _endDate = widget.currentFilter.endDate;
+  }
+
+  @override
+  void dispose() {
+    _minAmountController.dispose();
+    _maxAmountController.dispose();
+    super.dispose();
   }
 
   void _clearAll() {
@@ -8910,19 +8949,69 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
       _selectedType = null;
       _selectedBankId = null;
       _selectedCategoryId = null;
+      _minAmountController.clear();
+      _maxAmountController.clear();
       _startDate = null;
       _endDate = null;
     });
   }
 
   void _apply() {
+    final minRaw = _minAmountController.text;
+    final maxRaw = _maxAmountController.text;
+    final minAmount = _parseAmountInput(minRaw);
+    final maxAmount = _parseAmountInput(maxRaw);
+
+    if (_hasInvalidAmountInput(minRaw) || _hasInvalidAmountInput(maxRaw)) {
+      _showValidationMessage('Enter valid minimum and maximum amounts.');
+      return;
+    }
+    if (minAmount != null && maxAmount != null && minAmount > maxAmount) {
+      _showValidationMessage('Minimum amount cannot be greater than maximum.');
+      return;
+    }
+
     Navigator.of(context).pop(
       _TransactionFilter(
         type: _selectedType,
         bankId: _selectedBankId,
         categoryId: _selectedCategoryId,
+        minAmount: minAmount,
+        maxAmount: maxAmount,
         startDate: _startDate,
         endDate: _endDate,
+      ),
+    );
+  }
+
+  double? _parseAmountInput(String raw) {
+    final normalized = raw.replaceAll(',', '').trim();
+    if (normalized.isEmpty) return null;
+    return double.tryParse(normalized);
+  }
+
+  bool _hasInvalidAmountInput(String raw) {
+    final normalized = raw.replaceAll(',', '').trim();
+    return normalized.isNotEmpty && double.tryParse(normalized) == null;
+  }
+
+  String _formatAmountInput(double? amount) {
+    if (amount == null) return '';
+    if (amount == amount.roundToDouble()) {
+      return amount.toStringAsFixed(0);
+    }
+    return amount
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  void _showValidationMessage(String message) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -9119,6 +9208,29 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
                       ),
                     ),
                   ],
+
+                  const SizedBox(height: 20),
+
+                  // ── AMOUNT RANGE ──
+                  _sectionLabel('AMOUNT RANGE'),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _AmountFilterField(
+                          controller: _minAmountController,
+                          hint: 'Min',
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _AmountFilterField(
+                          controller: _maxAmountController,
+                          hint: 'Max',
+                        ),
+                      ),
+                    ],
+                  ),
 
                   const SizedBox(height: 20),
 
@@ -9879,6 +9991,60 @@ class _DatePickerField extends StatelessWidget {
                 color: AppColors.textTertiary(context),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AmountFilterField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+
+  const _AmountFilterField({
+    required this.controller,
+    required this.hint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+      ],
+      style: TextStyle(
+        color: AppColors.textPrimary(context),
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+      ),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(color: AppColors.textTertiary(context)),
+        prefixText: 'ETB ',
+        prefixStyle: TextStyle(
+          color: AppColors.textSecondary(context),
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+        filled: true,
+        fillColor: AppColors.surfaceColor(context),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: AppColors.borderColor(context)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: AppColors.borderColor(context)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.primaryLight),
         ),
       ),
     );
