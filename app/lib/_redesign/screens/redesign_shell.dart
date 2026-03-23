@@ -34,6 +34,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/notification_intent_bus.dart';
+import 'package:totals/services/background_refresh_signal_service.dart';
 import 'package:totals/services/sms_service.dart';
 import 'package:totals/services/widget_launch_intent_service.dart';
 import 'package:totals/utils/account_share_payload.dart';
@@ -68,6 +69,7 @@ class RedesignShellState extends State<RedesignShell>
   int? _activeProfileId;
   StreamSubscription<WidgetLaunchTarget>? _widgetLaunchIntentSub;
   StreamSubscription<NotificationIntent>? _notificationIntentSub;
+  StreamSubscription<void>? _backgroundRefreshSub;
   final ProfileRepository _profileRepo = ProfileRepository();
   final AccountRepository _accountRepo = AccountRepository();
   final UserAccountRepository _userAccountRepo = UserAccountRepository();
@@ -86,6 +88,7 @@ class RedesignShellState extends State<RedesignShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    BackgroundRefreshSignalService.instance.ensureListening();
     unawaited(BankDetectionStartupService.runOnAppOpen());
     unawaited(_loadActiveProfileId());
 
@@ -105,34 +108,50 @@ class RedesignShellState extends State<RedesignShell>
       },
     );
 
+    _backgroundRefreshSub =
+        BackgroundRefreshSignalService.instance.stream.listen((_) {
+      if (!mounted) return;
+      final transactionProvider =
+          Provider.of<TransactionProvider>(context, listen: false);
+      final budgetProvider = Provider.of<BudgetProvider>(context, listen: false);
+      unawaited(transactionProvider.loadData());
+      unawaited(budgetProvider.loadBudgets());
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _preloadHomeDataWhileLocked();
     });
 
-    // Set up callback to refresh UI when a foreground SMS transaction is saved
+    // Refresh immediately after a foreground save. addPostFrameCallback()
+    // can sit idle until the next UI interaction if no frame is scheduled.
     _smsService.onTransactionSaved = (tx) {
       if (!mounted) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Provider.of<TransactionProvider>(context, listen: false).loadData();
-        Provider.of<BudgetProvider>(context, listen: false).loadBudgets();
-        final provider =
-            Provider.of<TransactionProvider>(context, listen: false);
-        final bankLabel = provider.getBankShortName(tx.bankId);
-        final sign = tx.type == 'CREDIT'
-            ? '+'
-            : tx.type == 'DEBIT'
-                ? '-'
-                : '';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '$bankLabel: $sign ETB ${formatNumberWithComma(tx.amount)}',
-            ),
-            duration: const Duration(seconds: 4),
+
+      final transactionProvider =
+          Provider.of<TransactionProvider>(context, listen: false);
+      final budgetProvider = Provider.of<BudgetProvider>(
+        context,
+        listen: false,
+      );
+
+      unawaited(transactionProvider.loadData());
+      unawaited(budgetProvider.loadBudgets());
+
+      final bankLabel = transactionProvider.getBankShortName(tx.bankId);
+      final sign = tx.type == 'CREDIT'
+          ? '+'
+          : tx.type == 'DEBIT'
+              ? '-'
+              : '';
+
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(
+            '$bankLabel: $sign ETB ${formatNumberWithComma(tx.amount)}',
           ),
-        );
-      });
+          duration: const Duration(seconds: 4),
+        ),
+      );
     };
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -158,6 +177,7 @@ class RedesignShellState extends State<RedesignShell>
     WidgetsBinding.instance.removeObserver(this);
     _widgetLaunchIntentSub?.cancel();
     _notificationIntentSub?.cancel();
+    _backgroundRefreshSub?.cancel();
     _pageController.dispose();
     super.dispose();
   }

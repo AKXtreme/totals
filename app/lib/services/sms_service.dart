@@ -17,6 +17,7 @@ import 'package:totals/services/failed_parse_review_service.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/budget_alert_service.dart';
+import 'package:totals/services/background_refresh_signal_service.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/services/widget_service.dart';
 import 'package:totals/repositories/profile_repository.dart';
@@ -92,8 +93,11 @@ onBackgroundMessage(SmsMessage message) async {
       final receivedAt = message.date == null
           ? null
           : DateTime.fromMillisecondsSinceEpoch(message.date!);
-      await SmsService.processMessage(body, address!,
+      final transaction = await SmsService.processMessage(body, address!,
           notifyUser: true, messageDate: receivedAt);
+      if (transaction != null) {
+        BackgroundRefreshSignalService.notifyDataChanged();
+      }
       print("debug: BG: Processing finished.");
     } else {
       print("debug: BG: Message NOT relevant.");

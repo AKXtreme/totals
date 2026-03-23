@@ -13,6 +13,7 @@ import 'package:totals/models/transaction.dart';
 import 'package:totals/repositories/category_repository.dart';
 import 'package:totals/repositories/transaction_repository.dart';
 import 'package:totals/services/failed_parse_review_service.dart';
+import 'package:totals/services/background_refresh_signal_service.dart';
 import 'package:totals/services/receiver_category_service.dart';
 import 'package:totals/services/notification_intent_bus.dart';
 import 'package:totals/services/notification_settings_service.dart';
@@ -210,6 +211,7 @@ class NotificationService {
 
       // Refresh widget
       await WidgetService.refreshWidget();
+      BackgroundRefreshSignalService.notifyDataChanged();
     } catch (e) {
       if (kDebugMode) {
         print('debug: Quick categorize failed: $e');
@@ -232,6 +234,7 @@ class NotificationService {
 
       if (decision == 'yes') {
         await FailedParseReviewService.instance.confirmCandidate(candidateId);
+        BackgroundRefreshSignalService.notifyDataChanged();
       } else {
         await FailedParseReviewService.instance.discardCandidate(candidateId);
       }

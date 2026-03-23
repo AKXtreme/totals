@@ -178,6 +178,7 @@ class TransactionProvider with ChangeNotifier {
       const FinancialHealthSnapshot.neutral();
   int _dataVersion = 0;
   Future<void>? _activeLoadDataFuture;
+  bool _reloadQueuedWhileLoading = false;
 
   // Getters
   List<Transaction> get transactions => _transactions;
@@ -250,9 +251,12 @@ class TransactionProvider with ChangeNotifier {
 
   Future<void> loadData() {
     final existing = _activeLoadDataFuture;
-    if (existing != null) return existing;
+    if (existing != null) {
+      _reloadQueuedWhileLoading = true;
+      return existing;
+    }
 
-    final future = _loadDataInternal();
+    final future = _loadDataUntilSettled();
     _activeLoadDataFuture = future;
     future.whenComplete(() {
       if (identical(_activeLoadDataFuture, future)) {
@@ -260,6 +264,13 @@ class TransactionProvider with ChangeNotifier {
       }
     });
     return future;
+  }
+
+  Future<void> _loadDataUntilSettled() async {
+    do {
+      _reloadQueuedWhileLoading = false;
+      await _loadDataInternal();
+    } while (_reloadQueuedWhileLoading);
   }
 
   Future<void> _loadDataInternal() async {

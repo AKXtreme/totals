@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:totals/_redesign/theme/app_colors.dart';
+import 'package:totals/_redesign/theme/app_icons.dart';
 import 'package:totals/models/bank.dart';
 import 'package:totals/models/failed_parse.dart';
 import 'package:totals/repositories/account_repository.dart';
@@ -9,7 +11,6 @@ import 'package:totals/services/bank_config_service.dart';
 import 'package:totals/services/failed_parse_review_service.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/sms_service.dart';
-import 'package:totals/utils/gradients.dart';
 
 class FailedParsesPage extends StatefulWidget {
   const FailedParsesPage({super.key});
@@ -373,58 +374,71 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
     setState(() => _selectedGroupKey = null);
   }
 
+  // ── Overview ──────────────────────────────────────────────────────────────
+
   Widget _buildOverview() {
+    final theme = Theme.of(context);
     final groups = _groups;
+
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: CircularProgressIndicator(
+          color: AppColors.primaryLight,
+          strokeWidth: 2.5,
+        ),
+      );
     }
 
     if (groups.isEmpty) {
       return Center(
-        child: Text(
-          'No confirmed transactions without patterns.',
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              AppIcons.check_circle_rounded,
+              size: 48,
+              color: AppColors.textTertiary(context),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No failed parsings',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary(context),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'All transaction messages are being parsed.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppColors.textTertiary(context),
+              ),
+            ),
+          ],
         ),
       );
     }
 
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView(
+      color: AppColors.primaryLight,
+      child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
-        children: [
-          Text(
-            'Banks with transaction messages that still need parsing patterns.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-          const SizedBox(height: 16),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: groups.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.08,
-            ),
-            itemBuilder: (context, index) {
-              final group = groups[index];
-              return _FailedParseBankCard(
-                group: group,
-                onTap: () => _openGroup(group),
-              );
-            },
-          ),
-        ],
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
+        itemCount: groups.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          final group = groups[index];
+          return _FailedParseBankCard(
+            group: group,
+            onTap: () => _openGroup(group),
+          );
+        },
       ),
     );
   }
+
+  // ── Detail ────────────────────────────────────────────────────────────────
 
   Widget _buildDetail(_FailedParseGroup group) {
     final visibleItems = _visibleItems;
@@ -433,13 +447,18 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
           child: TextField(
             controller: _searchController,
             onChanged: (_) => setState(() {}),
+            style: TextStyle(color: AppColors.textPrimary(context)),
             decoration: InputDecoration(
-              hintText: 'Search sender or message…',
-              prefixIcon: const Icon(Icons.search_rounded),
+              hintText: 'Search sender or message\u2026',
+              hintStyle: TextStyle(color: AppColors.textTertiary(context)),
+              prefixIcon: Icon(
+                AppIcons.filter_list,
+                color: AppColors.textTertiary(context),
+              ),
               suffixIcon: _searchController.text.isEmpty
                   ? null
                   : IconButton(
@@ -448,13 +467,37 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
                         _searchController.clear();
                         setState(() {});
                       },
-                      icon: const Icon(Icons.close_rounded),
+                      icon: Icon(
+                        AppIcons.close_rounded,
+                        color: AppColors.textTertiary(context),
+                      ),
                     ),
+              filled: true,
+              fillColor: AppColors.cardColor(context),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppColors.borderColor(context)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppColors.borderColor(context)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: AppColors.primaryLight,
+                  width: 1.5,
+                ),
+              ),
             ),
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
           child: _FailedParseSummaryCard(group: group),
         ),
         Expanded(
@@ -465,15 +508,16 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
                         ? 'No transactions match your search.'
                         : 'No transactions without patterns for this bank.',
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      color: AppColors.textSecondary(context),
                     ),
                   ),
                 )
               : RefreshIndicator(
                   onRefresh: _load,
+                  color: AppColors.primaryLight,
                   child: ListView.separated(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
                     itemCount: visibleItems.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 10),
                     itemBuilder: (context, index) {
@@ -487,19 +531,20 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
   }
 
   Widget _buildParseCard(FailedParse item) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: Theme.of(context).dividerColor,
-        ),
-      ),
+    final theme = Theme.of(context);
+
+    return Material(
+      color: AppColors.cardColor(context),
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         onTap: () => _copy(item),
-        child: Padding(
+        child: Container(
           padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.borderColor(context)),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -508,8 +553,9 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
                   Expanded(
                     child: Text(
                       item.address,
-                      style: const TextStyle(
+                      style: theme.textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary(context),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -517,58 +563,90 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
                   ),
                   const SizedBox(width: 8),
                   Icon(
-                    Icons.copy_rounded,
-                    size: 18,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    AppIcons.upload_rounded,
+                    size: 16,
+                    color: AppColors.textTertiary(context),
                   ),
                 ],
               ),
               const SizedBox(height: 6),
-              Text(
-                FailedParse.noMatchingPatternReason,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w700,
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.amber.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  FailedParse.noMatchingPatternReason,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.amber,
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Text(
                 item.body,
                 maxLines: 5,
                 overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _formatTimestamp(item.timestamp),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.textSecondary(context),
+                  height: 1.4,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 10),
               Row(
                 children: [
+                  Icon(
+                    AppIcons.schedule_rounded,
+                    size: 12,
+                    color: AppColors.textTertiary(context),
+                  ),
+                  const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      'Tap to copy the full SMS',
+                      _formatTimestamp(item.timestamp),
                       style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 11,
+                        color: AppColors.textTertiary(context),
                       ),
                     ),
                   ),
-                  TextButton.icon(
-                    onPressed: _retrying ? null : () => _retrySingle(item),
-                    icon: const Icon(
-                      Icons.refresh_rounded,
-                      size: 16,
-                    ),
-                    label: const Text('Retry'),
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: const Size(0, 0),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
+                  Material(
+                    color: AppColors.primaryLight.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: _retrying ? null : () => _retrySingle(item),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              AppIcons.refresh,
+                              size: 13,
+                              color: AppColors.primaryLight,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Retry',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primaryLight,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -580,8 +658,11 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
     );
   }
 
+  // ── Scaffold ──────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final selectedGroup = _selectedGroup;
     final visibleItems = _visibleItems;
     final retryTooltip = selectedGroup == null
@@ -596,44 +677,61 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
             : 'Clear ${selectedGroup.label}';
 
     return Scaffold(
+      backgroundColor: AppColors.background(context),
       appBar: AppBar(
-        leading: selectedGroup == null
-            ? null
-            : IconButton(
-                onPressed: _closeGroup,
-                icon: const Icon(Icons.arrow_back_rounded),
-              ),
+        leading: IconButton(
+          onPressed: selectedGroup == null
+              ? () => Navigator.pop(context)
+              : _closeGroup,
+          icon: const Icon(AppIcons.arrow_back_rounded),
+        ),
         title: Text(
           selectedGroup == null
-              ? 'Failed parsings'
-              : '${selectedGroup.label} patterns',
-        ),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        elevation: 0,
-        actions: [
-          IconButton(
-            tooltip: 'Send test notification',
-            onPressed: _sendTestNotification,
-            icon: const Icon(Icons.notification_add_rounded),
+              ? 'Failed Parsings'
+              : '${selectedGroup.label} Patterns',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary(context),
           ),
+        ),
+        backgroundColor: AppColors.background(context),
+        foregroundColor: AppColors.textPrimary(context),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        actions: [
           IconButton(
             tooltip: retryTooltip,
             onPressed: _retrying || visibleItems.isEmpty
                 ? null
                 : () => _retryBulk(visibleItems),
-            icon: const Icon(Icons.refresh_rounded),
+            icon: Icon(
+              AppIcons.refresh,
+              color: _retrying || visibleItems.isEmpty
+                  ? AppColors.textTertiary(context)
+                  : AppColors.textSecondary(context),
+            ),
           ),
           IconButton(
             tooltip: clearTooltip,
             onPressed:
                 visibleItems.isEmpty ? null : () => _clearItems(visibleItems),
-            icon: const Icon(Icons.delete_sweep_rounded),
+            icon: Icon(
+              AppIcons.delete_outline_rounded,
+              color: visibleItems.isEmpty
+                  ? AppColors.textTertiary(context)
+                  : AppColors.textSecondary(context),
+            ),
           ),
         ],
       ),
       body: Column(
         children: [
-          if (_retrying) const LinearProgressIndicator(minHeight: 2),
+          if (_retrying)
+            LinearProgressIndicator(
+              minHeight: 2,
+              color: AppColors.primaryLight,
+              backgroundColor: AppColors.primaryLight.withValues(alpha: 0.15),
+            ),
           Expanded(
             child: selectedGroup == null
                 ? _buildOverview()
@@ -644,6 +742,8 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
     );
   }
 }
+
+// ── Models ────────────────────────────────────────────────────────────────────
 
 class _FailedParseGroup {
   final String key;
@@ -659,6 +759,8 @@ class _FailedParseGroup {
   String get label => bank?.shortName ?? 'Unknown bank';
 }
 
+// ── Bank Card (Overview) ──────────────────────────────────────────────────────
+
 class _FailedParseBankCard extends StatelessWidget {
   final _FailedParseGroup group;
   final VoidCallback onTap;
@@ -670,107 +772,84 @@ class _FailedParseBankCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isUnknown = group.bank == null;
     final theme = Theme.of(context);
-    final textColor = isUnknown ? theme.colorScheme.onSurface : Colors.white;
-    final secondaryTextColor = isUnknown
-        ? theme.colorScheme.onSurfaceVariant
-        : Colors.white.withOpacity(0.85);
-    final decoration = isUnknown
-        ? BoxDecoration(
-            color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: theme.dividerColor),
-          )
-        : BoxDecoration(
-            gradient:
-                group.bank!.colors != null && group.bank!.colors!.isNotEmpty
-                    ? GradientUtils.getGradientFromColors(group.bank!.colors)
-                    : GradientUtils.getGradient(group.bank!.id),
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.18),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          );
 
     return Material(
-      color: Colors.transparent,
+      color: AppColors.cardColor(context),
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          decoration: decoration,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    _BankLogo(bank: group.bank, darkForeground: !isUnknown),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isUnknown
-                            ? theme.colorScheme.primary.withOpacity(0.12)
-                            : Colors.white.withOpacity(0.18),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        '${group.items.length}',
-                        style: TextStyle(
-                          color: isUnknown
-                              ? theme.colorScheme.primary
-                              : Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Column(
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.borderColor(context)),
+          ),
+          child: Row(
+            children: [
+              _BankLogo(bank: group.bank, darkForeground: false),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       group.label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: textColor,
-                        fontWeight: FontWeight.w800,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textPrimary(context),
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 2),
                     Text(
                       group.items.length == 1
-                          ? '1 transaction without a pattern'
-                          : '${group.items.length} transactions without patterns',
-                      maxLines: 2,
+                          ? '1 unmatched transaction'
+                          : '${group.items.length} unmatched transactions',
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: secondaryTextColor,
-                        height: 1.35,
+                        color: AppColors.textSecondary(context),
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.amber.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${group.items.length}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.amber,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                AppIcons.chevron_right_rounded,
+                color: AppColors.textTertiary(context),
+                size: 20,
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 }
+
+// ── Summary Card (Detail header) ─────────────────────────────────────────────
 
 class _FailedParseSummaryCard extends StatelessWidget {
   final _FailedParseGroup group;
@@ -782,53 +861,39 @@ class _FailedParseSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bank = group.bank;
-    final isUnknown = bank == null;
-    final decoration = isUnknown
-        ? BoxDecoration(
-            color:
-                Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.35),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Theme.of(context).dividerColor),
-          )
-        : BoxDecoration(
-            gradient: bank.colors != null && bank.colors!.isNotEmpty
-                ? GradientUtils.getGradientFromColors(bank.colors)
-                : GradientUtils.getGradient(bank.id),
-            borderRadius: BorderRadius.circular(18),
-          );
-    final textColor =
-        isUnknown ? Theme.of(context).colorScheme.onSurface : Colors.white;
-    final secondaryTextColor = isUnknown
-        ? Theme.of(context).colorScheme.onSurfaceVariant
-        : Colors.white.withOpacity(0.84);
+    final theme = Theme.of(context);
 
     return Container(
-      decoration: decoration,
-      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      padding: const EdgeInsets.all(14),
       child: Row(
         children: [
-          _BankLogo(bank: bank, darkForeground: !isUnknown, size: 52),
-          const SizedBox(width: 14),
+          _BankLogo(bank: bank, darkForeground: false, size: 44),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   group.label,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: textColor,
-                        fontWeight: FontWeight.w800,
-                      ),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textPrimary(context),
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   group.items.length == 1
-                      ? '1 confirmed transaction without a matching pattern'
-                      : '${group.items.length} confirmed transactions without matching patterns',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: secondaryTextColor,
-                        height: 1.35,
-                      ),
+                      ? '1 transaction without a matching pattern'
+                      : '${group.items.length} transactions without matching patterns',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary(context),
+                    height: 1.35,
+                  ),
                 ),
               ],
             ),
@@ -839,6 +904,8 @@ class _FailedParseSummaryCard extends StatelessWidget {
   }
 }
 
+// ── Bank Logo ─────────────────────────────────────────────────────────────────
+
 class _BankLogo extends StatelessWidget {
   final Bank? bank;
   final bool darkForeground;
@@ -847,15 +914,15 @@ class _BankLogo extends StatelessWidget {
   const _BankLogo({
     required this.bank,
     required this.darkForeground,
-    this.size = 44,
+    this.size = 40,
   });
 
   @override
   Widget build(BuildContext context) {
-    final borderRadius = BorderRadius.circular(size * 0.3);
+    final borderRadius = BorderRadius.circular(10);
     final backgroundColor = darkForeground
-        ? Colors.white.withOpacity(0.18)
-        : Theme.of(context).colorScheme.surface;
+        ? Colors.white.withValues(alpha: 0.18)
+        : AppColors.mutedFill(context);
 
     return Container(
       width: size,
@@ -868,9 +935,9 @@ class _BankLogo extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: bank == null
           ? Icon(
-              Icons.account_balance_rounded,
+              AppIcons.account_balance_rounded,
               size: size * 0.52,
-              color: Theme.of(context).colorScheme.primary,
+              color: AppColors.primaryLight,
             )
           : Padding(
               padding: EdgeInsets.all(size * 0.18),
@@ -879,11 +946,11 @@ class _BankLogo extends StatelessWidget {
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) {
                   return Icon(
-                    Icons.account_balance_rounded,
+                    AppIcons.account_balance_rounded,
                     size: size * 0.52,
                     color: darkForeground
                         ? Colors.white
-                        : Theme.of(context).colorScheme.primary,
+                        : AppColors.primaryLight,
                   );
                 },
               ),
