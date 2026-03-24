@@ -87,13 +87,13 @@ extension on _AnalyticsChartSection {
       case _AnalyticsChartSection.heatmap:
         return 'Tune flow, bank, and category for the activity grid.';
       case _AnalyticsChartSection.expenseBubble:
-        return 'Focus the category bubbles on a specific bank.';
+        return 'Focus the category bubbles on a specific bank or date range.';
       case _AnalyticsChartSection.lineChart:
         return 'Focus daily net flow on a specific bank.';
       case _AnalyticsChartSection.barChart:
         return 'Focus weekly income and expense totals on a specific bank.';
       case _AnalyticsChartSection.pieChart:
-        return 'Focus category share on a specific bank.';
+        return 'Focus category share on a specific bank or date range.';
     }
   }
 
@@ -115,11 +115,19 @@ extension on _AnalyticsChartSection {
 
   bool get showsCategoryFilter => this == _AnalyticsChartSection.heatmap;
 
+  bool get showsDateRangeFilter =>
+      this == _AnalyticsChartSection.expenseBubble ||
+      this == _AnalyticsChartSection.pieChart;
+
   int activeFilterCount(_AnalyticsHeatmapFilter filter) {
     var count = 0;
     if (showsModeFilter && filter.mode != defaultFilterMode) count++;
     if (showsBankFilter && filter.bankId != null) count++;
     if (showsCategoryFilter && filter.categoryId != null) count++;
+    if (showsDateRangeFilter &&
+        (filter.startDate != null || filter.endDate != null)) {
+      count++;
+    }
     return count;
   }
 }
@@ -247,21 +255,30 @@ class _AnalyticsHeatmapFilter {
   final _AnalyticsHeatmapMode mode;
   final int? bankId;
   final int? categoryId;
+  final DateTime? startDate;
+  final DateTime? endDate;
 
   const _AnalyticsHeatmapFilter({
     this.mode = _AnalyticsHeatmapMode.all,
     this.bankId,
     this.categoryId,
+    this.startDate,
+    this.endDate,
   });
 
   bool get isActive =>
-      mode != _AnalyticsHeatmapMode.all || bankId != null || categoryId != null;
+      mode != _AnalyticsHeatmapMode.all ||
+      bankId != null ||
+      categoryId != null ||
+      startDate != null ||
+      endDate != null;
 
   int get activeCount {
     int count = 0;
     if (mode != _AnalyticsHeatmapMode.all) count++;
     if (bankId != null) count++;
     if (categoryId != null) count++;
+    if (startDate != null || endDate != null) count++;
     return count;
   }
 
@@ -271,11 +288,17 @@ class _AnalyticsHeatmapFilter {
     bool clearBankId = false,
     int? categoryId,
     bool clearCategoryId = false,
+    DateTime? startDate,
+    bool clearStartDate = false,
+    DateTime? endDate,
+    bool clearEndDate = false,
   }) {
     return _AnalyticsHeatmapFilter(
       mode: mode ?? this.mode,
       bankId: clearBankId ? null : (bankId ?? this.bankId),
       categoryId: clearCategoryId ? null : (categoryId ?? this.categoryId),
+      startDate: clearStartDate ? null : (startDate ?? this.startDate),
+      endDate: clearEndDate ? null : (endDate ?? this.endDate),
     );
   }
 }
@@ -1249,15 +1272,28 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         );
       case _AnalyticsChartSection.expenseBubble:
         final filter = _analyticsBubbleFilter;
+        final filteredTransactions = _analyticsTransactionsForFilter(
+          provider,
+          filter,
+        );
+        final usesDateRange =
+            filter.startDate != null || filter.endDate != null;
         final snapshot = _buildAnalyticsSnapshot(
           provider,
-          sourceTransactions: _analyticsTransactionsForFilter(provider, filter),
-          anchorTransactions: provider.allTransactions,
+          sourceTransactions: filteredTransactions,
+          anchorTransactions: filteredTransactions,
           categoryMode: filter.mode,
+          constrainSeriesToAnchorMonth: !usesDateRange,
         );
         return _AnalyticsExpenseBubbleCard(
           snapshot: snapshot,
           showIncome: filter.mode == _AnalyticsHeatmapMode.income,
+          periodLabel: _formatAnalyticsChartPeriodLabel(
+            filter: filter,
+            fallbackMonthDate: snapshot.monthDate,
+            expandedForDateRange: true,
+          ),
+          usesCustomDateRange: usesDateRange,
           activeFilterCount:
               _AnalyticsChartSection.expenseBubble.activeFilterCount(filter),
           onOpenFilterSheet: () => _openAnalyticsFilterSheet(
@@ -1304,15 +1340,27 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         );
       case _AnalyticsChartSection.pieChart:
         final filter = _analyticsPieFilter;
+        final filteredTransactions = _analyticsTransactionsForFilter(
+          provider,
+          filter,
+        );
+        final usesDateRange =
+            filter.startDate != null || filter.endDate != null;
         final snapshot = _buildAnalyticsSnapshot(
           provider,
-          sourceTransactions: _analyticsTransactionsForFilter(provider, filter),
-          anchorTransactions: provider.allTransactions,
+          sourceTransactions: filteredTransactions,
+          anchorTransactions: filteredTransactions,
           categoryMode: filter.mode,
+          constrainSeriesToAnchorMonth: !usesDateRange,
         );
         return _AnalyticsPieChartCard(
           snapshot: snapshot,
           showIncome: filter.mode == _AnalyticsHeatmapMode.income,
+          periodLabel: _formatAnalyticsChartPeriodLabel(
+            filter: filter,
+            fallbackMonthDate: snapshot.monthDate,
+          ),
+          usesCustomDateRange: usesDateRange,
           activeFilterCount: _AnalyticsChartSection.pieChart.activeFilterCount(
             filter,
           ),
@@ -1332,6 +1380,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     List<Transaction>? sourceTransactions,
     Iterable<Transaction>? anchorTransactions,
     _AnalyticsHeatmapMode categoryMode = _AnalyticsHeatmapMode.expense,
+    bool constrainSeriesToAnchorMonth = true,
   }) {
     final transactions = sourceTransactions ?? provider.allTransactions;
     final anchorSource = anchorTransactions ?? transactions;
@@ -1402,35 +1451,39 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       }
 
       if (dt == null) continue;
-      if (dt.isBefore(monthStart) || !dt.isBefore(nextMonthStart)) continue;
-      final day = dt.day;
+      final isWithinAnchorMonth =
+          !dt.isBefore(monthStart) && dt.isBefore(nextMonthStart);
 
-      if (isCredit) {
-        byDayIncome[day] = (byDayIncome[day] ?? 0.0) + transaction.amount;
-        byDayNet[day] = (byDayNet[day] ?? 0.0) + transaction.amount;
-      } else if (isDebit) {
-        byDayExpense[day] = (byDayExpense[day] ?? 0.0) + transaction.amount;
-        byDayNet[day] = (byDayNet[day] ?? 0.0) - transaction.amount;
+      if (!constrainSeriesToAnchorMonth || isWithinAnchorMonth) {
+        final day = dt.day;
+
+        if (isCredit) {
+          byDayIncome[day] = (byDayIncome[day] ?? 0.0) + transaction.amount;
+          byDayNet[day] = (byDayNet[day] ?? 0.0) + transaction.amount;
+        } else if (isDebit) {
+          byDayExpense[day] = (byDayExpense[day] ?? 0.0) + transaction.amount;
+          byDayNet[day] = (byDayNet[day] ?? 0.0) - transaction.amount;
+        }
+
+        final includeBubbleCategory =
+            categoryMode == _AnalyticsHeatmapMode.income ? isCredit : isDebit;
+        final skipBubbleCategory = categoryMode == _AnalyticsHeatmapMode.income
+            ? isMisc
+            : isSelfTransfer || isMisc;
+
+        if (includeBubbleCategory && !skipBubbleCategory) {
+          final categoryName = (category?.name.trim().isNotEmpty ?? false)
+              ? category!.name.trim()
+              : 'Other';
+          categoryTotals[categoryName] =
+              (categoryTotals[categoryName] ?? 0.0) + transaction.amount;
+        }
+
+        if (isDebit && !isSelfTransfer && !isMisc) {
+          final weekdayIndex = dt.weekday % 7; // Sunday = 0 ... Saturday = 6
+          weekdayExpenseTotals[weekdayIndex] += transaction.amount;
+        }
       }
-
-      final includeBubbleCategory =
-          categoryMode == _AnalyticsHeatmapMode.income ? isCredit : isDebit;
-      final skipBubbleCategory = categoryMode == _AnalyticsHeatmapMode.income
-          ? isMisc
-          : isSelfTransfer || isMisc;
-
-      if (includeBubbleCategory && !skipBubbleCategory) {
-        final categoryName = (category?.name.trim().isNotEmpty ?? false)
-            ? category!.name.trim()
-            : 'Other';
-        categoryTotals[categoryName] =
-            (categoryTotals[categoryName] ?? 0.0) + transaction.amount;
-      }
-
-      if (!isDebit || isSelfTransfer || isMisc) continue;
-
-      final weekdayIndex = dt.weekday % 7; // Sunday = 0 ... Saturday = 6
-      weekdayExpenseTotals[weekdayIndex] += transaction.amount;
     }
 
     final categoryEntries = categoryTotals.entries.toList()
@@ -2620,6 +2673,8 @@ bool _matchesAnalyticsHeatmapFilterValue(
   Transaction transaction,
   _AnalyticsHeatmapFilter filter,
 ) {
+  final dt = _parseTransactionTime(transaction.time);
+
   switch (filter.mode) {
     case _AnalyticsHeatmapMode.all:
       break;
@@ -2637,6 +2692,22 @@ bool _matchesAnalyticsHeatmapFilterValue(
   if (filter.categoryId != null &&
       transaction.categoryId != filter.categoryId) {
     return false;
+  }
+  if (filter.startDate != null) {
+    if (dt == null) return false;
+    final startOfDay = DateTime(
+      filter.startDate!.year,
+      filter.startDate!.month,
+      filter.startDate!.day,
+    );
+    if (dt.isBefore(startOfDay)) return false;
+  }
+  if (filter.endDate != null) {
+    if (dt == null) return false;
+    final endOfDay = filter.endDate!
+        .add(const Duration(days: 1))
+        .subtract(const Duration(milliseconds: 1));
+    if (dt.isAfter(endOfDay)) return false;
   }
   return true;
 }
@@ -2792,6 +2863,36 @@ String _formatCompactSignedEtb(double value) {
 
 String _formatMonthYear(DateTime date) {
   return '${_months[date.month - 1]} ${date.year}';
+}
+
+String _formatAnalyticsChartPeriodLabel({
+  required _AnalyticsHeatmapFilter filter,
+  required DateTime fallbackMonthDate,
+  bool expandedForDateRange = false,
+}) {
+  final startDate = filter.startDate;
+  final endDate = filter.endDate;
+  if (startDate != null && endDate != null) {
+    return '${_formatDateHeader(startDate)} - ${_formatDateHeader(endDate)}';
+  }
+  if (startDate != null) {
+    return expandedForDateRange
+        ? 'Since ${_formatDateHeader(startDate)}'
+        : _formatDateHeader(startDate);
+  }
+  if (endDate != null) {
+    return expandedForDateRange
+        ? 'Until ${_formatDateHeader(endDate)}'
+        : _formatDateHeader(endDate);
+  }
+
+  if (!expandedForDateRange) {
+    return DateFormat('MMMM yyyy').format(fallbackMonthDate);
+  }
+
+  final monthEnd =
+      DateTime(fallbackMonthDate.year, fallbackMonthDate.month + 1, 0);
+  return '${_formatDateHeader(fallbackMonthDate)} - ${_formatDateHeader(monthEnd)}';
 }
 
 String _formatAnalyticsSpendingPeriodLabel(
@@ -5412,6 +5513,8 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
 
   final _AnalyticsSnapshot snapshot;
   final bool showIncome;
+  final String periodLabel;
+  final bool usesCustomDateRange;
   final int activeFilterCount;
   final VoidCallback? onOpenFilterSheet;
   final VoidCallback? onChartPickerTap;
@@ -5420,6 +5523,8 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
   const _AnalyticsExpenseBubbleCard({
     required this.snapshot,
     this.showIncome = false,
+    required this.periodLabel,
+    this.usesCustomDateRange = false,
     this.activeFilterCount = 0,
     this.onOpenFilterSheet,
     this.onChartPickerTap,
@@ -5434,13 +5539,13 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
     final bubbleNodes = _buildBubbleNodes(categories: categories, total: total);
     final bubbleChartExtents = _bubbleChartExtents(bubbleNodes);
     final bubbleChartHeight = _bubbleChartHeight(bubbleChartExtents);
-    final monthEnd =
-        DateTime(snapshot.monthDate.year, snapshot.monthDate.month + 1, 0);
-    final dataRangeLabel =
-        'Data from ${_formatDateHeader(snapshot.monthDate)} - ${_formatDateHeader(monthEnd)}';
     final emptyLabel = showIncome
-        ? 'No categorized income this month.'
-        : 'No categorized expenses this month.';
+        ? usesCustomDateRange
+            ? 'No categorized income for this range.'
+            : 'No categorized income this month.'
+        : usesCustomDateRange
+            ? 'No categorized expenses for this range.'
+            : 'No categorized expenses this month.';
 
     return _AnalyticsHorizontalSwipeBlocker(
       child: Container(
@@ -5456,7 +5561,7 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
             _AnalyticsPrimaryChartHeader(
               chartLabel: 'Bubble Chart',
               headline: '',
-              supportingText: dataRangeLabel,
+              supportingText: periodLabel,
               activeFilterCount: activeFilterCount,
               onOpenFilterSheet: onOpenFilterSheet,
               onChartPickerTap: onChartPickerTap,
@@ -5469,7 +5574,7 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    dataRangeLabel,
+                    periodLabel,
                     style: TextStyle(
                       color: AppColors.textSecondary(context),
                       fontSize: 12,
@@ -6202,6 +6307,8 @@ class _AnalyticsBarChartCard extends StatelessWidget {
 class _AnalyticsPieChartCard extends StatelessWidget {
   final _AnalyticsSnapshot snapshot;
   final bool showIncome;
+  final String periodLabel;
+  final bool usesCustomDateRange;
   final int activeFilterCount;
   final VoidCallback? onOpenFilterSheet;
   final ValueChanged<_AnalyticsHeatmapMode>? onFlowModeChanged;
@@ -6210,6 +6317,8 @@ class _AnalyticsPieChartCard extends StatelessWidget {
   const _AnalyticsPieChartCard({
     required this.snapshot,
     this.showIncome = false,
+    required this.periodLabel,
+    this.usesCustomDateRange = false,
     this.activeFilterCount = 0,
     this.onOpenFilterSheet,
     this.onFlowModeChanged,
@@ -6218,7 +6327,6 @@ class _AnalyticsPieChartCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final monthLabel = DateFormat('MMMM yyyy').format(snapshot.monthDate);
     final categories = snapshot.categories.take(6).toList(growable: false);
     final total =
         categories.fold<double>(0.0, (sum, stat) => sum + stat.amount);
@@ -6238,7 +6346,7 @@ class _AnalyticsPieChartCard extends StatelessWidget {
             _AnalyticsPrimaryChartHeader(
               chartLabel: 'Pie Chart',
               headline: '',
-              supportingText: 'Category share for $monthLabel',
+              supportingText: 'Category share for $periodLabel',
               activeFilterCount: activeFilterCount,
               onOpenFilterSheet: onOpenFilterSheet,
               details: Column(
@@ -6250,7 +6358,7 @@ class _AnalyticsPieChartCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Category share for $monthLabel',
+                    'Category share for $periodLabel',
                     style: TextStyle(
                       color: AppColors.textSecondary(context),
                       fontSize: 12,
@@ -6264,8 +6372,12 @@ class _AnalyticsPieChartCard extends StatelessWidget {
             if (!hasData)
               _AnalyticsChartEmptyState(
                 message: showIncome
-                    ? 'No categorized income data for this month.'
-                    : 'No categorized expense data for this month.',
+                    ? usesCustomDateRange
+                        ? 'No categorized income data for this range.'
+                        : 'No categorized income data for this month.'
+                    : usesCustomDateRange
+                        ? 'No categorized expense data for this range.'
+                        : 'No categorized expense data for this month.',
               )
             else
               SizedBox(
@@ -10493,6 +10605,8 @@ class _AnalyticsChartFilterSheetState
   late _AnalyticsHeatmapMode _selectedMode;
   late int? _selectedBankId;
   late int? _selectedCategoryId;
+  DateTime? _startDate;
+  DateTime? _endDate;
 
   @override
   void initState() {
@@ -10500,6 +10614,8 @@ class _AnalyticsChartFilterSheetState
     _selectedMode = widget.currentFilter.mode;
     _selectedBankId = widget.currentFilter.bankId;
     _selectedCategoryId = widget.currentFilter.categoryId;
+    _startDate = widget.currentFilter.startDate;
+    _endDate = widget.currentFilter.endDate;
   }
 
   void _clearAll() {
@@ -10512,6 +10628,10 @@ class _AnalyticsChartFilterSheetState
       }
       if (widget.chartSection.showsCategoryFilter) {
         _selectedCategoryId = null;
+      }
+      if (widget.chartSection.showsDateRangeFilter) {
+        _startDate = null;
+        _endDate = null;
       }
     });
   }
@@ -10526,14 +10646,68 @@ class _AnalyticsChartFilterSheetState
         categoryId: widget.chartSection.showsCategoryFilter
             ? _selectedCategoryId
             : null,
+        startDate: widget.chartSection.showsDateRangeFilter
+            ? _startDate
+            : widget.currentFilter.startDate,
+        endDate: widget.chartSection.showsDateRangeFilter
+            ? _endDate
+            : widget.currentFilter.endDate,
       ),
     );
+  }
+
+  Future<void> _pickDate({required bool isStart}) async {
+    final initial = (isStart ? _startDate : _endDate) ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      builder: (ctx, child) {
+        final dark = AppColors.isDark(ctx);
+        return Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: dark
+                ? ColorScheme.dark(
+                    primary: AppColors.primaryLight,
+                    onPrimary: AppColors.white,
+                    surface: AppColors.darkCard,
+                    onSurface: AppColors.white,
+                  )
+                : const ColorScheme.light(
+                    primary: AppColors.primaryDark,
+                    onPrimary: AppColors.white,
+                    surface: AppColors.white,
+                    onSurface: AppColors.slate900,
+                  ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        if (isStart) {
+          _startDate = picked;
+        } else {
+          _endDate = picked;
+        }
+      });
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return '${_months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
   @override
   Widget build(BuildContext context) {
     final bottomPadding = MediaQuery.of(context).viewInsets.bottom;
     final navBarPadding = MediaQuery.of(context).padding.bottom;
+    final showsBankSection =
+        widget.chartSection.showsBankFilter && widget.bankIds.isNotEmpty;
+    final showsCategorySection =
+        widget.chartSection.showsCategoryFilter && widget.categories.isNotEmpty;
 
     return Container(
       constraints: BoxConstraints(
@@ -10637,8 +10811,7 @@ class _AnalyticsChartFilterSheetState
                       ],
                     ),
                   ],
-                  if (widget.chartSection.showsBankFilter &&
-                      widget.bankIds.isNotEmpty) ...[
+                  if (showsBankSection) ...[
                     if (widget.chartSection.showsModeFilter)
                       const SizedBox(height: 20),
                     _sectionLabel('BANK'),
@@ -10662,8 +10835,41 @@ class _AnalyticsChartFilterSheetState
                       ],
                     ),
                   ],
-                  if (widget.chartSection.showsCategoryFilter &&
-                      widget.categories.isNotEmpty) ...[
+                  if (widget.chartSection.showsDateRangeFilter) ...[
+                    if (widget.chartSection.showsModeFilter || showsBankSection)
+                      const SizedBox(height: 20),
+                    _sectionLabel('DATE RANGE'),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _DatePickerField(
+                            hint: 'Start date',
+                            value: _startDate != null
+                                ? _formatDate(_startDate!)
+                                : null,
+                            onTap: () => _pickDate(isStart: true),
+                            onClear: _startDate != null
+                                ? () => setState(() => _startDate = null)
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _DatePickerField(
+                            hint: 'End date',
+                            value:
+                                _endDate != null ? _formatDate(_endDate!) : null,
+                            onTap: () => _pickDate(isStart: false),
+                            onClear: _endDate != null
+                                ? () => setState(() => _endDate = null)
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (showsCategorySection) ...[
                     const SizedBox(height: 20),
                     _sectionLabel('CATEGORY'),
                     const SizedBox(height: 8),

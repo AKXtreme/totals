@@ -316,18 +316,18 @@ class _InlineBankSelectorState extends State<InlineBankSelector> {
                                   ),
                                 ),
                               ),
-                              if (_canShowAllBanksToggle)
-                                IconButton(
-                                  onPressed: _toggleAllBanks,
-                                  tooltip: _showAllBanks
-                                      ? 'Hide all banks'
-                                      : 'Browse all banks',
-                                  icon: Icon(
-                                    _showAllBanks
-                                        ? Icons.close_rounded
-                                        : Icons.grid_view_rounded,
-                                  ),
-                                ),
+                              // if (_canShowAllBanksToggle)
+                              //   IconButton(
+                              //     onPressed: _toggleAllBanks,
+                              //     tooltip: _showAllBanks
+                              //         ? 'Hide all banks'
+                              //         : 'Browse all banks',
+                              //     icon: Icon(
+                              //       _showAllBanks
+                              //           ? Icons.close_rounded
+                              //           : Icons.grid_view_rounded,
+                              //     ),
+                              //   ),
                             ],
                           ),
                           const SizedBox(height: 12),
