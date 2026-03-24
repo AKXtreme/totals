@@ -66,6 +66,62 @@ extension on _AnalyticsChartSection {
         return 'Pie Chart';
     }
   }
+
+  String get filterTitle {
+    switch (this) {
+      case _AnalyticsChartSection.heatmap:
+        return 'Filter Heatmap';
+      case _AnalyticsChartSection.expenseBubble:
+        return 'Filter Bubble Chart';
+      case _AnalyticsChartSection.lineChart:
+        return 'Filter Line Chart';
+      case _AnalyticsChartSection.barChart:
+        return 'Filter Bar Chart';
+      case _AnalyticsChartSection.pieChart:
+        return 'Filter Pie Chart';
+    }
+  }
+
+  String get filterSubtitle {
+    switch (this) {
+      case _AnalyticsChartSection.heatmap:
+        return 'Tune flow, bank, and category for the activity grid.';
+      case _AnalyticsChartSection.expenseBubble:
+        return 'Focus the category bubbles on a specific bank.';
+      case _AnalyticsChartSection.lineChart:
+        return 'Focus daily net flow on a specific bank.';
+      case _AnalyticsChartSection.barChart:
+        return 'Focus weekly income and expense totals on a specific bank.';
+      case _AnalyticsChartSection.pieChart:
+        return 'Focus category share on a specific bank.';
+    }
+  }
+
+  _AnalyticsHeatmapMode get defaultFilterMode {
+    switch (this) {
+      case _AnalyticsChartSection.heatmap:
+      case _AnalyticsChartSection.lineChart:
+      case _AnalyticsChartSection.barChart:
+        return _AnalyticsHeatmapMode.all;
+      case _AnalyticsChartSection.expenseBubble:
+      case _AnalyticsChartSection.pieChart:
+        return _AnalyticsHeatmapMode.expense;
+    }
+  }
+
+  bool get showsModeFilter => this == _AnalyticsChartSection.heatmap;
+
+  bool get showsBankFilter => true;
+
+  bool get showsCategoryFilter => this == _AnalyticsChartSection.heatmap;
+
+  int activeFilterCount(_AnalyticsHeatmapFilter filter) {
+    var count = 0;
+    if (showsModeFilter && filter.mode != defaultFilterMode) count++;
+    if (showsBankFilter && filter.bankId != null) count++;
+    if (showsCategoryFilter && filter.categoryId != null) count++;
+    return count;
+  }
 }
 
 final List<bank_model.Bank> _assetBanks = _buildAssetBanks();
@@ -207,6 +263,20 @@ class _AnalyticsHeatmapFilter {
     if (bankId != null) count++;
     if (categoryId != null) count++;
     return count;
+  }
+
+  _AnalyticsHeatmapFilter copyWith({
+    _AnalyticsHeatmapMode? mode,
+    int? bankId,
+    bool clearBankId = false,
+    int? categoryId,
+    bool clearCategoryId = false,
+  }) {
+    return _AnalyticsHeatmapFilter(
+      mode: mode ?? this.mode,
+      bankId: clearBankId ? null : (bankId ?? this.bankId),
+      categoryId: clearCategoryId ? null : (categoryId ?? this.categoryId),
+    );
   }
 }
 
@@ -360,6 +430,16 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   static const int _pageSize = 20;
   _AnalyticsHeatmapFilter _analyticsHeatmapFilter =
       const _AnalyticsHeatmapFilter();
+  _AnalyticsHeatmapFilter _analyticsBubbleFilter =
+      const _AnalyticsHeatmapFilter(
+    mode: _AnalyticsHeatmapMode.expense,
+  );
+  _AnalyticsHeatmapFilter _analyticsLineFilter =
+      const _AnalyticsHeatmapFilter();
+  _AnalyticsHeatmapFilter _analyticsBarFilter = const _AnalyticsHeatmapFilter();
+  _AnalyticsHeatmapFilter _analyticsPieFilter = const _AnalyticsHeatmapFilter(
+    mode: _AnalyticsHeatmapMode.expense,
+  );
   _AnalyticsHeatmapView _analyticsHeatmapView = _AnalyticsHeatmapView.daily;
   DateTime? _analyticsHeatmapFocusMonth;
   _AnalyticsChartSection _analyticsSelectedChartSection =
@@ -452,15 +532,68 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     });
   }
 
-  void _setAnalyticsHeatmapMode(_AnalyticsHeatmapMode mode) {
-    if (_analyticsHeatmapFilter.mode == mode) return;
+  _AnalyticsHeatmapFilter _analyticsFilterForSection(
+    _AnalyticsChartSection section,
+  ) {
+    switch (section) {
+      case _AnalyticsChartSection.heatmap:
+        return _analyticsHeatmapFilter;
+      case _AnalyticsChartSection.expenseBubble:
+        return _analyticsBubbleFilter;
+      case _AnalyticsChartSection.lineChart:
+        return _analyticsLineFilter;
+      case _AnalyticsChartSection.barChart:
+        return _analyticsBarFilter;
+      case _AnalyticsChartSection.pieChart:
+        return _analyticsPieFilter;
+    }
+  }
+
+  void _setAnalyticsFilterForSection(
+    _AnalyticsChartSection section,
+    _AnalyticsHeatmapFilter filter,
+  ) {
     setState(() {
-      _analyticsHeatmapFilter = _AnalyticsHeatmapFilter(
-        mode: mode,
-        bankId: _analyticsHeatmapFilter.bankId,
-        categoryId: _analyticsHeatmapFilter.categoryId,
-      );
+      switch (section) {
+        case _AnalyticsChartSection.heatmap:
+          _analyticsHeatmapFilter = filter;
+          break;
+        case _AnalyticsChartSection.expenseBubble:
+          _analyticsBubbleFilter = filter;
+          break;
+        case _AnalyticsChartSection.lineChart:
+          _analyticsLineFilter = filter;
+          break;
+        case _AnalyticsChartSection.barChart:
+          _analyticsBarFilter = filter;
+          break;
+        case _AnalyticsChartSection.pieChart:
+          _analyticsPieFilter = filter;
+          break;
+      }
     });
+  }
+
+  void _setAnalyticsChartFlowMode(
+    _AnalyticsChartSection section,
+    _AnalyticsHeatmapMode mode,
+  ) {
+    if (mode == _AnalyticsHeatmapMode.all) return;
+    final currentFilter = _analyticsFilterForSection(section);
+    if (currentFilter.mode == mode) return;
+    _setAnalyticsFilterForSection(section, currentFilter.copyWith(mode: mode));
+  }
+
+  List<Transaction> _analyticsTransactionsForFilter(
+    TransactionProvider provider,
+    _AnalyticsHeatmapFilter filter,
+  ) {
+    return provider.allTransactions
+        .where(
+          (transaction) =>
+              _matchesAnalyticsHeatmapFilterValue(transaction, filter),
+        )
+        .toList(growable: false);
   }
 
   Future<void> _openAnalyticsChartSheet() async {
@@ -532,13 +665,17 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     setState(() => _analyticsSelectedChartSection = selectedSection);
   }
 
-  Future<void> _openAnalyticsFilterSheet(TransactionProvider provider) async {
+  Future<void> _openAnalyticsFilterSheet(
+    TransactionProvider provider,
+    _AnalyticsChartSection section,
+  ) async {
     final bankIds = <int>{};
     final categoryIds = <int>{};
     for (final transaction in provider.allTransactions) {
       if (transaction.bankId != null) bankIds.add(transaction.bankId!);
-      if (transaction.categoryId != null)
+      if (transaction.categoryId != null) {
         categoryIds.add(transaction.categoryId!);
+      }
     }
 
     final categories = categoryIds
@@ -551,16 +688,20 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _AnalyticsHeatmapFilterSheet(
-        currentFilter: _analyticsHeatmapFilter,
-        bankIds: bankIds.toList()..sort(),
-        categories: categories,
+      builder: (_) => _AnalyticsChartFilterSheet(
+        chartSection: section,
+        currentFilter: _analyticsFilterForSection(section),
+        bankIds: section.showsBankFilter
+            ? (bankIds.toList()..sort())
+            : const <int>[],
+        categories:
+            section.showsCategoryFilter ? categories : const <Category>[],
       ),
     );
     if (!mounted || selectedFilter == null) {
       return;
     }
-    setState(() => _analyticsHeatmapFilter = selectedFilter);
+    _setAnalyticsFilterForSection(section, selectedFilter);
   }
 
   void _setSubTab(_SubTab nextTab) {
@@ -1025,18 +1166,30 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   }
 
   List<Widget> _buildAnalyticsSlivers(TransactionProvider provider) {
-    final analyticsTransactions = provider.allTransactions
+    final heatmapTransactions = provider.allTransactions
         .where(_matchesAnalyticsHeatmapFilter)
         .toList(growable: false);
-    final filteredSnapshot = _buildAnalyticsSnapshot(
+    final heatmapSnapshot = _buildAnalyticsSnapshot(
       provider,
-      sourceTransactions: analyticsTransactions,
+      sourceTransactions: heatmapTransactions,
       anchorTransactions: provider.allTransactions,
       categoryMode: _analyticsHeatmapFilter.mode,
     );
     final heatmapFocusMonth =
-        _resolveAnalyticsHeatmapFocusMonth(filteredSnapshot.monthDate);
+        _resolveAnalyticsHeatmapFocusMonth(heatmapSnapshot.monthDate);
     final spendingByDaySnapshot = _buildAnalyticsSpendingByDaySnapshot(
+      provider,
+      focusMonth: heatmapFocusMonth,
+      view: _analyticsHeatmapView,
+      filter: _analyticsHeatmapFilter,
+    );
+    final topRecipientsSnapshot = _buildAnalyticsTopRecipientsSnapshot(
+      provider,
+      focusMonth: heatmapFocusMonth,
+      view: _analyticsHeatmapView,
+      filter: _analyticsHeatmapFilter,
+    );
+    final moneyFlowSnapshot = _buildAnalyticsMoneyFlowSnapshot(
       provider,
       focusMonth: heatmapFocusMonth,
       view: _analyticsHeatmapView,
@@ -1050,18 +1203,17 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
             children: [
               _buildPrimaryAnalyticsChart(
                 provider: provider,
-                snapshot: filteredSnapshot,
-                analyticsTransactions: analyticsTransactions,
+                heatmapTransactions: heatmapTransactions,
                 heatmapFocusMonth: heatmapFocusMonth,
               ),
               const SizedBox(height: 14),
               _AnalyticsSpendingByDayCard(snapshot: spendingByDaySnapshot),
               const SizedBox(height: 14),
-              _AnalyticsTopRecipientsCard(snapshot: filteredSnapshot),
+              _AnalyticsTopRecipientsCard(snapshot: topRecipientsSnapshot),
               const SizedBox(height: 14),
-              _AnalyticsMoneyFlowCard(snapshot: filteredSnapshot),
+              _AnalyticsMoneyFlowCard(snapshot: moneyFlowSnapshot),
               const SizedBox(height: 14),
-              _AnalyticsOverviewGrid(snapshot: filteredSnapshot),
+              _AnalyticsOverviewGrid(snapshot: heatmapSnapshot),
             ],
           ),
         ),
@@ -1071,21 +1223,23 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
 
   Widget _buildPrimaryAnalyticsChart({
     required TransactionProvider provider,
-    required _AnalyticsSnapshot snapshot,
-    required List<Transaction> analyticsTransactions,
+    required List<Transaction> heatmapTransactions,
     required DateTime heatmapFocusMonth,
   }) {
-    final activeFilterCount = _analyticsHeatmapFilter.activeCount;
-
     switch (_analyticsSelectedChartSection) {
       case _AnalyticsChartSection.heatmap:
         return _AnalyticsHeatmapCard(
-          transactions: analyticsTransactions,
+          transactions: heatmapTransactions,
           focusMonth: heatmapFocusMonth,
           view: _analyticsHeatmapView,
           mode: _analyticsHeatmapFilter.mode,
-          activeFilterCount: activeFilterCount,
-          onOpenModeSheet: () => _openAnalyticsFilterSheet(provider),
+          activeFilterCount: _AnalyticsChartSection.heatmap.activeFilterCount(
+            _analyticsHeatmapFilter,
+          ),
+          onOpenModeSheet: () => _openAnalyticsFilterSheet(
+            provider,
+            _AnalyticsChartSection.heatmap,
+          ),
           onOpenChartSheet: _openAnalyticsChartSheet,
           onPrevious: () => _shiftAnalyticsHeatmapPeriod(heatmapFocusMonth, -1),
           onNext: () => _shiftAnalyticsHeatmapPeriod(heatmapFocusMonth, 1),
@@ -1094,40 +1248,79 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           onMonthSelected: _selectAnalyticsHeatmapMonth,
         );
       case _AnalyticsChartSection.expenseBubble:
+        final filter = _analyticsBubbleFilter;
+        final snapshot = _buildAnalyticsSnapshot(
+          provider,
+          sourceTransactions: _analyticsTransactionsForFilter(provider, filter),
+          anchorTransactions: provider.allTransactions,
+          categoryMode: filter.mode,
+        );
         return _AnalyticsExpenseBubbleCard(
           snapshot: snapshot,
-          showIncome:
-              _analyticsHeatmapFilter.mode == _AnalyticsHeatmapMode.income,
+          showIncome: filter.mode == _AnalyticsHeatmapMode.income,
+          activeFilterCount:
+              _AnalyticsChartSection.expenseBubble.activeFilterCount(filter),
+          onOpenFilterSheet: () => _openAnalyticsFilterSheet(
+            provider,
+            _AnalyticsChartSection.expenseBubble,
+          ),
           onChartPickerTap: _openAnalyticsChartSheet,
-          onToggleFlow: () => _setAnalyticsHeatmapMode(
-            _analyticsHeatmapFilter.mode == _AnalyticsHeatmapMode.income
-                ? _AnalyticsHeatmapMode.expense
-                : _AnalyticsHeatmapMode.income,
+          onFlowModeChanged: (mode) => _setAnalyticsChartFlowMode(
+            _AnalyticsChartSection.expenseBubble,
+            mode,
           ),
         );
       case _AnalyticsChartSection.lineChart:
+        final filter = _analyticsLineFilter;
+        final snapshot = _buildAnalyticsSnapshot(
+          provider,
+          sourceTransactions: _analyticsTransactionsForFilter(provider, filter),
+          anchorTransactions: provider.allTransactions,
+        );
         return _AnalyticsLineChartCard(
           snapshot: snapshot,
-          activeFilterCount: activeFilterCount,
-          onOpenFilterSheet: () => _openAnalyticsFilterSheet(provider),
+          activeFilterCount: _AnalyticsChartSection.lineChart.activeFilterCount(
+            filter,
+          ),
+          onOpenFilterSheet: () => _openAnalyticsFilterSheet(
+              provider, _AnalyticsChartSection.lineChart),
           onChartPickerTap: _openAnalyticsChartSheet,
         );
       case _AnalyticsChartSection.barChart:
+        final filter = _analyticsBarFilter;
+        final snapshot = _buildAnalyticsSnapshot(
+          provider,
+          sourceTransactions: _analyticsTransactionsForFilter(provider, filter),
+          anchorTransactions: provider.allTransactions,
+        );
         return _AnalyticsBarChartCard(
           snapshot: snapshot,
-          activeFilterCount: activeFilterCount,
-          onOpenFilterSheet: () => _openAnalyticsFilterSheet(provider),
+          activeFilterCount: _AnalyticsChartSection.barChart.activeFilterCount(
+            filter,
+          ),
+          onOpenFilterSheet: () => _openAnalyticsFilterSheet(
+              provider, _AnalyticsChartSection.barChart),
           onChartPickerTap: _openAnalyticsChartSheet,
         );
       case _AnalyticsChartSection.pieChart:
+        final filter = _analyticsPieFilter;
+        final snapshot = _buildAnalyticsSnapshot(
+          provider,
+          sourceTransactions: _analyticsTransactionsForFilter(provider, filter),
+          anchorTransactions: provider.allTransactions,
+          categoryMode: filter.mode,
+        );
         return _AnalyticsPieChartCard(
           snapshot: snapshot,
-          showIncome:
-              _analyticsHeatmapFilter.mode == _AnalyticsHeatmapMode.income,
-          onToggleFlow: () => _setAnalyticsHeatmapMode(
-            _analyticsHeatmapFilter.mode == _AnalyticsHeatmapMode.income
-                ? _AnalyticsHeatmapMode.expense
-                : _AnalyticsHeatmapMode.income,
+          showIncome: filter.mode == _AnalyticsHeatmapMode.income,
+          activeFilterCount: _AnalyticsChartSection.pieChart.activeFilterCount(
+            filter,
+          ),
+          onOpenFilterSheet: () => _openAnalyticsFilterSheet(
+              provider, _AnalyticsChartSection.pieChart),
+          onFlowModeChanged: (mode) => _setAnalyticsChartFlowMode(
+            _AnalyticsChartSection.pieChart,
+            mode,
           ),
           onChartPickerTap: _openAnalyticsChartSheet,
         );
@@ -1359,6 +1552,123 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       view: view,
       weekdayExpenseTotals: weekdayExpenseTotals,
       peakWeekdayIndex: peakWeekdayIndex,
+    );
+  }
+
+  _AnalyticsTopRecipientsSnapshot _buildAnalyticsTopRecipientsSnapshot(
+    TransactionProvider provider, {
+    required DateTime focusMonth,
+    required _AnalyticsHeatmapView view,
+    required _AnalyticsHeatmapFilter filter,
+  }) {
+    final normalizedFocus = _normalizeAnalyticsHeatmapMonth(focusMonth);
+    final periodStart = view == _AnalyticsHeatmapView.daily
+        ? normalizedFocus
+        : DateTime(normalizedFocus.year, 1, 1);
+    final periodEnd = view == _AnalyticsHeatmapView.daily
+        ? DateTime(normalizedFocus.year, normalizedFocus.month + 1, 1)
+        : DateTime(normalizedFocus.year + 1, 1, 1);
+    final recipientTotals = <String, _AnalyticsRecipientAccumulator>{};
+    var recipientExpenseCount = 0;
+
+    for (final transaction in provider.allTransactions) {
+      if (!_matchesAnalyticsHeatmapFilterValue(transaction, filter)) continue;
+      if (transaction.type != 'DEBIT') continue;
+
+      final dt = _parseTransactionTime(transaction.time);
+      if (dt == null || dt.isBefore(periodStart) || !dt.isBefore(periodEnd)) {
+        continue;
+      }
+
+      final isSelfTransfer = provider.isSelfTransfer(transaction);
+      final category = transaction.categoryId == null
+          ? null
+          : provider.getCategoryById(transaction.categoryId!);
+      final isMisc = category?.uncategorized == true;
+      if (isSelfTransfer || isMisc) continue;
+
+      recipientExpenseCount += 1;
+      final recipient = _transactionCounterparty(transaction);
+      final existing = recipientTotals.putIfAbsent(
+        recipient,
+        () => _AnalyticsRecipientAccumulator(),
+      );
+      existing.amount += transaction.amount;
+      existing.count += 1;
+    }
+
+    final recipientEntries = recipientTotals.entries.toList()
+      ..sort((a, b) => b.value.amount.compareTo(a.value.amount));
+    final topRecipients = recipientEntries
+        .take(5)
+        .map(
+          (entry) => _AnalyticsRecipientStat(
+            name: entry.key,
+            amount: entry.value.amount,
+            count: entry.value.count,
+          ),
+        )
+        .toList(growable: false);
+
+    return _AnalyticsTopRecipientsSnapshot(
+      periodDate: normalizedFocus,
+      view: view,
+      recipientExpenseCount: recipientExpenseCount,
+      topRecipients: topRecipients,
+    );
+  }
+
+  _AnalyticsMoneyFlowSnapshot _buildAnalyticsMoneyFlowSnapshot(
+    TransactionProvider provider, {
+    required DateTime focusMonth,
+    required _AnalyticsHeatmapView view,
+    required _AnalyticsHeatmapFilter filter,
+  }) {
+    final normalizedFocus = _normalizeAnalyticsHeatmapMonth(focusMonth);
+    final periodStart = view == _AnalyticsHeatmapView.daily
+        ? normalizedFocus
+        : DateTime(normalizedFocus.year, 1, 1);
+    final periodEnd = view == _AnalyticsHeatmapView.daily
+        ? DateTime(normalizedFocus.year, normalizedFocus.month + 1, 1)
+        : DateTime(normalizedFocus.year + 1, 1, 1);
+
+    var totalTransactions = 0;
+    var totalIncome = 0.0;
+    var totalExpense = 0.0;
+    var largestExpense = 0.0;
+    var largestDeposit = 0.0;
+
+    for (final transaction in provider.allTransactions) {
+      if (!_matchesAnalyticsHeatmapFilterValue(transaction, filter)) continue;
+
+      final dt = _parseTransactionTime(transaction.time);
+      if (dt == null || dt.isBefore(periodStart) || !dt.isBefore(periodEnd)) {
+        continue;
+      }
+
+      totalTransactions += 1;
+      if (transaction.type == 'CREDIT') {
+        totalIncome += transaction.amount;
+        largestDeposit = math.max(largestDeposit, transaction.amount);
+      } else if (transaction.type == 'DEBIT') {
+        totalExpense += transaction.amount;
+        largestExpense = math.max(largestExpense, transaction.amount);
+      }
+    }
+
+    final netCashFlow = totalIncome - totalExpense;
+    final savingsRate = totalIncome > 0
+        ? ((netCashFlow / totalIncome) * 100).clamp(-999.0, 999.0).toDouble()
+        : 0.0;
+
+    return _AnalyticsMoneyFlowSnapshot(
+      periodDate: normalizedFocus,
+      view: view,
+      totalTransactions: totalTransactions,
+      netCashFlow: netCashFlow,
+      savingsRate: savingsRate,
+      largestExpense: largestExpense,
+      largestDeposit: largestDeposit,
     );
   }
 
@@ -3270,6 +3580,40 @@ class _AnalyticsSpendingByDaySnapshot {
   });
 }
 
+class _AnalyticsTopRecipientsSnapshot {
+  final DateTime periodDate;
+  final _AnalyticsHeatmapView view;
+  final int recipientExpenseCount;
+  final List<_AnalyticsRecipientStat> topRecipients;
+
+  const _AnalyticsTopRecipientsSnapshot({
+    required this.periodDate,
+    required this.view,
+    required this.recipientExpenseCount,
+    required this.topRecipients,
+  });
+}
+
+class _AnalyticsMoneyFlowSnapshot {
+  final DateTime periodDate;
+  final _AnalyticsHeatmapView view;
+  final int totalTransactions;
+  final double netCashFlow;
+  final double savingsRate;
+  final double largestExpense;
+  final double largestDeposit;
+
+  const _AnalyticsMoneyFlowSnapshot({
+    required this.periodDate,
+    required this.view,
+    required this.totalTransactions,
+    required this.netCashFlow,
+    required this.savingsRate,
+    required this.largestExpense,
+    required this.largestDeposit,
+  });
+}
+
 class _AnalyticsCategoryStat {
   final String label;
   final double amount;
@@ -4813,14 +5157,55 @@ class _AnalyticsPrimaryChartHeader extends StatelessWidget {
   }
 }
 
-class _AnalyticsFlowModeLabel extends StatelessWidget {
+class _AnalyticsFlowModeToggle extends StatelessWidget {
+  final bool showIncome;
+  final ValueChanged<_AnalyticsHeatmapMode> onChanged;
+
+  const _AnalyticsFlowModeToggle({
+    required this.showIncome,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.mutedFill(context).withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _AnalyticsFlowModeToggleOption(
+            label: 'Expense',
+            color: AppColors.red,
+            selected: !showIncome,
+            onTap: () => onChanged(_AnalyticsHeatmapMode.expense),
+          ),
+          const SizedBox(width: 4),
+          _AnalyticsFlowModeToggleOption(
+            label: 'Income',
+            color: AppColors.incomeSuccess,
+            selected: showIncome,
+            onTap: () => onChanged(_AnalyticsHeatmapMode.income),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalyticsFlowModeToggleOption extends StatelessWidget {
   final String label;
   final Color color;
+  final bool selected;
   final VoidCallback onTap;
 
-  const _AnalyticsFlowModeLabel({
+  const _AnalyticsFlowModeToggleOption({
     required this.label,
     required this.color,
+    required this.selected,
     required this.onTap,
   });
 
@@ -4829,14 +5214,28 @@ class _AnalyticsFlowModeLabel extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedDefaultTextStyle(
-        duration: const Duration(milliseconds: 160),
-        style: TextStyle(
-          color: color,
-          fontSize: 20,
-          fontWeight: FontWeight.w800,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.14) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color:
+                selected ? color.withValues(alpha: 0.34) : Colors.transparent,
+          ),
         ),
-        child: Text(label),
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          style: TextStyle(
+            color: selected ? color : AppColors.textSecondary(context),
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+          ),
+          child: Text(label),
+        ),
       ),
     );
   }
@@ -5013,14 +5412,18 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
 
   final _AnalyticsSnapshot snapshot;
   final bool showIncome;
+  final int activeFilterCount;
+  final VoidCallback? onOpenFilterSheet;
   final VoidCallback? onChartPickerTap;
-  final VoidCallback? onToggleFlow;
+  final ValueChanged<_AnalyticsHeatmapMode>? onFlowModeChanged;
 
   const _AnalyticsExpenseBubbleCard({
     required this.snapshot,
     this.showIncome = false,
+    this.activeFilterCount = 0,
+    this.onOpenFilterSheet,
     this.onChartPickerTap,
-    this.onToggleFlow,
+    this.onFlowModeChanged,
   });
 
   @override
@@ -5054,14 +5457,15 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
               chartLabel: 'Bubble Chart',
               headline: '',
               supportingText: dataRangeLabel,
+              activeFilterCount: activeFilterCount,
+              onOpenFilterSheet: onOpenFilterSheet,
               onChartPickerTap: onChartPickerTap,
               details: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _AnalyticsFlowModeLabel(
-                    label: showIncome ? 'Income' : 'Expense',
-                    color: showIncome ? AppColors.incomeSuccess : AppColors.red,
-                    onTap: onToggleFlow ?? () {},
+                  _AnalyticsFlowModeToggle(
+                    showIncome: showIncome,
+                    onChanged: onFlowModeChanged ?? (_) {},
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -5798,13 +6202,17 @@ class _AnalyticsBarChartCard extends StatelessWidget {
 class _AnalyticsPieChartCard extends StatelessWidget {
   final _AnalyticsSnapshot snapshot;
   final bool showIncome;
-  final VoidCallback? onToggleFlow;
+  final int activeFilterCount;
+  final VoidCallback? onOpenFilterSheet;
+  final ValueChanged<_AnalyticsHeatmapMode>? onFlowModeChanged;
   final VoidCallback? onChartPickerTap;
 
   const _AnalyticsPieChartCard({
     required this.snapshot,
     this.showIncome = false,
-    this.onToggleFlow,
+    this.activeFilterCount = 0,
+    this.onOpenFilterSheet,
+    this.onFlowModeChanged,
     this.onChartPickerTap,
   });
 
@@ -5831,13 +6239,14 @@ class _AnalyticsPieChartCard extends StatelessWidget {
               chartLabel: 'Pie Chart',
               headline: '',
               supportingText: 'Category share for $monthLabel',
+              activeFilterCount: activeFilterCount,
+              onOpenFilterSheet: onOpenFilterSheet,
               details: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _AnalyticsFlowModeLabel(
-                    label: showIncome ? 'Income' : 'Expense',
-                    color: showIncome ? AppColors.incomeSuccess : AppColors.red,
-                    onTap: onToggleFlow ?? () {},
+                  _AnalyticsFlowModeToggle(
+                    showIncome: showIncome,
+                    onChanged: onFlowModeChanged ?? (_) {},
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -6194,7 +6603,7 @@ class _AnalyticsSpendingByDayCard extends StatelessWidget {
 }
 
 class _AnalyticsTopRecipientsCard extends StatelessWidget {
-  final _AnalyticsSnapshot snapshot;
+  final _AnalyticsTopRecipientsSnapshot snapshot;
 
   const _AnalyticsTopRecipientsCard({
     required this.snapshot,
@@ -6205,6 +6614,48 @@ class _AnalyticsTopRecipientsCard extends StatelessWidget {
     final maxAmount = snapshot.topRecipients.isEmpty
         ? 0.0
         : snapshot.topRecipients.first.amount;
+    final periodLabel = _formatAnalyticsSpendingPeriodLabel(
+      snapshot.view,
+      snapshot.periodDate,
+    );
+    final periodKey =
+        '${snapshot.view.name}-${snapshot.periodDate.year}-${snapshot.periodDate.month}';
+    final infoText = snapshot.topRecipients.isEmpty
+        ? 'No expense recipients in $periodLabel.'
+        : '${snapshot.recipientExpenseCount} total';
+    final titleStyle = TextStyle(
+      color: AppColors.textPrimary(context),
+      fontSize: 20,
+      fontWeight: FontWeight.w800,
+      height: 1.05,
+    );
+
+    Widget buildAnimatedInlineTransition(Widget child) {
+      return AnimatedSwitcher(
+        duration: const Duration(milliseconds: 260),
+        reverseDuration: const Duration(milliseconds: 200),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.08, 0),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+        child: child,
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
@@ -6218,140 +6669,210 @@ class _AnalyticsTopRecipientsCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(
-                'Top Recipients',
-                style: TextStyle(
-                  color: AppColors.textPrimary(context),
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '${snapshot.recipientExpenseCount} total',
-                style: TextStyle(
-                  color: AppColors.textTertiary(context),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      'Top Recipients',
+                      style: titleStyle,
+                    ),
+                    buildAnimatedInlineTransition(
+                      Container(
+                        key: ValueKey<String>('recipients-period-$periodKey'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.mutedFill(context).withValues(
+                            alpha: AppColors.isDark(context) ? 0.38 : 0.7,
+                          ),
+                          borderRadius: BorderRadius.circular(99),
+                          border: Border.all(
+                            color: AppColors.borderColor(context),
+                          ),
+                        ),
+                        child: Text(
+                          periodLabel,
+                          style: TextStyle(
+                            color: AppColors.textSecondary(context),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          if (snapshot.topRecipients.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Center(
-                child: Text(
-                  'No expense recipients yet.',
-                  style: TextStyle(
-                    color: AppColors.textSecondary(context),
-                    fontSize: 13,
-                  ),
-                ),
+          buildAnimatedInlineTransition(
+            Text(
+              infoText,
+              key: ValueKey<String>('recipients-summary-$periodKey-$infoText'),
+              style: TextStyle(
+                color: AppColors.textTertiary(context),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
-            )
-          else
-            ...snapshot.topRecipients.asMap().entries.map((entry) {
-              final index = entry.key;
-              final stat = entry.value;
-              final ratio = maxAmount > 0
-                  ? (stat.amount / maxAmount).clamp(0.0, 1.0)
-                  : 0.0;
-              return Padding(
-                padding: EdgeInsets.only(
-                  top: index == 0 ? 4 : 12,
-                  bottom: index + 1 == snapshot.topRecipients.length ? 0 : 2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 280),
+            reverseDuration: const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              final curved = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+                reverseCurve: Curves.easeInCubic,
+              );
+              return FadeTransition(
+                opacity: curved,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.08),
+                    end: Offset.zero,
+                  ).animate(curved),
+                  child: child,
                 ),
-                child: Column(
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: 22,
-                          child: Text(
-                            '${index + 1}',
-                            style: TextStyle(
-                              color: AppColors.textTertiary(context),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+              );
+            },
+            child: snapshot.topRecipients.isEmpty
+                ? Padding(
+                    key: ValueKey<String>('recipients-empty-$periodKey'),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Center(
+                      child: Text(
+                        'No expense recipients in $periodLabel.',
+                        style: TextStyle(
+                          color: AppColors.textSecondary(context),
+                          fontSize: 13,
                         ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                stat.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: AppColors.textPrimary(context),
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Container(
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: AppColors.mutedFill(context),
-                                  borderRadius: BorderRadius.circular(99),
-                                ),
-                                child: FractionallySizedBox(
-                                  alignment: Alignment.centerLeft,
-                                  widthFactor: ratio,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF6D7EE8),
-                                      borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  )
+                : Column(
+                    key: ValueKey<String>('recipients-list-$periodKey'),
+                    children:
+                        snapshot.topRecipients.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final stat = entry.value;
+                      final ratio = maxAmount > 0
+                          ? (stat.amount / maxAmount).clamp(0.0, 1.0)
+                          : 0.0;
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          top: index == 0 ? 4 : 12,
+                          bottom: index + 1 == snapshot.topRecipients.length
+                              ? 0
+                              : 2,
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(
+                                  width: 22,
+                                  child: Text(
+                                    '${index + 1}',
+                                    style: TextStyle(
+                                      color: AppColors.textTertiary(context),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              '-ETB ${_formatEtbAbbrev(stat.amount)}',
-                              style: const TextStyle(
-                                color: AppColors.red,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                              ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        stat.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: AppColors.textPrimary(context),
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Container(
+                                        height: 6,
+                                        decoration: BoxDecoration(
+                                          color: AppColors.mutedFill(context),
+                                          borderRadius:
+                                              BorderRadius.circular(99),
+                                        ),
+                                        child: AnimatedFractionallySizedBox(
+                                          duration: Duration(
+                                            milliseconds: 260 + (index * 28),
+                                          ),
+                                          curve: Curves.easeOutCubic,
+                                          alignment: Alignment.centerLeft,
+                                          widthFactor: ratio,
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF6D7EE8),
+                                              borderRadius:
+                                                  BorderRadius.circular(99),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '-ETB ${_formatEtbAbbrev(stat.amount)}',
+                                      style: const TextStyle(
+                                        color: AppColors.red,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${stat.count} tx',
+                                      style: TextStyle(
+                                        color: AppColors.textTertiary(context),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${stat.count} tx',
-                              style: TextStyle(
-                                color: AppColors.textTertiary(context),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
+                            if (index + 1 != snapshot.topRecipients.length)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Divider(
+                                  height: 1,
+                                  color: AppColors.borderColor(context),
+                                ),
                               ),
-                            ),
                           ],
                         ),
-                      ],
-                    ),
-                    if (index + 1 != snapshot.topRecipients.length)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Divider(
-                          height: 1,
-                          color: AppColors.borderColor(context),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            }),
+                      );
+                    }).toList(growable: false),
+                  ),
+          ),
         ],
       ),
     );
@@ -6359,7 +6880,7 @@ class _AnalyticsTopRecipientsCard extends StatelessWidget {
 }
 
 class _AnalyticsMoneyFlowCard extends StatelessWidget {
-  final _AnalyticsSnapshot snapshot;
+  final _AnalyticsMoneyFlowSnapshot snapshot;
 
   const _AnalyticsMoneyFlowCard({
     required this.snapshot,
@@ -6369,6 +6890,48 @@ class _AnalyticsMoneyFlowCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final flowColor =
         snapshot.netCashFlow >= 0 ? AppColors.incomeSuccess : AppColors.red;
+    final periodLabel = _formatAnalyticsSpendingPeriodLabel(
+      snapshot.view,
+      snapshot.periodDate,
+    );
+    final periodKey =
+        '${snapshot.view.name}-${snapshot.periodDate.year}-${snapshot.periodDate.month}';
+    final infoText = snapshot.totalTransactions == 0
+        ? 'No transactions in $periodLabel.'
+        : '${snapshot.totalTransactions} total';
+    final titleStyle = TextStyle(
+      color: AppColors.textPrimary(context),
+      fontSize: 20,
+      fontWeight: FontWeight.w800,
+      height: 1.05,
+    );
+
+    Widget buildAnimatedInlineTransition(Widget child) {
+      return AnimatedSwitcher(
+        duration: const Duration(milliseconds: 260),
+        reverseDuration: const Duration(milliseconds: 200),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.08, 0),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+        child: child,
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
@@ -6380,36 +6943,111 @@ class _AnalyticsMoneyFlowCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Money Flow',
-            style: TextStyle(
-              color: AppColors.textPrimary(context),
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
+          Row(
+            children: [
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      'Money Flow',
+                      style: titleStyle,
+                    ),
+                    buildAnimatedInlineTransition(
+                      Container(
+                        key: ValueKey<String>('money-flow-period-$periodKey'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.mutedFill(context).withValues(
+                            alpha: AppColors.isDark(context) ? 0.38 : 0.7,
+                          ),
+                          borderRadius: BorderRadius.circular(99),
+                          border: Border.all(
+                            color: AppColors.borderColor(context),
+                          ),
+                        ),
+                        child: Text(
+                          periodLabel,
+                          style: TextStyle(
+                            color: AppColors.textSecondary(context),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          buildAnimatedInlineTransition(
+            Text(
+              infoText,
+              key: ValueKey<String>('money-flow-summary-$periodKey-$infoText'),
+              style: TextStyle(
+                color: AppColors.textTertiary(context),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           const SizedBox(height: 10),
-          _MoneyFlowRow(
-            label: 'Net Cash Flow',
-            value:
-                '${snapshot.netCashFlow >= 0 ? '+' : '-'}ETB ${_formatEtbAbbrev(snapshot.netCashFlow.abs())}',
-            valueColor: flowColor,
-          ),
-          _MoneyFlowRow(
-            label: 'Savings Rate',
-            value: '${snapshot.savingsRate.toStringAsFixed(1)}%',
-          ),
-          _MoneyFlowRow(
-            label: 'Largest Expense',
-            value: 'ETB ${_formatEtbAbbrev(snapshot.largestExpense)}',
-          ),
-          _MoneyFlowRow(
-            label: 'Largest Deposit',
-            value: 'ETB ${_formatEtbAbbrev(snapshot.largestDeposit)}',
-          ),
-          _MoneyFlowRow(
-            label: 'Total Transactions',
-            value: _formatCount(snapshot.totalTransactions),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 280),
+            reverseDuration: const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              final curved = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+                reverseCurve: Curves.easeInCubic,
+              );
+              return FadeTransition(
+                opacity: curved,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.08),
+                    end: Offset.zero,
+                  ).animate(curved),
+                  child: child,
+                ),
+              );
+            },
+            child: Column(
+              key: ValueKey<String>('money-flow-body-$periodKey'),
+              children: [
+                _MoneyFlowRow(
+                  label: 'Net Cash Flow',
+                  value:
+                      '${snapshot.netCashFlow >= 0 ? '+' : '-'}ETB ${_formatEtbAbbrev(snapshot.netCashFlow.abs())}',
+                  valueColor: flowColor,
+                ),
+                _MoneyFlowRow(
+                  label: 'Savings Rate',
+                  value: '${snapshot.savingsRate.toStringAsFixed(1)}%',
+                ),
+                _MoneyFlowRow(
+                  label: 'Largest Expense',
+                  value: 'ETB ${_formatEtbAbbrev(snapshot.largestExpense)}',
+                ),
+                _MoneyFlowRow(
+                  label: 'Largest Deposit',
+                  value: 'ETB ${_formatEtbAbbrev(snapshot.largestDeposit)}',
+                ),
+                _MoneyFlowRow(
+                  label: 'Total Transactions',
+                  value: _formatCount(snapshot.totalTransactions),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -9832,24 +10470,26 @@ class _LedgerFilterSheetState extends State<_LedgerFilterSheet> {
   }
 }
 
-class _AnalyticsHeatmapFilterSheet extends StatefulWidget {
+class _AnalyticsChartFilterSheet extends StatefulWidget {
+  final _AnalyticsChartSection chartSection;
   final _AnalyticsHeatmapFilter currentFilter;
   final List<int> bankIds;
   final List<Category> categories;
 
-  const _AnalyticsHeatmapFilterSheet({
+  const _AnalyticsChartFilterSheet({
+    required this.chartSection,
     required this.currentFilter,
     required this.bankIds,
     required this.categories,
   });
 
   @override
-  State<_AnalyticsHeatmapFilterSheet> createState() =>
-      _AnalyticsHeatmapFilterSheetState();
+  State<_AnalyticsChartFilterSheet> createState() =>
+      _AnalyticsChartFilterSheetState();
 }
 
-class _AnalyticsHeatmapFilterSheetState
-    extends State<_AnalyticsHeatmapFilterSheet> {
+class _AnalyticsChartFilterSheetState
+    extends State<_AnalyticsChartFilterSheet> {
   late _AnalyticsHeatmapMode _selectedMode;
   late int? _selectedBankId;
   late int? _selectedCategoryId;
@@ -9864,18 +10504,28 @@ class _AnalyticsHeatmapFilterSheetState
 
   void _clearAll() {
     setState(() {
-      _selectedMode = _AnalyticsHeatmapMode.all;
-      _selectedBankId = null;
-      _selectedCategoryId = null;
+      if (widget.chartSection.showsModeFilter) {
+        _selectedMode = widget.chartSection.defaultFilterMode;
+      }
+      if (widget.chartSection.showsBankFilter) {
+        _selectedBankId = null;
+      }
+      if (widget.chartSection.showsCategoryFilter) {
+        _selectedCategoryId = null;
+      }
     });
   }
 
   void _apply() {
     Navigator.of(context).pop(
       _AnalyticsHeatmapFilter(
-        mode: _selectedMode,
-        bankId: _selectedBankId,
-        categoryId: _selectedCategoryId,
+        mode: widget.chartSection.showsModeFilter
+            ? _selectedMode
+            : widget.currentFilter.mode,
+        bankId: widget.chartSection.showsBankFilter ? _selectedBankId : null,
+        categoryId: widget.chartSection.showsCategoryFilter
+            ? _selectedCategoryId
+            : null,
       ),
     );
   }
@@ -9910,13 +10560,26 @@ class _AnalyticsHeatmapFilterSheetState
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    'Filter Heatmap',
-                    style: TextStyle(
-                      color: AppColors.textPrimary(context),
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.chartSection.filterTitle,
+                        style: TextStyle(
+                          color: AppColors.textPrimary(context),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.chartSection.filterSubtitle,
+                        style: TextStyle(
+                          color: AppColors.textSecondary(context),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 IconButton(
@@ -9941,38 +10604,43 @@ class _AnalyticsHeatmapFilterSheetState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _sectionLabel('TYPE'),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _FilterChip(
-                        label: 'All',
-                        selected: _selectedMode == _AnalyticsHeatmapMode.all,
-                        onTap: () => setState(
-                          () => _selectedMode = _AnalyticsHeatmapMode.all,
+                  if (widget.chartSection.showsModeFilter) ...[
+                    _sectionLabel('TYPE'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _FilterChip(
+                          label: 'All',
+                          selected: _selectedMode == _AnalyticsHeatmapMode.all,
+                          onTap: () => setState(
+                            () => _selectedMode = _AnalyticsHeatmapMode.all,
+                          ),
                         ),
-                      ),
-                      _FilterChip(
-                        label: 'Expense',
-                        selected:
-                            _selectedMode == _AnalyticsHeatmapMode.expense,
-                        onTap: () => setState(
-                          () => _selectedMode = _AnalyticsHeatmapMode.expense,
+                        _FilterChip(
+                          label: 'Expense',
+                          selected:
+                              _selectedMode == _AnalyticsHeatmapMode.expense,
+                          onTap: () => setState(
+                            () => _selectedMode = _AnalyticsHeatmapMode.expense,
+                          ),
                         ),
-                      ),
-                      _FilterChip(
-                        label: 'Income',
-                        selected: _selectedMode == _AnalyticsHeatmapMode.income,
-                        onTap: () => setState(
-                          () => _selectedMode = _AnalyticsHeatmapMode.income,
+                        _FilterChip(
+                          label: 'Income',
+                          selected:
+                              _selectedMode == _AnalyticsHeatmapMode.income,
+                          onTap: () => setState(
+                            () => _selectedMode = _AnalyticsHeatmapMode.income,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  if (widget.bankIds.isNotEmpty) ...[
-                    const SizedBox(height: 20),
+                      ],
+                    ),
+                  ],
+                  if (widget.chartSection.showsBankFilter &&
+                      widget.bankIds.isNotEmpty) ...[
+                    if (widget.chartSection.showsModeFilter)
+                      const SizedBox(height: 20),
                     _sectionLabel('BANK'),
                     const SizedBox(height: 8),
                     Wrap(
@@ -9994,7 +10662,8 @@ class _AnalyticsHeatmapFilterSheetState
                       ],
                     ),
                   ],
-                  if (widget.categories.isNotEmpty) ...[
+                  if (widget.chartSection.showsCategoryFilter &&
+                      widget.categories.isNotEmpty) ...[
                     const SizedBox(height: 20),
                     _sectionLabel('CATEGORY'),
                     const SizedBox(height: 8),

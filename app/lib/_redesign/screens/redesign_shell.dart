@@ -860,7 +860,7 @@ class _QuickAccessAccountsSheetState extends State<_QuickAccessAccountsSheet>
     final theme = Theme.of(context);
     final isQuickTab = _tabController.index == 0;
     final maxAvailableHeight =
-        (media.size.height - media.viewInsets.bottom - 12)
+        (media.size.height - media.viewInsets.bottom)
             .clamp(240.0, media.size.height)
             .toDouble();
     final sheetHeight =
@@ -874,7 +874,7 @@ class _QuickAccessAccountsSheetState extends State<_QuickAccessAccountsSheet>
         child: AnimatedPadding(
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOutCubic,
-          padding: EdgeInsets.fromLTRB(12, 0, 12, 12 + media.viewInsets.bottom),
+          padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
           child: Container(
             height: sheetHeight,
             decoration: BoxDecoration(
