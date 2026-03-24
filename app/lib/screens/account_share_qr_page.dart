@@ -1,11 +1,9 @@
 import 'dart:io';
-import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:totals/constants/cash_constants.dart';
@@ -14,6 +12,7 @@ import 'package:totals/models/account.dart';
 import 'package:totals/models/bank.dart';
 import 'package:totals/repositories/account_repository.dart';
 import 'package:totals/utils/account_share_payload.dart';
+import 'package:totals/widgets/account_share_qr_code.dart';
 
 class AccountShareQrPage extends StatefulWidget {
   const AccountShareQrPage({super.key});
@@ -27,17 +26,6 @@ class _AccountShareQrPageState extends State<AccountShareQrPage> {
   final TextEditingController _displayNameController = TextEditingController();
   final GlobalKey _qrKey = GlobalKey();
   static const String _sharedNameKey = 'account_share_display_name';
-  static const List<Color> _qrPalette = [
-    Color(0xFF0D47A1),
-    Color(0xFF1565C0),
-    Color(0xFF1976D2),
-    Color(0xFF1E88E5),
-    Color(0xFF2196F3),
-    Color(0xFF42A5F5),
-    Color(0xFF64B5F6),
-  ];
-  late final int _qrSeed;
-  late final PrettyQrShape _qrShape;
 
   List<Account> _accounts = [];
   List<Bank> _banks = [];
@@ -47,9 +35,6 @@ class _AccountShareQrPageState extends State<AccountShareQrPage> {
   @override
   void initState() {
     super.initState();
-    final random = Random();
-    _qrSeed = random.nextInt(0x7fffffff);
-    _qrShape = _buildRandomQrShape(random);
     _loadInitialState();
   }
 
@@ -190,9 +175,7 @@ class _AccountShareQrPageState extends State<AccountShareQrPage> {
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted) return;
 
-      final qrContext = _qrKey.currentContext;
-      if (qrContext == null) return;
-      final renderObject = qrContext.findRenderObject();
+      final renderObject = _qrKey.currentContext?.findRenderObject();
       if (renderObject is! RenderRepaintBoundary) return;
 
       final RenderRepaintBoundary boundary = renderObject;
@@ -216,46 +199,6 @@ class _AccountShareQrPageState extends State<AccountShareQrPage> {
           behavior: SnackBarBehavior.floating,
         ),
       );
-    }
-  }
-
-  PrettyQrShape _buildRandomQrShape(Random random) {
-    return PrettyQrShape.custom(
-      _TotalsRandomColorSymbol(
-        palette: _qrPalette,
-        seed: _qrSeed,
-        rounding: 0.2 + random.nextDouble() * 0.6,
-        density: 0.85 + random.nextDouble() * 0.15,
-      ),
-      finderPattern: _randomAccentShape(random),
-      timingPatterns: _randomAccentShape(random),
-      alignmentPatterns: _randomAccentShape(random),
-    );
-  }
-
-  PrettyQrShape _randomAccentShape(Random random) {
-    final pick = random.nextInt(3);
-    final color = _qrPalette[random.nextInt(_qrPalette.length)];
-    switch (pick) {
-      case 0:
-        return PrettyQrSmoothSymbol(
-          color: color,
-          roundFactor: 0.65 + random.nextDouble() * 0.35,
-        );
-      case 1:
-        return PrettyQrSquaresSymbol(
-          color: color,
-          density: 0.85 + random.nextDouble() * 0.15,
-          rounding: 0.2 + random.nextDouble() * 0.7,
-          unifiedFinderPattern: false,
-        );
-      default:
-        return PrettyQrDotsSymbol(
-          color: color,
-          density: 0.85 + random.nextDouble() * 0.15,
-          unifiedFinderPattern: false,
-          unifiedAlignmentPatterns: false,
-        );
     }
   }
 
@@ -328,7 +271,6 @@ class _AccountShareQrPageState extends State<AccountShareQrPage> {
                         sharedName: _displayNameController.text.trim(),
                         displayNameController: _displayNameController,
                         colorScheme: colorScheme,
-                        qrShape: _qrShape,
                         onDisplayNameChanged: _handleDisplayNameChanged,
                         onShare: _shareQrCode,
                       ),
@@ -368,96 +310,6 @@ class _AccountShareQrPageState extends State<AccountShareQrPage> {
       ),
     );
   }
-
-}
-
-class _TotalsRandomColorSymbol extends PrettyQrShape {
-  final List<Color> palette;
-  final int seed;
-  final double rounding;
-  final double density;
-
-  const _TotalsRandomColorSymbol({
-    required this.palette,
-    required this.seed,
-    this.rounding = 0.35,
-    this.density = 1.0,
-  })  : assert(palette.length > 1),
-        assert(rounding >= 0.0 && rounding <= 1.0),
-        assert(density >= 0.0 && density <= 1.0);
-
-  @override
-  void paint(PrettyQrPaintingContext context) {
-    final matrix = context.matrix;
-    final canvasBounds = context.estimatedBounds;
-    final moduleDimension = canvasBounds.longestSide / matrix.version.dimension;
-
-    final radius = moduleDimension / 2;
-    final effectiveRadius = (radius * rounding).clamp(0.0, radius).toDouble();
-    final effectiveDensity =
-        radius - (radius * density).clamp(1.0, radius).toDouble();
-
-    for (final module in matrix) {
-      if (!module.isDark) continue;
-      final moduleRect = module.resolveRect(context);
-      final moduleRRect = RRect.fromRectAndRadius(
-        moduleRect,
-        Radius.circular(effectiveRadius),
-      ).deflate(effectiveDensity);
-      final paint = Paint()
-        ..color = _colorForModule(module)
-        ..isAntiAlias = true
-        ..style = PaintingStyle.fill;
-
-      context.canvas.drawRRect(moduleRRect, paint);
-    }
-  }
-
-  Color _colorForModule(PrettyQrModule module) {
-    final hash = module.x * 73856093 ^ module.y * 19349663 ^ seed;
-    final index = (hash & 0x7fffffff) % palette.length;
-    return palette[index];
-  }
-
-  @override
-  _TotalsRandomColorSymbol? lerpFrom(PrettyQrShape? a, double t) {
-    if (identical(a, this)) {
-      return this;
-    }
-
-    if (a == null) return this;
-    if (a is! _TotalsRandomColorSymbol) return null;
-
-    if (t == 0.0) return a;
-    if (t == 1.0) return this;
-
-    return _TotalsRandomColorSymbol(
-      palette: palette,
-      seed: seed,
-      rounding: ui.lerpDouble(a.rounding, rounding, t)!,
-      density: ui.lerpDouble(a.density, density, t)!,
-    );
-  }
-
-  @override
-  _TotalsRandomColorSymbol? lerpTo(PrettyQrShape? b, double t) {
-    if (identical(this, b)) {
-      return this;
-    }
-
-    if (b == null) return this;
-    if (b is! _TotalsRandomColorSymbol) return null;
-
-    if (t == 0.0) return this;
-    if (t == 1.0) return b;
-
-    return _TotalsRandomColorSymbol(
-      palette: palette,
-      seed: seed,
-      rounding: ui.lerpDouble(rounding, b.rounding, t)!,
-      density: ui.lerpDouble(density, b.density, t)!,
-    );
-  }
 }
 
 class _QrPreviewCard extends StatelessWidget {
@@ -466,7 +318,6 @@ class _QrPreviewCard extends StatelessWidget {
   final String? sharedName;
   final TextEditingController displayNameController;
   final ColorScheme colorScheme;
-  final PrettyQrShape qrShape;
   final ValueChanged<String> onDisplayNameChanged;
   final VoidCallback onShare;
 
@@ -476,7 +327,6 @@ class _QrPreviewCard extends StatelessWidget {
     required this.sharedName,
     required this.displayNameController,
     required this.colorScheme,
-    required this.qrShape,
     required this.onDisplayNameChanged,
     required this.onShare,
   });
@@ -489,10 +339,10 @@ class _QrPreviewCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceVariant.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(20),
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: colorScheme.outline.withOpacity(0.2),
+          color: colorScheme.outline.withValues(alpha: 0.2),
         ),
       ),
       child: Column(
@@ -526,43 +376,12 @@ class _QrPreviewCard extends StatelessWidget {
           if (hasData) ...[
             RepaintBoundary(
               key: qrKey,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.all(16),
-                  child: Builder(
-                    builder: (context) {
-                      Widget qrView;
-                      try {
-                        qrView = PrettyQrView.data(
-                          key: ValueKey<String>(data!),
-                          data: data!,
-                          decoration: PrettyQrDecoration(
-                            background: Colors.white,
-                            shape: qrShape,
-                            image: const PrettyQrDecorationImage(
-                              image: AssetImage('assets/icon/totals_icon.png'),
-                              scale: 0.2,
-                              padding: EdgeInsets.all(6),
-                            ),
-                          ),
-                        );
-                      } catch (_) {
-                        qrView = Text(
-                          'Too much data to render QR',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        );
-                      }
-
-                      return SizedBox(
-                        width: 220,
-                        height: 220,
-                        child: Center(child: qrView),
-                      );
-                    },
+              child: AccountShareQrCode(
+                data: data!,
+                fallback: Text(
+                  'Too much data to render QR',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -583,9 +402,9 @@ class _QrPreviewCard extends StatelessWidget {
               width: 220,
               decoration: BoxDecoration(
                 color: colorScheme.surface,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: colorScheme.outline.withOpacity(0.2),
+                  color: colorScheme.outline.withValues(alpha: 0.2),
                 ),
               ),
               alignment: Alignment.center,
@@ -642,7 +461,7 @@ class _AccountShareTile extends StatelessWidget {
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          color: colorScheme.surfaceVariant,
+          color: colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(10),
         ),
         child: bank != null
@@ -665,9 +484,7 @@ class _AccountShareTile extends StatelessWidget {
               ),
       ),
       title: Text(
-        account.accountNumber.isNotEmpty
-            ? account.accountNumber
-            : 'Account',
+        account.accountNumber.isNotEmpty ? account.accountNumber : 'Account',
         style: theme.textTheme.titleSmall?.copyWith(
           fontWeight: FontWeight.w600,
           color: colorScheme.onSurface,

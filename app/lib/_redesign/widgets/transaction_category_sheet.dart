@@ -81,29 +81,33 @@ class _TransactionCategorySheetState extends State<_TransactionCategorySheet> {
   }
 
   void _runCategoryMutation(
-    Future<void> operation, {
+    Future<void> Function() operation, {
     required String failureMessage,
   }) {
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (mounted) {
       Navigator.of(context).pop();
     }
-    unawaited(
-      operation.catchError((Object _, StackTrace __) {
-        messenger
-          ?..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(content: Text(failureMessage)),
-          );
-      }),
-    );
+    // Let the route dismissal start first so optimistic provider updates do
+    // not short-circuit the bottom-sheet exit animation.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      unawaited(
+        operation().catchError((Object _, StackTrace __) {
+          messenger
+            ?..hideCurrentSnackBar()
+            ..showSnackBar(
+              SnackBar(content: Text(failureMessage)),
+            );
+        }),
+      );
+    });
   }
 
   Future<void> _setCategory(Category category) async {
     if (category.id == null) return;
     _dismissComposerState(clearDraft: true);
     _runCategoryMutation(
-      _provider.setCategoryForTransaction(_tx, category),
+      () => _provider.setCategoryForTransaction(_tx, category),
       failureMessage: 'Could not update category. Changes were reverted.',
     );
   }
@@ -111,7 +115,7 @@ class _TransactionCategorySheetState extends State<_TransactionCategorySheet> {
   Future<void> _clearCategory() async {
     _dismissComposerState(clearDraft: true);
     _runCategoryMutation(
-      _provider.clearCategoryForTransaction(_tx),
+      () => _provider.clearCategoryForTransaction(_tx),
       failureMessage: 'Could not clear category. Changes were reverted.',
     );
   }

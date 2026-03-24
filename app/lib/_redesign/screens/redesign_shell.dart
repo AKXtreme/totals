@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
-import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/_redesign/theme/app_icons.dart';
@@ -40,6 +39,7 @@ import 'package:totals/services/widget_launch_intent_service.dart';
 import 'package:totals/utils/account_share_payload.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/_redesign/widgets/transaction_details_sheet.dart';
+import 'package:totals/widgets/account_share_qr_code.dart';
 import 'package:totals/widgets/add_cash_transaction_sheet.dart';
 
 class RedesignShell extends StatefulWidget {
@@ -113,7 +113,8 @@ class RedesignShellState extends State<RedesignShell>
       if (!mounted) return;
       final transactionProvider =
           Provider.of<TransactionProvider>(context, listen: false);
-      final budgetProvider = Provider.of<BudgetProvider>(context, listen: false);
+      final budgetProvider =
+          Provider.of<BudgetProvider>(context, listen: false);
       unawaited(transactionProvider.loadData());
       unawaited(budgetProvider.loadBudgets());
     });
@@ -778,17 +779,18 @@ class _QuickAccessAccountsSheetState extends State<_QuickAccessAccountsSheet>
   late final TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  int _selectedTabIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
-      if (_tabController.index != 0) {
+      if (_tabController.index == _selectedTabIndex) return;
+      _selectedTabIndex = _tabController.index;
+      if (_selectedTabIndex != 0) {
         FocusScope.of(context).unfocus();
       }
-      if (!mounted) return;
-      setState(() {});
     });
     _searchController.addListener(() {
       if (!mounted) return;
@@ -858,11 +860,9 @@ class _QuickAccessAccountsSheetState extends State<_QuickAccessAccountsSheet>
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final theme = Theme.of(context);
-    final isQuickTab = _tabController.index == 0;
-    final maxAvailableHeight =
-        (media.size.height - media.viewInsets.bottom)
-            .clamp(240.0, media.size.height)
-            .toDouble();
+    final maxAvailableHeight = (media.size.height - media.viewInsets.bottom)
+        .clamp(240.0, media.size.height)
+        .toDouble();
     final sheetHeight =
         (media.size.height * 0.82).clamp(240.0, maxAvailableHeight).toDouble();
 
@@ -937,84 +937,65 @@ class _QuickAccessAccountsSheetState extends State<_QuickAccessAccountsSheet>
                                 color: AppColors.textPrimary(context),
                               ),
                             ),
-                            if (isQuickTab) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                'Search and copy saved quick-access accounts.',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: AppColors.textSecondary(context),
-                                ),
-                              ),
-                            ],
+                            // if (isQuickTab) ...[
+                            //   const SizedBox(height: 2),
+                            //   Text(
+                            //     'Search and copy saved quick-access accounts.',
+                            //     style: theme.textTheme.bodySmall?.copyWith(
+                            //       color: AppColors.textSecondary(context),
+                            //     ),
+                            //   ),
+                            // ],
                           ],
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 18),
-                  _AccountHubTabBar(
-                    selectedIndex: _tabController.index,
-                    onTabChanged: (index) {
-                      if (index != 0) {
-                        FocusScope.of(context).unfocus();
-                      }
-                      _tabController.animateTo(index);
+                  AnimatedBuilder(
+                    animation: _tabController.animation!,
+                    builder: (context, child) {
+                      final tabProgress = (_tabController.animation!.value)
+                          .clamp(0.0, 1.0)
+                          .toDouble();
+                      return _AccountHubTabBar(
+                        animationValue: tabProgress,
+                        onTabChanged: (index) {
+                          if (index != 0) {
+                            FocusScope.of(context).unfocus();
+                          }
+                          _tabController.animateTo(index);
+                        },
+                      );
                     },
-                  ),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 180),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    child: isQuickTab
-                        ? Padding(
-                            key: const ValueKey('quick-search'),
-                            padding: const EdgeInsets.only(top: 14, bottom: 14),
-                            child: TextField(
-                              controller: _searchController,
-                              textInputAction: TextInputAction.search,
-                              decoration: InputDecoration(
-                                hintText: 'Search accounts, banks, or names',
-                                prefixIcon: Icon(
-                                  Icons.search_rounded,
-                                  color: AppColors.textTertiary(context),
-                                ),
-                                suffixIcon: _query.isEmpty
-                                    ? null
-                                    : IconButton(
-                                        onPressed: _searchController.clear,
-                                        icon: const Icon(Icons.close_rounded),
-                                      ),
-                                filled: true,
-                                fillColor: AppColors.surfaceColor(context),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide.none,
-                                ),
-                              ),
-                            ),
-                          )
-                        : const SizedBox(
-                            key: ValueKey('mine-spacer'),
-                            height: 14,
-                          ),
                   ),
                   Expanded(
                     child: TabBarView(
                       controller: _tabController,
+                      physics: const PageScrollPhysics(),
                       children: [
-                        _QuickAccessAccountsTab(
-                          accounts: _filteredQuickAccessAccounts,
-                          totalAccountCount: widget.quickAccessAccounts.length,
-                          banksById: widget.banksById,
-                          onCopyAccount: widget.onCopyAccount,
-                          onManageAccounts: widget.onManageAccounts,
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: _QuickAccessAccountsTab(
+                            accounts: _filteredQuickAccessAccounts,
+                            totalAccountCount:
+                                widget.quickAccessAccounts.length,
+                            banksById: widget.banksById,
+                            searchController: _searchController,
+                            query: _query,
+                            onCopyAccount: widget.onCopyAccount,
+                            onManageAccounts: widget.onManageAccounts,
+                          ),
                         ),
-                        _UserAccountsTab(
-                          accounts: _filteredUserAccounts,
-                          totalAccountCount: widget.userAccounts.length,
-                          banksById: widget.banksById,
-                          payload: _sharePayload,
-                          onCopyAccount: widget.onCopyUserAccount,
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: _UserAccountsTab(
+                            accounts: _filteredUserAccounts,
+                            totalAccountCount: widget.userAccounts.length,
+                            banksById: widget.banksById,
+                            payload: _sharePayload,
+                            onCopyAccount: widget.onCopyUserAccount,
+                          ),
                         ),
                       ],
                     ),
@@ -1033,6 +1014,8 @@ class _QuickAccessAccountsTab extends StatelessWidget {
   final List<UserAccount> accounts;
   final int totalAccountCount;
   final Map<int, Bank> banksById;
+  final TextEditingController searchController;
+  final String query;
   final ValueChanged<UserAccount> onCopyAccount;
   final VoidCallback onManageAccounts;
 
@@ -1040,6 +1023,8 @@ class _QuickAccessAccountsTab extends StatelessWidget {
     required this.accounts,
     required this.totalAccountCount,
     required this.banksById,
+    required this.searchController,
+    required this.query,
     required this.onCopyAccount,
     required this.onManageAccounts,
   });
@@ -1052,6 +1037,12 @@ class _QuickAccessAccountsTab extends StatelessWidget {
     return ListView(
       padding: EdgeInsets.zero,
       children: [
+        const SizedBox(height: 14),
+        _QuickAccessAccountsSearchField(
+          controller: searchController,
+          query: query,
+        ),
+        const SizedBox(height: 12),
         Text(
           hasAccounts
               ? 'Saved quick-access accounts. Tap any row to copy and close.'
@@ -1111,6 +1102,43 @@ class _QuickAccessAccountsTab extends StatelessWidget {
   }
 }
 
+class _QuickAccessAccountsSearchField extends StatelessWidget {
+  final TextEditingController controller;
+  final String query;
+
+  const _QuickAccessAccountsSearchField({
+    required this.controller,
+    required this.query,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: 'Search accounts, banks, or names',
+        prefixIcon: Icon(
+          Icons.search_rounded,
+          color: AppColors.textTertiary(context),
+        ),
+        suffixIcon: query.isEmpty
+            ? null
+            : IconButton(
+                onPressed: controller.clear,
+                icon: const Icon(Icons.close_rounded),
+              ),
+        filled: true,
+        fillColor: AppColors.surfaceColor(context),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+}
+
 class _UserAccountsTab extends StatelessWidget {
   final List<Account> accounts;
   final int totalAccountCount;
@@ -1134,6 +1162,7 @@ class _UserAccountsTab extends StatelessWidget {
     return ListView(
       padding: EdgeInsets.zero,
       children: [
+        const SizedBox(height: 14),
         Text(
           hasAccounts
               ? 'Registered accounts used across your profile.'
@@ -1219,20 +1248,13 @@ class _AccountsQrCard extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           if (hasData)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: Container(
-                color: Colors.white,
-                padding: const EdgeInsets.all(18),
-                child: SizedBox(
-                  width: 220,
-                  height: 220,
-                  child: PrettyQrView.data(
-                    data: AccountSharePayload.encode(payload!),
-                    decoration: const PrettyQrDecoration(
-                      background: Colors.white,
-                    ),
-                  ),
+            AccountShareQrCode(
+              data: AccountSharePayload.encode(payload!),
+              fallback: Text(
+                'Too much data to render QR',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.textSecondary(context),
                 ),
               ),
             )
@@ -1262,11 +1284,11 @@ class _AccountsQrCard extends StatelessWidget {
 }
 
 class _AccountHubTabBar extends StatelessWidget {
-  final int selectedIndex;
+  final double animationValue;
   final ValueChanged<int> onTabChanged;
 
   const _AccountHubTabBar({
-    required this.selectedIndex,
+    required this.animationValue,
     required this.onTabChanged,
   });
 
@@ -1278,23 +1300,52 @@ class _AccountHubTabBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
       ),
       padding: const EdgeInsets.all(3),
-      child: Row(
-        children: [
-          Expanded(
-            child: _AccountHubTabButton(
-              label: 'Quick',
-              selected: selectedIndex == 0,
-              onTap: () => onTabChanged(0),
-            ),
-          ),
-          Expanded(
-            child: _AccountHubTabButton(
-              label: 'Mine',
-              selected: selectedIndex == 1,
-              onTap: () => onTabChanged(1),
-            ),
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final segmentWidth = (constraints.maxWidth - 6) / 2;
+
+          return Stack(
+            children: [
+              Positioned(
+                left: segmentWidth * animationValue,
+                top: 0,
+                bottom: 0,
+                width: segmentWidth,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryDark,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primaryDark.withValues(alpha: 0.2),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: _AccountHubTabButton(
+                      label: 'Quick',
+                      selectionAmount: 1 - animationValue,
+                      onTap: () => onTabChanged(0),
+                    ),
+                  ),
+                  Expanded(
+                    child: _AccountHubTabButton(
+                      label: 'Mine',
+                      selectionAmount: animationValue,
+                      onTap: () => onTabChanged(1),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1302,32 +1353,32 @@ class _AccountHubTabBar extends StatelessWidget {
 
 class _AccountHubTabButton extends StatelessWidget {
   final String label;
-  final bool selected;
+  final double selectionAmount;
   final VoidCallback onTap;
 
   const _AccountHubTabButton({
     required this.label,
-    required this.selected,
+    required this.selectionAmount,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final clampedSelection = selectionAmount.clamp(0.0, 1.0).toDouble();
+
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
+      child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primaryDark : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
         alignment: Alignment.center,
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? Colors.white : AppColors.textSecondary(context),
+            color: Color.lerp(
+              AppColors.textSecondary(context),
+              Colors.white,
+              clampedSelection,
+            ),
             fontWeight: FontWeight.w600,
           ),
         ),
