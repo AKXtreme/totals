@@ -273,8 +273,16 @@ class _ActivityTransactionsViewCacheKey {
   }
 
   @override
-  int get hashCode => Object.hash(dataVersion, searchQuery, type, bankId,
-      categoryId, minAmount, maxAmount, startDateMillis, endDateMillis,
+  int get hashCode => Object.hash(
+      dataVersion,
+      searchQuery,
+      type,
+      bankId,
+      categoryId,
+      minAmount,
+      maxAmount,
+      startDateMillis,
+      endDateMillis,
       currentPage);
 }
 
@@ -934,7 +942,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       isMisc: isMisc,
       amount: _amountLabel(transaction.amount, isCredit: isCredit),
       amountColor: isCredit ? AppColors.incomeSuccess : AppColors.red,
-      name: _transactionCounterparty(transaction, isSelfTransfer: isSelfTransfer),
+      name:
+          _transactionCounterparty(transaction, isSelfTransfer: isSelfTransfer),
       timestamp: _transactionTimeLabel(transaction),
       selected: selected,
       onTap: _isSelecting
@@ -1025,9 +1034,14 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       anchorTransactions: provider.allTransactions,
       categoryMode: _analyticsHeatmapFilter.mode,
     );
-    final fullSnapshot = _buildAnalyticsSnapshot(provider);
     final heatmapFocusMonth =
         _resolveAnalyticsHeatmapFocusMonth(filteredSnapshot.monthDate);
+    final spendingByDaySnapshot = _buildAnalyticsSpendingByDaySnapshot(
+      provider,
+      focusMonth: heatmapFocusMonth,
+      view: _analyticsHeatmapView,
+      filter: _analyticsHeatmapFilter,
+    );
     return [
       SliverToBoxAdapter(
         child: Padding(
@@ -1041,7 +1055,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                 heatmapFocusMonth: heatmapFocusMonth,
               ),
               const SizedBox(height: 14),
-              _AnalyticsSpendingByDayCard(snapshot: fullSnapshot),
+              _AnalyticsSpendingByDayCard(snapshot: spendingByDaySnapshot),
               const SizedBox(height: 14),
               _AnalyticsTopRecipientsCard(snapshot: filteredSnapshot),
               const SizedBox(height: 14),
@@ -1287,6 +1301,64 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       savingsRate: savingsRate,
       largestExpense: largestExpense,
       largestDeposit: largestDeposit,
+    );
+  }
+
+  _AnalyticsSpendingByDaySnapshot _buildAnalyticsSpendingByDaySnapshot(
+    TransactionProvider provider, {
+    required DateTime focusMonth,
+    required _AnalyticsHeatmapView view,
+    required _AnalyticsHeatmapFilter filter,
+  }) {
+    final normalizedFocus = _normalizeAnalyticsHeatmapMonth(focusMonth);
+    final periodStart = view == _AnalyticsHeatmapView.daily
+        ? normalizedFocus
+        : DateTime(normalizedFocus.year, 1, 1);
+    final periodEnd = view == _AnalyticsHeatmapView.daily
+        ? DateTime(normalizedFocus.year, normalizedFocus.month + 1, 1)
+        : DateTime(normalizedFocus.year + 1, 1, 1);
+    final weekdayExpenseTotals = List<double>.filled(7, 0.0);
+
+    for (final transaction in provider.allTransactions) {
+      if (transaction.type != 'DEBIT') continue;
+      if (filter.bankId != null && transaction.bankId != filter.bankId) {
+        continue;
+      }
+      if (filter.categoryId != null &&
+          transaction.categoryId != filter.categoryId) {
+        continue;
+      }
+
+      final dt = _parseTransactionTime(transaction.time);
+      if (dt == null || dt.isBefore(periodStart) || !dt.isBefore(periodEnd)) {
+        continue;
+      }
+
+      final isSelfTransfer = provider.isSelfTransfer(transaction);
+      final category = transaction.categoryId == null
+          ? null
+          : provider.getCategoryById(transaction.categoryId!);
+      final isMisc = category?.uncategorized == true;
+      if (isSelfTransfer || isMisc) continue;
+
+      final weekdayIndex = dt.weekday % 7; // Sunday = 0 ... Saturday = 6
+      weekdayExpenseTotals[weekdayIndex] += transaction.amount;
+    }
+
+    var peakWeekdayIndex = 0;
+    var peakValue = -1.0;
+    for (int i = 0; i < weekdayExpenseTotals.length; i++) {
+      if (weekdayExpenseTotals[i] > peakValue) {
+        peakValue = weekdayExpenseTotals[i];
+        peakWeekdayIndex = i;
+      }
+    }
+
+    return _AnalyticsSpendingByDaySnapshot(
+      periodDate: normalizedFocus,
+      view: view,
+      weekdayExpenseTotals: weekdayExpenseTotals,
+      peakWeekdayIndex: peakWeekdayIndex,
     );
   }
 
@@ -2365,7 +2437,8 @@ String _amountLabel(double amount, {required bool isCredit}) {
   return '${isCredit ? '+' : '-'} ETB $formatted';
 }
 
-String _transactionCounterparty(Transaction transaction, {bool isSelfTransfer = false}) {
+String _transactionCounterparty(Transaction transaction,
+    {bool isSelfTransfer = false}) {
   final receiver = transaction.receiver?.trim();
   final creditor = transaction.creditor?.trim();
   if (receiver != null && receiver.isNotEmpty) return receiver.toUpperCase();
@@ -2409,6 +2482,23 @@ String _formatCompactSignedEtb(double value) {
 
 String _formatMonthYear(DateTime date) {
   return '${_months[date.month - 1]} ${date.year}';
+}
+
+String _formatAnalyticsSpendingPeriodLabel(
+  _AnalyticsHeatmapView view,
+  DateTime periodDate,
+) {
+  return view == _AnalyticsHeatmapView.daily
+      ? _formatMonthYear(periodDate)
+      : '${periodDate.year}';
+}
+
+String _formatAnalyticsSpendingEmptyStateLabel(
+  _AnalyticsHeatmapView view,
+  DateTime periodDate,
+) {
+  final periodLabel = _formatAnalyticsSpendingPeriodLabel(view, periodDate);
+  return 'No expense activity in $periodLabel.';
 }
 
 String _formatFullMonthName(DateTime date) {
@@ -3163,6 +3253,20 @@ class _AnalyticsSnapshot {
     required this.savingsRate,
     required this.largestExpense,
     required this.largestDeposit,
+  });
+}
+
+class _AnalyticsSpendingByDaySnapshot {
+  final DateTime periodDate;
+  final _AnalyticsHeatmapView view;
+  final List<double> weekdayExpenseTotals;
+  final int peakWeekdayIndex;
+
+  const _AnalyticsSpendingByDaySnapshot({
+    required this.periodDate,
+    required this.view,
+    required this.weekdayExpenseTotals,
+    required this.peakWeekdayIndex,
   });
 }
 
@@ -5847,23 +5951,61 @@ class _AnalyticsPieChartCard extends StatelessWidget {
 }
 
 class _AnalyticsSpendingByDayCard extends StatelessWidget {
-  final _AnalyticsSnapshot snapshot;
-  final int activeFilterCount;
-  final VoidCallback? onOpenFilterSheet;
-  final VoidCallback? onChartPickerTap;
+  final _AnalyticsSpendingByDaySnapshot snapshot;
 
   const _AnalyticsSpendingByDayCard({
     required this.snapshot,
-    this.activeFilterCount = 0,
-    this.onOpenFilterSheet,
-    this.onChartPickerTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final maxValue = snapshot.weekdayExpenseTotals.fold<double>(0.0, math.max);
     final peakDay = _analyticsWeekdayLabel(snapshot.peakWeekdayIndex);
-    final showFilterButton = onOpenFilterSheet != null;
+    final periodLabel = _formatAnalyticsSpendingPeriodLabel(
+      snapshot.view,
+      snapshot.periodDate,
+    );
+    final periodKey =
+        '${snapshot.view.name}-${snapshot.periodDate.year}-${snapshot.periodDate.month}';
+    final infoText = maxValue > 0
+        ? 'Peak: $peakDay'
+        : _formatAnalyticsSpendingEmptyStateLabel(
+            snapshot.view,
+            snapshot.periodDate,
+          );
+    final titleStyle = TextStyle(
+      color: AppColors.textPrimary(context),
+      fontSize: 20,
+      fontWeight: FontWeight.w800,
+      height: 1.05,
+    );
+
+    Widget buildAnimatedInlineTransition(Widget child) {
+      return AnimatedSwitcher(
+        duration: const Duration(milliseconds: 260),
+        reverseDuration: const Duration(milliseconds: 200),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.08, 0),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+        child: child,
+      );
+    }
 
     return _AnalyticsHorizontalSwipeBlocker(
       child: Container(
@@ -5879,139 +6021,171 @@ class _AnalyticsSpendingByDayCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: onChartPickerTap == null
-                      ? Text(
-                          'Spending by Day',
-                          style: TextStyle(
-                            color: AppColors.textPrimary(context),
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text('Spending by Day', style: titleStyle),
+                      buildAnimatedInlineTransition(
+                        Container(
+                          key: ValueKey<String>('spending-period-$periodKey'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
                           ),
-                        )
-                      : GestureDetector(
-                          onTap: onChartPickerTap,
-                          behavior: HitTestBehavior.opaque,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  'Spending by Day',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: AppColors.textPrimary(context),
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 3),
-                              Icon(
-                                AppIcons.keyboard_arrow_down_rounded,
-                                color: AppColors.textTertiary(context),
-                              ),
-                            ],
+                          decoration: BoxDecoration(
+                            color: AppColors.mutedFill(context).withValues(
+                              alpha: AppColors.isDark(context) ? 0.38 : 0.7,
+                            ),
+                            borderRadius: BorderRadius.circular(99),
+                            border: Border.all(
+                              color: AppColors.borderColor(context),
+                            ),
+                          ),
+                          child: Text(
+                            periodLabel,
+                            style: TextStyle(
+                              color: AppColors.textSecondary(context),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
+                      ),
+                    ],
+                  ),
                 ),
-                if (showFilterButton)
-                  _AnalyticsFilterBadgeButton(
-                    activeCount: activeFilterCount,
-                    onTap: onOpenFilterSheet!,
-                  ),
-                if (!showFilterButton && onChartPickerTap == null)
-                  Text(
-                    'Peak: $peakDay',
-                    style: TextStyle(
-                      color: AppColors.textTertiary(context),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
               ],
             ),
-            if (showFilterButton || onChartPickerTap != null) ...[
-              const SizedBox(height: 8),
+            const SizedBox(height: 8),
+            buildAnimatedInlineTransition(
               Text(
-                maxValue > 0
-                    ? 'Peak: $peakDay'
-                    : 'No expense activity for this month.',
+                infoText,
+                key: ValueKey<String>('spending-summary-$periodKey-$infoText'),
                 style: TextStyle(
                   color: AppColors.textTertiary(context),
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-            ],
+            ),
             const SizedBox(height: 14),
-            if (maxValue <= 0)
-              SizedBox(
-                height: 84,
-                child: Center(
-                  child: Text(
-                    'No expense activity for this month.',
-                    style: TextStyle(
-                      color: AppColors.textSecondary(context),
-                      fontSize: 13,
-                    ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 280),
+              reverseDuration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                final curved = CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                  reverseCurve: Curves.easeInCubic,
+                );
+                return FadeTransition(
+                  opacity: curved,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.08),
+                      end: Offset.zero,
+                    ).animate(curved),
+                    child: child,
                   ),
-                ),
-              )
-            else
-              SizedBox(
-                height: 84,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: List.generate(7, (index) {
-                    final value = snapshot.weekdayExpenseTotals[index];
-                    final ratio =
-                        maxValue > 0 ? (value / maxValue).clamp(0.0, 1.0) : 0.0;
-                    final barHeight = 10 + (ratio * 52);
-                    final isPeak =
-                        index == snapshot.peakWeekdayIndex && maxValue > 0;
-                    return Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 3),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              height: barHeight,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: isPeak
-                                      ? const [
-                                          Color(0xFF4ADE80),
-                                          Color(0xFF22C55E),
-                                        ]
-                                      : const [
-                                          Color(0xFF7C83EA),
-                                          Color(0xFF5B60D9),
-                                        ],
-                                ),
-                                borderRadius: BorderRadius.circular(7),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              _analyticsWeekdayLabel(index),
-                              style: TextStyle(
-                                color: AppColors.textSecondary(context),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+                );
+              },
+              child: maxValue <= 0
+                  ? SizedBox(
+                      key: ValueKey<String>('spending-empty-$periodKey'),
+                      height: 84,
+                      child: Center(
+                        child: Text(
+                          _formatAnalyticsSpendingEmptyStateLabel(
+                            snapshot.view,
+                            snapshot.periodDate,
+                          ),
+                          style: TextStyle(
+                            color: AppColors.textSecondary(context),
+                            fontSize: 13,
+                          ),
                         ),
                       ),
-                    );
-                  }),
-                ),
-              ),
+                    )
+                  : SizedBox(
+                      key: const ValueKey<String>('spending-bars'),
+                      height: 84,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: List.generate(7, (index) {
+                          final value = snapshot.weekdayExpenseTotals[index];
+                          final ratio = maxValue > 0
+                              ? (value / maxValue).clamp(0.0, 1.0)
+                              : 0.0;
+                          final barHeight = 10 + (ratio * 52);
+                          final isPeak = index == snapshot.peakWeekdayIndex &&
+                              maxValue > 0;
+                          return Expanded(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 3),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  AnimatedContainer(
+                                    duration: Duration(
+                                      milliseconds: 260 + (index * 28),
+                                    ),
+                                    curve: Curves.easeOutCubic,
+                                    height: barHeight,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: isPeak
+                                            ? const [
+                                                Color(0xFF4ADE80),
+                                                Color(0xFF22C55E),
+                                              ]
+                                            : const [
+                                                Color(0xFF7C83EA),
+                                                Color(0xFF5B60D9),
+                                              ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(7),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: (isPeak
+                                                  ? const Color(0xFF22C55E)
+                                                  : const Color(0xFF5B60D9))
+                                              .withValues(alpha: 0.18),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  AnimatedDefaultTextStyle(
+                                    duration: const Duration(milliseconds: 220),
+                                    curve: Curves.easeOutCubic,
+                                    style: TextStyle(
+                                      color: isPeak
+                                          ? AppColors.textPrimary(context)
+                                          : AppColors.textSecondary(context),
+                                      fontSize: 12,
+                                      fontWeight: isPeak
+                                          ? FontWeight.w700
+                                          : FontWeight.w600,
+                                    ),
+                                    child: Text(_analyticsWeekdayLabel(index)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+            ),
           ],
         ),
       ),
@@ -7072,9 +7246,7 @@ class _LedgerTransactionEntry extends StatelessWidget {
     final amount = transaction.amount;
     final amountStr = formatNumberAbbreviated(amount).replaceAll('k', 'K');
 
-    final name = isSelfTransfer
-        ? 'YOU'
-        : _transactionCounterparty(transaction);
+    final name = isSelfTransfer ? 'YOU' : _transactionCounterparty(transaction);
     final bankName = _bankLabel(transaction.bankId);
 
     final dt = _parseTransactionTime(transaction.time);

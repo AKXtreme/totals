@@ -68,7 +68,7 @@ class RedesignBottomNav extends StatelessWidget {
         onLongPressAt: null,
       ),
       (
-        label: 'Profile',
+        label: 'You',
         activeIcon: AppIcons.person,
         inactiveIcon: AppIcons.person_outline,
         onLongPress: null,

@@ -317,10 +317,15 @@ class _InlineBankSelectorState extends State<InlineBankSelector> {
                                 ),
                               ),
                               if (_canShowAllBanksToggle)
-                                TextButton(
+                                IconButton(
                                   onPressed: _toggleAllBanks,
-                                  child: Text(
-                                    _showAllBanks ? 'Hide all' : 'All banks',
+                                  tooltip: _showAllBanks
+                                      ? 'Hide all banks'
+                                      : 'Browse all banks',
+                                  icon: Icon(
+                                    _showAllBanks
+                                        ? Icons.close_rounded
+                                        : Icons.grid_view_rounded,
                                   ),
                                 ),
                             ],
