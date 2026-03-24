@@ -1498,7 +1498,7 @@ class _MiniBottomNav extends StatelessWidget {
 
   const _MiniBottomNav({required this.highlightedIndex});
 
-  static const _labels = ['Home', 'Money', 'Budget', 'Tools', 'Profile'];
+  static const _labels = ['Home', 'Money', 'Budget', 'Tools', 'You'];
   static const _icons = [
     AppIcons.home_outlined,
     AppIcons.account_balance_wallet_outlined,

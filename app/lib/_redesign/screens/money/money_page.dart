@@ -8918,6 +8918,7 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
   late int? _selectedCategoryId;
   late final TextEditingController _minAmountController;
   late final TextEditingController _maxAmountController;
+  String? _amountErrorText;
   DateTime? _startDate;
   DateTime? _endDate;
 
@@ -8951,6 +8952,7 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
       _selectedCategoryId = null;
       _minAmountController.clear();
       _maxAmountController.clear();
+      _amountErrorText = null;
       _startDate = null;
       _endDate = null;
     });
@@ -8961,13 +8963,15 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
     final maxRaw = _maxAmountController.text;
     final minAmount = _parseAmountInput(minRaw);
     final maxAmount = _parseAmountInput(maxRaw);
+    final amountError = _buildAmountValidationMessage(
+      minRaw: minRaw,
+      maxRaw: maxRaw,
+      minAmount: minAmount,
+      maxAmount: maxAmount,
+    );
 
-    if (_hasInvalidAmountInput(minRaw) || _hasInvalidAmountInput(maxRaw)) {
-      _showValidationMessage('Enter valid minimum and maximum amounts.');
-      return;
-    }
-    if (minAmount != null && maxAmount != null && minAmount > maxAmount) {
-      _showValidationMessage('Minimum amount cannot be greater than maximum.');
+    if (amountError != null) {
+      setState(() => _amountErrorText = amountError);
       return;
     }
 
@@ -8995,6 +8999,21 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
     return normalized.isNotEmpty && double.tryParse(normalized) == null;
   }
 
+  String? _buildAmountValidationMessage({
+    required String minRaw,
+    required String maxRaw,
+    required double? minAmount,
+    required double? maxAmount,
+  }) {
+    if (_hasInvalidAmountInput(minRaw) || _hasInvalidAmountInput(maxRaw)) {
+      return 'Enter a valid amount.';
+    }
+    if (minAmount != null && maxAmount != null && maxAmount < minAmount) {
+      return 'Maximum must be at least minimum.';
+    }
+    return null;
+  }
+
   String _formatAmountInput(double? amount) {
     if (amount == null) return '';
     if (amount == amount.roundToDouble()) {
@@ -9006,14 +9025,20 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
         .replaceFirst(RegExp(r'\.$'), '');
   }
 
-  void _showValidationMessage(String message) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+  void _handleAmountChanged(String _) {
+    if (_amountErrorText == null) return;
+    final minRaw = _minAmountController.text;
+    final maxRaw = _maxAmountController.text;
+    final minAmount = _parseAmountInput(minRaw);
+    final maxAmount = _parseAmountInput(maxRaw);
+    setState(() {
+      _amountErrorText = _buildAmountValidationMessage(
+        minRaw: minRaw,
+        maxRaw: maxRaw,
+        minAmount: minAmount,
+        maxAmount: maxAmount,
+      );
+    });
   }
 
   Future<void> _pickDate({required bool isStart}) async {
@@ -9220,6 +9245,8 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
                         child: _AmountFilterField(
                           controller: _minAmountController,
                           hint: 'Min',
+                          hasError: _amountErrorText != null,
+                          onChanged: _handleAmountChanged,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -9227,10 +9254,23 @@ class _FilterTransactionsSheetState extends State<_FilterTransactionsSheet> {
                         child: _AmountFilterField(
                           controller: _maxAmountController,
                           hint: 'Max',
+                          hasError: _amountErrorText != null,
+                          onChanged: _handleAmountChanged,
                         ),
                       ),
                     ],
                   ),
+                  if (_amountErrorText != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _amountErrorText!,
+                      style: const TextStyle(
+                        color: AppColors.red,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
 
                   const SizedBox(height: 20),
 
@@ -10000,16 +10040,21 @@ class _DatePickerField extends StatelessWidget {
 class _AmountFilterField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
+  final bool hasError;
+  final ValueChanged<String>? onChanged;
 
   const _AmountFilterField({
     required this.controller,
     required this.hint,
+    this.hasError = false,
+    this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
+      onChanged: onChanged,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: [
         FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
@@ -10036,15 +10081,21 @@ class _AmountFilterField extends StatelessWidget {
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: AppColors.borderColor(context)),
+          borderSide: BorderSide(
+            color: hasError ? AppColors.red : AppColors.borderColor(context),
+          ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: AppColors.borderColor(context)),
+          borderSide: BorderSide(
+            color: hasError ? AppColors.red : AppColors.borderColor(context),
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppColors.primaryLight),
+          borderSide: BorderSide(
+            color: hasError ? AppColors.red : AppColors.primaryLight,
+          ),
         ),
       ),
     );

@@ -76,4 +76,6 @@ class AppIcons {
   static const IconData visibility_off_outlined = PhosphorIconsRegular.eyeSlash;
   static const IconData visibility_outlined = PhosphorIconsRegular.eye;
   static const IconData zoom_out_map_rounded = PhosphorIconsRegular.cornersOut;
+  static const IconData copy = PhosphorIconsRegular.copy;
+  static const IconData swap = PhosphorIconsRegular.arrowsLeftRight;
 }
