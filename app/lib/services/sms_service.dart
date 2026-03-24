@@ -377,7 +377,10 @@ class SmsService {
     required String body,
     required String reason,
     DateTime? timestamp,
+    int? bankId,
   }) async {
+    if (bankId != null && !(await _hasRegisteredAccountForBank(bankId))) return;
+
     await FailedParseRepository().add(
       FailedParse(
         address: address,
@@ -441,6 +444,11 @@ class SmsService {
     ).hasMatch(messageBody);
 
     return hasTransactionKeyword && (hasSupportingKeyword || hasMonetaryAmount);
+  }
+
+  static Future<bool> _hasRegisteredAccountForBank(int bankId) async {
+    final accounts = await AccountRepository().getAccounts();
+    return accounts.any((account) => account.bank == bankId);
   }
 
   static bool _containsAny(String text, List<String> values) {
@@ -808,6 +816,7 @@ class SmsService {
                 body: messageBody,
                 reason: FailedParse.noMatchingPatternReason,
                 timestamp: messageDate,
+                bankId: bank.id,
               );
             }
           }
@@ -817,6 +826,7 @@ class SmsService {
             body: messageBody,
             reason: FailedParse.noMatchingPatternReason,
             timestamp: messageDate,
+            bankId: bank.id,
           );
         }
       }
@@ -835,6 +845,8 @@ class SmsService {
       // If pattern extracted a time but we have message date, prefer message date for historical accuracy
       details['time'] = messageDate.toIso8601String();
     }
+
+    final parsedBankId = (details['bankId'] as num?)?.toInt() ?? bank.id;
 
     // 3. Check duplicate transaction
     TransactionRepository txRepo = TransactionRepository();
@@ -858,6 +870,7 @@ class SmsService {
           body: messageBody,
           reason: "Duplicate transaction $newRef",
           timestamp: messageDate,
+          bankId: parsedBankId,
         );
       }
       return ParseResult(
@@ -875,6 +888,7 @@ class SmsService {
           body: messageBody,
           reason: "Duplicate Dashen debit by amount and balance",
           timestamp: messageDate,
+          bankId: parsedBankId,
         );
       }
       return const ParseResult(
@@ -885,7 +899,7 @@ class SmsService {
 
     // 4. Update Account Balance
     // We need to match the Bank ID from the pattern, not just assume 1 (CBE)
-    int bankId = details['bankId'] ?? bank.id;
+    int bankId = parsedBankId;
     final banks = await _bankConfigService.getBanks();
     final currentBank = _bankById(banks, bankId);
     if (currentBank == null) {

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -29,7 +31,9 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
   bool _retrying = false;
   List<FailedParse> _items = const [];
   List<Bank> _banks = const [];
+  Set<int> _registeredBankIds = <int>{};
   String? _selectedGroupKey;
+  final Set<int> _selectedCardIds = {};
 
   @override
   void initState() {
@@ -49,11 +53,16 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
       final results = await Future.wait([
         _repo.getAll(),
         _bankConfigService.getBanks(),
+        AccountRepository().getAccounts(),
       ]);
       if (!mounted) return;
+      final accounts = results[2] as List;
       setState(() {
         _items = results[0] as List<FailedParse>;
         _banks = results[1] as List<Bank>;
+        _registeredBankIds = accounts
+            .map((account) => account.bank as int)
+            .toSet();
         _loading = false;
         _bankByAddress.clear();
       });
@@ -66,10 +75,23 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
     }
   }
 
+  static final _transactionSignals = RegExp(
+    r'(account|acct|a/c|bal|balance|amount|credited|debited|sent|received|transferred|etb|birr|\d[\d,]*\.\d{2})',
+    caseSensitive: false,
+  );
+
   List<FailedParse> get _missingPatternItems {
     return _items
-        .where((item) => item.isMissingPattern)
+        .where((item) =>
+            item.isMissingPattern &&
+            _transactionSignals.hasMatch(item.body) &&
+            _isRegisteredBankFailedParse(item))
         .toList(growable: false);
+  }
+
+  bool _isRegisteredBankFailedParse(FailedParse item) {
+    final bank = _resolveBank(item);
+    return bank != null && _registeredBankIds.contains(bank.id);
   }
 
   _FailedParseGroup? get _selectedGroup {
@@ -131,6 +153,7 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
     return _bankByAddress.putIfAbsent(cacheKey, () {
       final normalizedAddress = _normalizeToken(item.address);
       for (final bank in _banks) {
+        if (!_registeredBankIds.contains(bank.id)) continue;
         for (final code in bank.codes) {
           if (normalizedAddress.contains(_normalizeToken(code))) {
             return bank;
@@ -371,7 +394,10 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
 
   void _closeGroup() {
     _searchController.clear();
-    setState(() => _selectedGroupKey = null);
+    setState(() {
+      _selectedGroupKey = null;
+      _selectedCardIds.clear();
+    });
   }
 
   // ── Overview ──────────────────────────────────────────────────────────────
@@ -453,7 +479,7 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
             onChanged: (_) => setState(() {}),
             style: TextStyle(color: AppColors.textPrimary(context)),
             decoration: InputDecoration(
-              hintText: 'Search sender or message\u2026',
+              hintText: 'Filter messages\u2026',
               hintStyle: TextStyle(color: AppColors.textTertiary(context)),
               prefixIcon: Icon(
                 AppIcons.filter_list,
@@ -530,131 +556,88 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
     );
   }
 
-  Widget _buildParseCard(FailedParse item) {
-    final theme = Theme.of(context);
+  bool get _isSelecting => _selectedCardIds.isNotEmpty;
 
-    return Material(
-      color: AppColors.cardColor(context),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => _copy(item),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.borderColor(context)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      item.address,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary(context),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    AppIcons.upload_rounded,
-                    size: 16,
-                    color: AppColors.textTertiary(context),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 3,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.amber.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  FailedParse.noMatchingPatternReason,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.amber,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                item.body,
-                maxLines: 5,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: AppColors.textSecondary(context),
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Icon(
-                    AppIcons.schedule_rounded,
-                    size: 12,
-                    color: AppColors.textTertiary(context),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      _formatTimestamp(item.timestamp),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textTertiary(context),
-                      ),
-                    ),
-                  ),
-                  Material(
-                    color: AppColors.primaryLight.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: _retrying ? null : () => _retrySingle(item),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              AppIcons.refresh,
-                              size: 13,
-                              color: AppColors.primaryLight,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Retry',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primaryLight,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+  void _toggleCardSelection(FailedParse item) {
+    if (item.id == null) return;
+    setState(() {
+      if (!_selectedCardIds.remove(item.id!)) {
+        _selectedCardIds.add(item.id!);
+      }
+    });
+  }
+
+  Future<void> _clearSelectedCards() async {
+    final ids = _selectedCardIds.toList();
+    if (ids.isEmpty) return;
+    await _repo.deleteByIds(ids);
+    setState(() => _selectedCardIds.clear());
+    await _load();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ids.length == 1 ? 'Cleared 1 item' : 'Cleared ${ids.length} items',
         ),
       ),
+    );
+  }
+
+  Future<void> _copySelectedCards() async {
+    final items = _visibleItems
+        .where((i) => i.id != null && _selectedCardIds.contains(i.id))
+        .toList();
+    if (items.isEmpty) return;
+
+    final buffer = StringBuffer();
+    for (var idx = 0; idx < items.length; idx++) {
+      final item = items[idx];
+      buffer.writeln('Sender: ${item.address}');
+      buffer.writeln('Reason: ${item.reason}');
+      buffer.writeln('Time: ${item.timestamp}');
+      buffer.writeln();
+      buffer.writeln(item.body);
+      if (idx < items.length - 1) {
+        buffer.writeln();
+        buffer.writeln('---');
+        buffer.writeln();
+      }
+    }
+
+    await Clipboard.setData(ClipboardData(text: buffer.toString()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Text(
+          items.length == 1
+              ? 'Copied 1 message'
+              : 'Copied ${items.length} messages',
+        ),
+      ));
+  }
+
+  Future<void> _retrySelectedCards() async {
+    final items = _visibleItems
+        .where((i) => i.id != null && _selectedCardIds.contains(i.id))
+        .toList();
+    if (items.isEmpty) return;
+    setState(() => _selectedCardIds.clear());
+    await _retryBulk(items);
+  }
+
+  Widget _buildParseCard(FailedParse item) {
+    final selected =
+        item.id != null && _selectedCardIds.contains(item.id);
+    return _FailedParseCard(
+      item: item,
+      retrying: _retrying,
+      formattedTimestamp: _formatTimestamp(item.timestamp),
+      onRetry: () => _retrySingle(item),
+      onCopy: _copy,
+      selected: selected,
+      selecting: _isSelecting,
+      onSelect: () => _toggleCardSelection(item),
     );
   }
 
@@ -680,15 +663,23 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
       backgroundColor: AppColors.background(context),
       appBar: AppBar(
         leading: IconButton(
-          onPressed: selectedGroup == null
-              ? () => Navigator.pop(context)
-              : _closeGroup,
-          icon: const Icon(AppIcons.arrow_back_rounded),
+          onPressed: _isSelecting
+              ? () => setState(() => _selectedCardIds.clear())
+              : selectedGroup == null
+                  ? () => Navigator.pop(context)
+                  : _closeGroup,
+          icon: Icon(
+            _isSelecting
+                ? AppIcons.close_rounded
+                : AppIcons.arrow_back_rounded,
+          ),
         ),
         title: Text(
-          selectedGroup == null
-              ? 'Failed Parsings'
-              : '${selectedGroup.label} Patterns',
+          _isSelecting
+              ? '${_selectedCardIds.length} selected'
+              : selectedGroup == null
+                  ? 'Failed Parsings'
+                  : '${selectedGroup.label} Patterns',
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w800,
             color: AppColors.textPrimary(context),
@@ -698,46 +689,636 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
         foregroundColor: AppColors.textPrimary(context),
         elevation: 0,
         scrolledUnderElevation: 0,
-        actions: [
-          IconButton(
-            tooltip: retryTooltip,
-            onPressed: _retrying || visibleItems.isEmpty
-                ? null
-                : () => _retryBulk(visibleItems),
-            icon: Icon(
-              AppIcons.refresh,
-              color: _retrying || visibleItems.isEmpty
-                  ? AppColors.textTertiary(context)
-                  : AppColors.textSecondary(context),
-            ),
+        actions: _isSelecting
+            ? [
+                TextButton(
+                  onPressed: () {
+                    final allIds = visibleItems
+                        .map((i) => i.id)
+                        .whereType<int>()
+                        .toSet();
+                    setState(() {
+                      if (_selectedCardIds.length == allIds.length &&
+                          _selectedCardIds.containsAll(allIds)) {
+                        _selectedCardIds.clear();
+                      } else {
+                        _selectedCardIds
+                          ..clear()
+                          ..addAll(allIds);
+                      }
+                    });
+                  },
+                  child: Text(
+                    'All',
+                    style: TextStyle(
+                      color: AppColors.primaryLight,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ]
+            : [
+                IconButton(
+                  tooltip: retryTooltip,
+                  onPressed: _retrying || visibleItems.isEmpty
+                      ? null
+                      : () => _retryBulk(visibleItems),
+                  icon: Icon(
+                    AppIcons.refresh,
+                    color: _retrying || visibleItems.isEmpty
+                        ? AppColors.textTertiary(context)
+                        : AppColors.textSecondary(context),
+                  ),
+                ),
+                IconButton(
+                  tooltip: clearTooltip,
+                  onPressed: visibleItems.isEmpty
+                      ? null
+                      : () => _clearItems(visibleItems),
+                  icon: Icon(
+                    AppIcons.delete_outline_rounded,
+                    color: visibleItems.isEmpty
+                        ? AppColors.textTertiary(context)
+                        : AppColors.textSecondary(context),
+                  ),
+                ),
+              ],
+      ),
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              if (_retrying)
+                LinearProgressIndicator(
+                  minHeight: 2,
+                  color: AppColors.primaryLight,
+                  backgroundColor:
+                      AppColors.primaryLight.withValues(alpha: 0.15),
+                ),
+              Expanded(
+                child: selectedGroup == null
+                    ? _buildOverview()
+                    : _buildDetail(selectedGroup),
+              ),
+            ],
           ),
-          IconButton(
-            tooltip: clearTooltip,
-            onPressed:
-                visibleItems.isEmpty ? null : () => _clearItems(visibleItems),
-            icon: Icon(
-              AppIcons.delete_outline_rounded,
-              color: visibleItems.isEmpty
-                  ? AppColors.textTertiary(context)
-                  : AppColors.textSecondary(context),
+          if (_isSelecting)
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: MediaQuery.of(context).padding.bottom + 16,
+              child: _SelectionBottomBar(
+                count: _selectedCardIds.length,
+                onCopy: _copySelectedCards,
+                onInvert: () {
+                  final allIds = visibleItems
+                      .map((i) => i.id)
+                      .whereType<int>()
+                      .toSet();
+                  setState(() {
+                    final inverted = allIds.difference(_selectedCardIds);
+                    _selectedCardIds
+                      ..clear()
+                      ..addAll(inverted);
+                  });
+                },
+                onRetry: _retrying ? null : _retrySelectedCards,
+                onDelete: _clearSelectedCards,
+              ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Parse Card ────────────────────────────────────────────────────────────────
+
+class _FailedParseCard extends StatefulWidget {
+  final FailedParse item;
+  final bool retrying;
+  final String formattedTimestamp;
+  final VoidCallback onRetry;
+  final Future<void> Function(FailedParse item) onCopy;
+  final bool selected;
+  final bool selecting;
+  final VoidCallback onSelect;
+
+  const _FailedParseCard({
+    required this.item,
+    required this.retrying,
+    required this.formattedTimestamp,
+    required this.onRetry,
+    required this.onCopy,
+    required this.selected,
+    required this.selecting,
+    required this.onSelect,
+  });
+
+  @override
+  State<_FailedParseCard> createState() => _FailedParseCardState();
+}
+
+class _FailedParseCardState extends State<_FailedParseCard> {
+  static final _rng = Random();
+  static final _numRegex = RegExp(r'\d');
+
+  late final List<String> _tokens;
+  late final Set<int> _numberIndices;
+  final Set<int> _hidden = {};
+  final Map<int, String> _scrambled = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _tokens = _tokenize(widget.item.body);
+    _numberIndices = {
+      for (var i = 0; i < _tokens.length; i++)
+        if (_numRegex.hasMatch(_tokens[i])) i,
+    };
+  }
+
+  static List<String> _tokenize(String text) {
+    final tokens = <String>[];
+    final regex = RegExp(r'(\S+|\s+)');
+    for (final match in regex.allMatches(text)) {
+      tokens.add(match.group(0)!);
+    }
+    return tokens;
+  }
+
+  static String _scramble(String token) {
+    final buf = StringBuffer();
+    for (final c in token.codeUnits) {
+      if (c >= 65 && c <= 90) {
+        buf.writeCharCode(65 + _rng.nextInt(26));
+      } else if (c >= 97 && c <= 122) {
+        buf.writeCharCode(97 + _rng.nextInt(26));
+      } else if (c >= 48 && c <= 57) {
+        buf.writeCharCode(48 + _rng.nextInt(10));
+      } else {
+        buf.writeCharCode(c);
+      }
+    }
+    return buf.toString();
+  }
+
+  String _getScrambled(int index) {
+    return _scrambled.putIfAbsent(index, () => _scramble(_tokens[index]));
+  }
+
+  String _buildCopyText() {
+    final buffer = StringBuffer();
+    for (var i = 0; i < _tokens.length; i++) {
+      if (_hidden.contains(i)) {
+        buffer.write(_getScrambled(i));
+      } else {
+        buffer.write(_tokens[i]);
+      }
+    }
+    return buffer.toString();
+  }
+
+  void _scrambleNumbers() {
+    setState(() {
+      for (final i in _numberIndices) {
+        _hidden.add(i);
+      }
+    });
+  }
+
+  void _unscrambleAll() {
+    setState(() {
+      _hidden.clear();
+      _scrambled.clear();
+    });
+  }
+
+  void _longPressChip(int index) {
+    final isNumber = _numberIndices.contains(index);
+    setState(() {
+      for (var i = 0; i < _tokens.length; i++) {
+        if (_tokens[i].trim().isEmpty) continue;
+        if (_numberIndices.contains(i) == isNumber) {
+          _hidden.add(i);
+        }
+      }
+    });
+  }
+
+  Future<void> _copyWithRedactions() async {
+    final text = [
+      'Sender: ${widget.item.address}',
+      'Reason: ${widget.item.reason}',
+      'Time: ${widget.item.timestamp}',
+      '',
+      _buildCopyText(),
+    ].join('\n');
+
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(const SnackBar(content: Text('Transaction copied')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hasHidden = _hidden.isNotEmpty;
+
+    final scrambledBg = AppColors.amber.withValues(alpha: 0.12);
+    final scrambledFg = AppColors.isDark(context)
+        ? AppColors.amber.withValues(alpha: 0.7)
+        : AppColors.amber.withValues(alpha: 0.55);
+
+    final isSelected = widget.selected;
+
+    return GestureDetector(
+      onLongPress: widget.onSelect,
+      onTap: widget.selecting ? widget.onSelect : _copyWithRedactions,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primaryLight.withValues(alpha: 0.06)
+              : AppColors.cardColor(context),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primaryLight.withValues(alpha: 0.5)
+                : AppColors.borderColor(context),
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header row ──
+            Row(
+              children: [
+                if (widget.selecting)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: Icon(
+                      isSelected
+                          ? AppIcons.check_circle_rounded
+                          : AppIcons.add_circle_outline,
+                      size: 20,
+                      color: isSelected
+                          ? AppColors.primaryLight
+                          : AppColors.textTertiary(context),
+                    ),
+                  ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.amber.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    FailedParse.noMatchingPatternReason,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.amber,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                if (!widget.selecting)
+                  Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(6),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: _copyWithRedactions,
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          AppIcons.copy,
+                          size: 22,
+                          color: AppColors.textTertiary(context),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // ── Token chips ──
+            Wrap(
+              spacing: 5,
+              runSpacing: 5,
+              children: [
+                for (var i = 0; i < _tokens.length; i++)
+                  if (_tokens[i].trim().isNotEmpty)
+                    GestureDetector(
+                      onTap: widget.selecting
+                          ? null
+                          : () {
+                              setState(() {
+                                if (_hidden.contains(i)) {
+                                  _hidden.remove(i);
+                                } else {
+                                  _hidden.add(i);
+                                }
+                              });
+                            },
+                      onLongPress: widget.selecting
+                          ? null
+                          : () => _longPressChip(i),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOut,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _hidden.contains(i)
+                              ? scrambledBg
+                              : AppColors.mutedFill(context),
+                          borderRadius: BorderRadius.circular(6),
+                          border: _hidden.contains(i)
+                              ? Border.all(
+                                  color:
+                                      AppColors.amber.withValues(alpha: 0.25),
+                                )
+                              : null,
+                        ),
+                        child: Text(
+                          _hidden.contains(i)
+                              ? _getScrambled(i)
+                              : _tokens[i],
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.3,
+                            color: _hidden.contains(i)
+                                ? scrambledFg
+                                : AppColors.textSecondary(context),
+                            fontWeight: _hidden.contains(i)
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                    ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // ── Quick actions row ──
+            if (!widget.selecting)
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  if (_numberIndices.isNotEmpty &&
+                      !_numberIndices.every(_hidden.contains))
+                    _QuickAction(
+                      label: 'Scramble numbers',
+                      icon: AppIcons.visibility_off_outlined,
+                      color: AppColors.amber,
+                      onTap: _scrambleNumbers,
+                    ),
+                  if (hasHidden)
+                    _QuickAction(
+                      label: 'Unscramble all',
+                      icon: AppIcons.visibility_outlined,
+                      color: AppColors.primaryLight,
+                      onTap: _unscrambleAll,
+                    ),
+                ],
+              ),
+            if (!hasHidden && !widget.selecting) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Tap to scramble \u00b7 Long-press to scramble similar',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textTertiary(context),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+
+            // ── Footer row ──
+            Row(
+              children: [
+                Icon(
+                  AppIcons.schedule_rounded,
+                  size: 14,
+                  color: AppColors.textTertiary(context),
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    widget.formattedTimestamp,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textTertiary(context),
+                    ),
+                  ),
+                ),
+                if (!widget.selecting)
+                  Material(
+                    color: AppColors.primaryLight.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: widget.retrying ? null : widget.onRetry,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              AppIcons.refresh,
+                              size: 15,
+                              color: AppColors.primaryLight,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Retry',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primaryLight,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Selection Bottom Bar ──────────────────────────────────────────────────────
+
+class _SelectionBottomBar extends StatelessWidget {
+  final int count;
+  final VoidCallback onCopy;
+  final VoidCallback onInvert;
+  final VoidCallback? onRetry;
+  final VoidCallback onDelete;
+
+  const _SelectionBottomBar({
+    required this.count,
+    required this.onCopy,
+    required this.onInvert,
+    required this.onRetry,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderColor(context)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      body: Column(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          if (_retrying)
-            LinearProgressIndicator(
-              minHeight: 2,
-              color: AppColors.primaryLight,
-              backgroundColor: AppColors.primaryLight.withValues(alpha: 0.15),
-            ),
-          Expanded(
-            child: selectedGroup == null
-                ? _buildOverview()
-                : _buildDetail(selectedGroup),
+          _BottomBarAction(
+            icon: AppIcons.copy,
+            label: 'Copy',
+            onTap: count > 0 ? onCopy : null,
+          ),
+          _BottomBarAction(
+            icon: AppIcons.swap,
+            label: 'Invert',
+            onTap: onInvert,
+          ),
+          _BottomBarAction(
+            icon: AppIcons.refresh,
+            label: 'Retry',
+            onTap: count > 0 ? onRetry : null,
+          ),
+          _BottomBarAction(
+            icon: AppIcons.delete_outline_rounded,
+            label: 'Delete',
+            color: AppColors.red,
+            onTap: count > 0 ? onDelete : null,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _BottomBarAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color? color;
+  final VoidCallback? onTap;
+
+  const _BottomBarAction({
+    required this.icon,
+    required this.label,
+    this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDisabled = onTap == null;
+    final effectiveColor = isDisabled
+        ? AppColors.textTertiary(context)
+        : color ?? AppColors.textSecondary(context);
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 22, color: effectiveColor),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: effectiveColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Quick Action Chip ─────────────────────────────────────────────────────────
+
+class _QuickAction extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickAction({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: color),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -781,15 +1362,15 @@ class _FailedParseBankCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.borderColor(context)),
           ),
           child: Row(
             children: [
-              _BankLogo(bank: group.bank, darkForeground: false),
-              const SizedBox(width: 12),
+              _BankLogo(bank: group.bank, darkForeground: false, size: 44),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -869,11 +1450,11 @@ class _FailedParseSummaryCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.borderColor(context)),
       ),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
           _BankLogo(bank: bank, darkForeground: false, size: 44),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -948,9 +1529,8 @@ class _BankLogo extends StatelessWidget {
                   return Icon(
                     AppIcons.account_balance_rounded,
                     size: size * 0.52,
-                    color: darkForeground
-                        ? Colors.white
-                        : AppColors.primaryLight,
+                    color:
+                        darkForeground ? Colors.white : AppColors.primaryLight,
                   );
                 },
               ),

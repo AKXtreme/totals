@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:totals/models/bank.dart';
 import 'package:totals/models/failed_parse.dart';
+import 'package:totals/repositories/account_repository.dart';
 import 'package:totals/repositories/failed_parse_repository.dart';
 
 class FailedParseReviewService {
@@ -39,6 +40,10 @@ class FailedParseReviewService {
     final candidate = candidates.remove(id);
     await _writeCandidates(candidates);
     if (candidate == null) return;
+
+    final hasRegisteredAccount = (await AccountRepository().getAccounts())
+        .any((account) => account.bank == candidate.bankId);
+    if (!hasRegisteredAccount) return;
 
     final repo = FailedParseRepository();
     final existing = await repo.getAll();
