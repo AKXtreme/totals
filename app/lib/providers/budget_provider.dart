@@ -48,7 +48,7 @@ class BudgetProvider with ChangeNotifier {
     _budgetStatuses = await _budgetService.getAllBudgetStatuses();
   }
 
-  Future<void> createBudget(Budget budget) async {
+  Future<Budget> createBudget(Budget budget) async {
     try {
       final id = await _budgetRepository.insertBudget(budget);
       // Get the created budget with its ID
@@ -61,14 +61,14 @@ class BudgetProvider with ChangeNotifier {
       } catch (e) {
         print("debug: Error checking budget alerts after creating budget: $e");
       }
-      return;
+      return createdBudget;
     } catch (e) {
       print("debug: Error creating budget: $e");
       rethrow;
     }
   }
 
-  Future<void> updateBudget(Budget budget) async {
+  Future<Budget> updateBudget(Budget budget) async {
     try {
       await _budgetRepository.updateBudget(budget);
       await loadBudgets();
@@ -79,20 +79,21 @@ class BudgetProvider with ChangeNotifier {
       } catch (e) {
         print("debug: Error checking budget alerts after updating budget: $e");
       }
+      return budget;
     } catch (e) {
       print("debug: Error updating budget: $e");
       rethrow;
     }
   }
 
-  Future<void> updateBudgetForMonthOnly({
+  Future<Budget> updateBudgetForMonthOnly({
     required Budget originalBudget,
     required Budget editedBudget,
     required DateTime month,
     bool keepFutureSegment = true,
   }) async {
     try {
-      await _budgetRepository.updateBudgetForMonthOnly(
+      final editedBudgetId = await _budgetRepository.updateBudgetForMonthOnly(
         originalBudget: originalBudget,
         editedBudget: editedBudget,
         month: month,
@@ -100,6 +101,7 @@ class BudgetProvider with ChangeNotifier {
       );
       await loadBudgets();
       notifyListeners();
+      return editedBudget.copyWith(id: editedBudgetId);
     } catch (e) {
       print("debug: Error updating budget for month only: $e");
       rethrow;

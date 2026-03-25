@@ -1,4 +1,3 @@
-import 'package:sqflite/sqflite.dart';
 import 'package:totals/database/database_helper.dart';
 import 'package:totals/models/budget.dart';
 
@@ -89,7 +88,7 @@ class BudgetRepository {
 
   /// Applies edits only to the given month while preserving original values
   /// for months after the selected one.
-  Future<void> updateBudgetForMonthOnly({
+  Future<int> updateBudgetForMonthOnly({
     required Budget originalBudget,
     required Budget editedBudget,
     required DateTime month,
@@ -105,9 +104,11 @@ class BudgetRepository {
     final monthEnd = nextMonthStart.subtract(const Duration(seconds: 1));
     final originalEnd = originalBudget.endDate;
     final hadPastSegment = originalBudget.startDate.isBefore(monthStart);
-    final hasFutureSegment =
-        keepFutureSegment && (originalEnd == null || originalEnd.isAfter(monthEnd));
+    final hasFutureSegment = keepFutureSegment &&
+        (originalEnd == null || originalEnd.isAfter(monthEnd));
     final nowIso = DateTime.now().toIso8601String();
+
+    late int editedBudgetId;
 
     await db.transaction((txn) async {
       final editedData = editedBudget
@@ -132,7 +133,7 @@ class BudgetRepository {
           whereArgs: [originalBudget.id],
         );
 
-        await txn.insert('budgets', editedData);
+        editedBudgetId = await txn.insert('budgets', editedData);
       } else {
         await txn.update(
           'budgets',
@@ -140,6 +141,7 @@ class BudgetRepository {
           where: 'id = ?',
           whereArgs: [originalBudget.id],
         );
+        editedBudgetId = originalBudget.id!;
       }
 
       if (hasFutureSegment) {
@@ -157,6 +159,8 @@ class BudgetRepository {
         await txn.insert('budgets', futureData);
       }
     });
+
+    return editedBudgetId;
   }
 
   Future<int> deleteBudget(int id) async {
@@ -336,7 +340,8 @@ class BudgetRepository {
 
     final List<Map<String, dynamic>> maps = await db.query(
       'budgets',
-      where: 'type = ? AND isActive = ? AND startDate <= ? AND (endDate IS NULL OR endDate >= ?)',
+      where:
+          'type = ? AND isActive = ? AND startDate <= ? AND (endDate IS NULL OR endDate >= ?)',
       whereArgs: [
         type,
         1,

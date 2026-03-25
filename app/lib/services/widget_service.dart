@@ -13,6 +13,18 @@ class WidgetService {
       'com.example.offline_gateway.$expenseAndroidWidgetName';
 
   static const String budgetAndroidWidgetName = 'BudgetWidgetProvider';
+  static const String budgetAndroidWidgetQualifiedName =
+      'com.example.offline_gateway.$budgetAndroidWidgetName';
+  static const int maxBudgetWidgetBudgets = 3;
+
+  static const String _budgetWidgetSelectedIdsKey =
+      'budget_widget_selected_ids';
+  static const String _budgetWidgetSelectedCountKey =
+      'budget_widget_selected_count';
+  static const String _budgetWidgetEmptyMessageKey =
+      'budget_widget_empty_message';
+  static const String _budgetWidgetLastUpdatedKey =
+      'budget_widget_last_updated';
 
   static WidgetDataProvider? _dataProvider;
   static BudgetWidgetDataProvider? _budgetDataProvider;
@@ -99,74 +111,86 @@ class WidgetService {
     bool updateRefreshState = true,
   }) async {
     try {
-      final snapshots = await budgetDataProvider.getAllPeriodSnapshots();
+      final payload = await budgetDataProvider.getWidgetPayload();
+      final selectedIds = await getBudgetWidgetSelectedIds();
+      final sanitizedIds = selectedIds
+          .where(payload.budgetsById.containsKey)
+          .take(maxBudgetWidgetBudgets)
+          .toList(growable: false);
 
-      for (final period in BudgetWidgetDataProvider.supportedPeriods) {
-        final snapshot = snapshots[period];
-        if (snapshot == null) continue;
+      if (!_sameIds(selectedIds, sanitizedIds)) {
+        await _saveBudgetWidgetSelectedIds(sanitizedIds);
+      }
 
-        final prefix = 'budget_${snapshot.period}';
+      await HomeWidget.saveWidgetData<String>(
+        _budgetWidgetSelectedCountKey,
+        sanitizedIds.length.toString(),
+      );
+      await HomeWidget.saveWidgetData<String>(
+        _budgetWidgetEmptyMessageKey,
+        sanitizedIds.isEmpty
+            ? payload.emptyMessage
+            : 'Choose up to $maxBudgetWidgetBudgets budgets in Totals.',
+      );
+      await HomeWidget.saveWidgetData<String>(
+        _budgetWidgetLastUpdatedKey,
+        payload.lastUpdated,
+      );
 
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_period_label',
-          snapshot.periodLabel,
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_is_empty',
-          snapshot.isEmpty ? '1' : '0',
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_empty_message',
-          snapshot.emptyMessage,
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_assigned_label',
-          snapshot.assignedLabel,
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_activity_label',
-          snapshot.activityLabel,
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_available_label',
-          snapshot.availableLabel,
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_assigned_raw',
-          snapshot.assignedRaw.toString(),
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_activity_raw',
-          snapshot.activityRaw.toString(),
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_available_raw',
-          snapshot.availableRaw.toString(),
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_needs_available_label',
-          snapshot.needsAvailableLabel,
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_wants_available_label',
-          snapshot.wantsAvailableLabel,
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_needs_available_raw',
-          snapshot.needsAvailableRaw.toString(),
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_wants_available_raw',
-          snapshot.wantsAvailableRaw.toString(),
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_percent',
-          snapshot.percentUsed.toString(),
-        );
-        await HomeWidget.saveWidgetData<String>(
-          '${prefix}_updated_at',
-          snapshot.lastUpdated,
-        );
+      for (var index = 0; index < maxBudgetWidgetBudgets; index++) {
+        final prefix = 'budget_item_$index';
+        if (index < sanitizedIds.length) {
+          final snapshot = payload.budgetsById[sanitizedIds[index]];
+          if (snapshot != null) {
+            await HomeWidget.saveWidgetData<String>(
+              '${prefix}_budget_id',
+              snapshot.budgetId.toString(),
+            );
+            await HomeWidget.saveWidgetData<String>(
+              '${prefix}_name',
+              snapshot.name,
+            );
+            await HomeWidget.saveWidgetData<String>(
+              '${prefix}_compact_value',
+              snapshot.compactValueLabel,
+            );
+            await HomeWidget.saveWidgetData<String>(
+              '${prefix}_expanded_value',
+              snapshot.expandedValueLabel,
+            );
+            await HomeWidget.saveWidgetData<String>(
+              '${prefix}_spent_raw',
+              snapshot.spentRaw.toString(),
+            );
+            await HomeWidget.saveWidgetData<String>(
+              '${prefix}_amount_raw',
+              snapshot.amountRaw.toString(),
+            );
+            await HomeWidget.saveWidgetData<String>(
+              '${prefix}_percent',
+              snapshot.percentUsed.toString(),
+            );
+            await HomeWidget.saveWidgetData<String>(
+              '${prefix}_ring_percent',
+              snapshot.ringPercent.toString(),
+            );
+            await HomeWidget.saveWidgetData<String>(
+              '${prefix}_color',
+              snapshot.colorHex,
+            );
+            continue;
+          }
+        }
+
+        await HomeWidget.saveWidgetData<String>('${prefix}_budget_id', '');
+        await HomeWidget.saveWidgetData<String>('${prefix}_name', '');
+        await HomeWidget.saveWidgetData<String>('${prefix}_compact_value', '');
+        await HomeWidget.saveWidgetData<String>('${prefix}_expanded_value', '');
+        await HomeWidget.saveWidgetData<String>('${prefix}_spent_raw', '0');
+        await HomeWidget.saveWidgetData<String>('${prefix}_amount_raw', '0');
+        await HomeWidget.saveWidgetData<String>('${prefix}_percent', '0');
+        await HomeWidget.saveWidgetData<String>('${prefix}_ring_percent', '0');
+        await HomeWidget.saveWidgetData<String>('${prefix}_color', '');
       }
 
       await HomeWidget.updateWidget(androidName: budgetAndroidWidgetName);
@@ -230,4 +254,117 @@ class WidgetService {
     );
     await WidgetRefreshStateService.instance.setLastRefreshAt(DateTime.now());
   }
+
+  static Future<List<int>> getBudgetWidgetSelectedIds() async {
+    final raw = await HomeWidget.getWidgetData<String>(
+      _budgetWidgetSelectedIdsKey,
+      defaultValue: '[]',
+    );
+    return _decodeIntList(raw);
+  }
+
+  static Future<BudgetWidgetSelectionResult> addBudgetToWidget(
+    int budgetId,
+  ) async {
+    final selectedIds = await getBudgetWidgetSelectedIds();
+    if (selectedIds.contains(budgetId)) {
+      return BudgetWidgetSelectionResult.alreadySelected;
+    }
+    if (selectedIds.length >= maxBudgetWidgetBudgets) {
+      return BudgetWidgetSelectionResult.limitReached;
+    }
+
+    final nextIds = [...selectedIds, budgetId];
+    await _saveBudgetWidgetSelectedIds(nextIds);
+    await refreshBudgetWidget();
+    return BudgetWidgetSelectionResult.added;
+  }
+
+  static Future<bool> removeBudgetFromWidget(int budgetId) async {
+    final selectedIds = await getBudgetWidgetSelectedIds();
+    if (!selectedIds.contains(budgetId)) return false;
+
+    final nextIds = selectedIds.where((id) => id != budgetId).toList();
+    await _saveBudgetWidgetSelectedIds(nextIds);
+    await refreshBudgetWidget();
+    return true;
+  }
+
+  static Future<int> getInstalledBudgetWidgetCount() async {
+    try {
+      final widgets = await HomeWidget.getInstalledWidgets();
+      return widgets.where(_isInstalledBudgetWidget).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static Future<bool> isBudgetWidgetPinSupported() async {
+    return await HomeWidget.isRequestPinWidgetSupported() ?? false;
+  }
+
+  static Future<bool> requestBudgetWidgetPinIfNeeded() async {
+    final installedCount = await getInstalledBudgetWidgetCount();
+    if (installedCount > 0) return false;
+
+    final supported = await isBudgetWidgetPinSupported();
+    if (!supported) return false;
+
+    await HomeWidget.requestPinWidget(androidName: budgetAndroidWidgetName);
+    return true;
+  }
+
+  static bool _isInstalledBudgetWidget(HomeWidgetInfo widget) {
+    final className = widget.androidClassName?.trim();
+    return className == budgetAndroidWidgetQualifiedName ||
+        className == budgetAndroidWidgetName ||
+        className?.endsWith('.$budgetAndroidWidgetName') == true;
+  }
+
+  static Future<void> _saveBudgetWidgetSelectedIds(List<int> ids) async {
+    final sanitized = ids
+        .where((id) => id > 0)
+        .toSet()
+        .take(maxBudgetWidgetBudgets)
+        .toList(growable: false);
+    await HomeWidget.saveWidgetData<String>(
+      _budgetWidgetSelectedIdsKey,
+      jsonEncode(sanitized),
+    );
+  }
+
+  static List<int> _decodeIntList(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return const [];
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .map((value) {
+            if (value is int) return value;
+            if (value is num) return value.toInt();
+            if (value is String) return int.tryParse(value.trim());
+            return null;
+          })
+          .whereType<int>()
+          .where((id) => id > 0)
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static bool _sameIds(List<int> left, List<int> right) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) return false;
+    }
+    return true;
+  }
+}
+
+enum BudgetWidgetSelectionResult {
+  added,
+  alreadySelected,
+  limitReached,
 }

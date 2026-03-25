@@ -14,6 +14,7 @@ import 'package:totals/models/category.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/budget_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
+import 'package:totals/services/widget_service.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/_redesign/theme/app_icons.dart';
 
@@ -129,6 +130,7 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
   Budget? _detailBudget;
   bool _needsExpanded = true;
   bool _wantsExpanded = true;
+  Set<int> _selectedBudgetWidgetIds = <int>{};
 
   bool handleSystemBack() {
     if (_detailBudget == null) return false;
@@ -144,7 +146,21 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
       final tp = Provider.of<TransactionProvider>(context, listen: false);
       bp.setTransactionProvider(tp);
       bp.loadBudgets();
+      _loadBudgetWidgetState();
     });
+  }
+
+  Future<void> _loadBudgetWidgetState() async {
+    final selectedIds = await WidgetService.getBudgetWidgetSelectedIds();
+    if (!mounted) return;
+    setState(() {
+      _selectedBudgetWidgetIds = selectedIds.toSet();
+    });
+  }
+
+  bool _isBudgetOnHomescreenWidget(Budget budget) {
+    final budgetId = budget.id;
+    return budgetId != null && _selectedBudgetWidgetIds.contains(budgetId);
   }
 
   // ── Month helpers ───────────────────────────────────────────────────────
@@ -328,8 +344,8 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
                         budget: b,
                         spent: _spentForBudget(b, debits),
                         categoryLabel: _categorySummaryForBudget(b, tp),
-                        isRecurring:
-                            _isRecurringBudgetInSelectedMonth(b),
+                        isOnHomescreenWidget: _isBudgetOnHomescreenWidget(b),
+                        isRecurring: _isRecurringBudgetInSelectedMonth(b),
                         onTap: () => setState(() => _detailBudget = b),
                       ))
                   .toList(),
@@ -347,8 +363,8 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
                         budget: b,
                         spent: _spentForBudget(b, debits),
                         categoryLabel: _categorySummaryForBudget(b, tp),
-                        isRecurring:
-                            _isRecurringBudgetInSelectedMonth(b),
+                        isOnHomescreenWidget: _isBudgetOnHomescreenWidget(b),
+                        isRecurring: _isRecurringBudgetInSelectedMonth(b),
                         onTap: () => setState(() => _detailBudget = b),
                       ))
                   .toList(),
@@ -543,7 +559,7 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
         transactionProvider: tp,
         selectedMonth: _selectedMonth,
       ),
-    );
+    ).whenComplete(_loadBudgetWidgetState);
   }
 
   void _openEditBudgetForm(
@@ -558,7 +574,7 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
         selectedMonth: _selectedMonth,
         existing: budget,
       ),
-    );
+    ).whenComplete(_loadBudgetWidgetState);
   }
 }
 
@@ -585,7 +601,8 @@ class _MonthNavigator extends StatelessWidget {
       children: [
         IconButton(
           onPressed: onPrev,
-          icon: Icon(AppIcons.chevron_left, color: AppColors.textPrimary(context)),
+          icon: Icon(AppIcons.chevron_left,
+              color: AppColors.textPrimary(context)),
           splashRadius: 20,
         ),
         Text(
@@ -598,8 +615,8 @@ class _MonthNavigator extends StatelessWidget {
         ),
         IconButton(
           onPressed: onNext,
-          icon:
-              Icon(AppIcons.chevron_right, color: AppColors.textPrimary(context)),
+          icon: Icon(AppIcons.chevron_right,
+              color: AppColors.textPrimary(context)),
           splashRadius: 20,
         ),
       ],
@@ -814,6 +831,7 @@ class _BudgetItemRow extends StatelessWidget {
   final Budget budget;
   final double spent;
   final String? categoryLabel;
+  final bool isOnHomescreenWidget;
   final bool isRecurring;
   final VoidCallback onTap;
 
@@ -821,6 +839,7 @@ class _BudgetItemRow extends StatelessWidget {
     required this.budget,
     required this.spent,
     required this.categoryLabel,
+    required this.isOnHomescreenWidget,
     required this.isRecurring,
     required this.onTap,
   });
@@ -873,6 +892,10 @@ class _BudgetItemRow extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 8),
+                            if (isOnHomescreenWidget) ...[
+                              const _BudgetWidgetBadge(),
+                              const SizedBox(width: 6),
+                            ],
                             _BudgetRecurrenceBadge(isRecurring: isRecurring),
                           ],
                         ),
@@ -1206,12 +1229,12 @@ class _DetailTopBar extends StatelessWidget {
           const Spacer(),
           TextButton(
             onPressed: onEdit,
-            child: const Text('Edit'),
             style: TextButton.styleFrom(
               foregroundColor: AppColors.primaryLight,
               textStyle:
                   const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
+            child: const Text('Edit'),
           ),
         ],
       ),
@@ -1415,6 +1438,9 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   final FocusNode _newCategoryFocus = FocusNode();
   final ScrollController _formScrollController = ScrollController();
   double _lastKeyboardInset = 0;
+  Set<int> _selectedBudgetWidgetIds = <int>{};
+  bool _isHomescreenWidgetStateLoading = true;
+  bool _showOnHomescreenWidget = false;
 
   bool get _isEdit => widget.existing != null;
   DateTime get _selectedMonthStart =>
@@ -1475,6 +1501,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     } else {
       _selectedPeriod = 'monthly';
     }
+
+    _loadHomescreenWidgetState();
   }
 
   @override
@@ -1554,6 +1582,90 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
               ? current
               : best,
         );
+  }
+
+  int? get _existingBudgetId => widget.existing?.id;
+
+  bool get _isExistingBudgetSelectedOnWidget {
+    final existingBudgetId = _existingBudgetId;
+    return existingBudgetId != null &&
+        _selectedBudgetWidgetIds.contains(existingBudgetId);
+  }
+
+  int get _draftSelectedWidgetCount {
+    var count = _selectedBudgetWidgetIds.length;
+    if (_isExistingBudgetSelectedOnWidget && !_showOnHomescreenWidget) {
+      count -= 1;
+    } else if (!_isExistingBudgetSelectedOnWidget && _showOnHomescreenWidget) {
+      count += 1;
+    }
+    return count.clamp(0, WidgetService.maxBudgetWidgetBudgets);
+  }
+
+  int get _draftWidgetSpotsLeft {
+    return (WidgetService.maxBudgetWidgetBudgets - _draftSelectedWidgetCount)
+        .clamp(0, WidgetService.maxBudgetWidgetBudgets);
+  }
+
+  bool get _canEnableHomescreenWidgetToggle {
+    return _showOnHomescreenWidget || _draftWidgetSpotsLeft > 0;
+  }
+
+  Future<void> _loadHomescreenWidgetState() async {
+    final selectedIds = await WidgetService.getBudgetWidgetSelectedIds();
+    if (!mounted) return;
+
+    final selectedSet = selectedIds.toSet();
+    setState(() {
+      _selectedBudgetWidgetIds = selectedSet;
+      _showOnHomescreenWidget =
+          _existingBudgetId != null && selectedSet.contains(_existingBudgetId);
+      _isHomescreenWidgetStateLoading = false;
+    });
+  }
+
+  Future<String?> _syncHomescreenWidgetSelection(Budget savedBudget) async {
+    if (_isHomescreenWidgetStateLoading) return null;
+
+    final savedBudgetId = savedBudget.id;
+    final originalBudgetId = _existingBudgetId;
+    final originallySelected = _isExistingBudgetSelectedOnWidget;
+
+    if (!_showOnHomescreenWidget) {
+      if (savedBudgetId != null) {
+        await WidgetService.removeBudgetFromWidget(savedBudgetId);
+      }
+      if (originallySelected &&
+          originalBudgetId != null &&
+          originalBudgetId != savedBudgetId) {
+        await WidgetService.removeBudgetFromWidget(originalBudgetId);
+      }
+      return null;
+    }
+
+    if (savedBudgetId == null) {
+      return 'Budget saved, but the homescreen widget selection could not be applied.';
+    }
+
+    if (originallySelected &&
+        originalBudgetId != null &&
+        originalBudgetId != savedBudgetId) {
+      await WidgetService.removeBudgetFromWidget(originalBudgetId);
+    }
+
+    final addResult = await WidgetService.addBudgetToWidget(savedBudgetId);
+    switch (addResult) {
+      case BudgetWidgetSelectionResult.added:
+        final pinRequested =
+            await WidgetService.requestBudgetWidgetPinIfNeeded();
+        return pinRequested
+            ? 'Budget saved. Add the widget to your homescreen if prompted.'
+            : null;
+      case BudgetWidgetSelectionResult.alreadySelected:
+        return null;
+      case BudgetWidgetSelectionResult.limitReached:
+        return 'Budget saved, but the homescreen widget is already using all 3 spots.';
+    }
   }
 
   bool _categoryExistsForFlow({
@@ -1766,8 +1878,9 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) return 'Required';
                           final n = double.tryParse(v.trim());
-                          if (n == null || n <= 0)
+                          if (n == null || n <= 0) {
                             return 'Enter a valid amount';
+                          }
                           return null;
                         },
                       ),
@@ -1931,8 +2044,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                               ),
                             ),
                             value: _endRecurringAtSelectedMonth,
-                            onChanged: (v) =>
-                                setState(() => _endRecurringAtSelectedMonth = v),
+                            onChanged: (v) => setState(
+                                () => _endRecurringAtSelectedMonth = v),
                             activeColor: AppColors.primaryLight,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -2060,6 +2173,49 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                           ),
                           value: _rollover,
                           onChanged: (v) => setState(() => _rollover = v),
+                          activeColor: AppColors.primaryLight,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding:
+                              const EdgeInsets.symmetric(horizontal: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceColor(context),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: SwitchListTile(
+                          title: Text(
+                            'Show on homescreen widget',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textPrimary(context),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          subtitle: Text(
+                            _isHomescreenWidgetStateLoading
+                                ? 'Checking available widget spots...'
+                                : '${_draftWidgetSpotsLeft.toInt()} ${_draftWidgetSpotsLeft == 1 ? 'spot' : 'spots'} left on the homescreen widget',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppColors.textSecondary(context),
+                            ),
+                          ),
+                          value: _showOnHomescreenWidget,
+                          onChanged: _isHomescreenWidgetStateLoading ||
+                                  _isSaving
+                              ? null
+                              : (value) {
+                                  if (value &&
+                                      !_canEnableHomescreenWidgetToggle) {
+                                    return;
+                                  }
+                                  setState(
+                                      () => _showOnHomescreenWidget = value);
+                                },
                           activeColor: AppColors.primaryLight,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -2339,13 +2495,11 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     final baseEndDate = _isEdit
         ? widget.existing!.endDate
         : (_uniqueToSelectedMonth ? _selectedMonthEnd : null);
-    final shouldCreateFutureBudgets = _isEdit &&
-        _isSingleMonthBudgetInSelectedMonth &&
-        _createFutureBudgets;
+    final shouldCreateFutureBudgets =
+        _isEdit && _isSingleMonthBudgetInSelectedMonth && _createFutureBudgets;
     final shouldEndRecurringAfterSelectedMonth =
         _isEdit && _hasFutureBudgetsToUpdate && _endRecurringAtSelectedMonth;
-    final effectiveEndDate =
-        shouldCreateFutureBudgets ? null : baseEndDate;
+    final effectiveEndDate = shouldCreateFutureBudgets ? null : baseEndDate;
     final budget = Budget(
       id: widget.existing?.id,
       name: _nameController.text.trim(),
@@ -2364,18 +2518,20 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     );
 
     try {
+      late final Budget savedBudget;
+
       if (_isEdit) {
         if (shouldEndRecurringAfterSelectedMonth) {
-          await widget.budgetProvider.updateBudgetForMonthOnly(
+          savedBudget = await widget.budgetProvider.updateBudgetForMonthOnly(
             originalBudget: widget.existing!,
             editedBudget: budget.copyWith(endDate: _selectedMonthEnd),
             month: _selectedMonthStart,
             keepFutureSegment: false,
           );
         } else if (_applyToFutureBudgets || !_hasFutureBudgetsToUpdate) {
-          await widget.budgetProvider.updateBudget(budget);
+          savedBudget = await widget.budgetProvider.updateBudget(budget);
         } else {
-          await widget.budgetProvider.updateBudgetForMonthOnly(
+          savedBudget = await widget.budgetProvider.updateBudgetForMonthOnly(
             originalBudget: widget.existing!,
             editedBudget: budget,
             month: _selectedMonthStart,
@@ -2383,9 +2539,17 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
           );
         }
       } else {
-        await widget.budgetProvider.createBudget(budget);
+        savedBudget = await widget.budgetProvider.createBudget(budget);
       }
-      if (mounted) Navigator.of(context).pop();
+
+      final widgetFeedback = await _syncHomescreenWidgetSelection(savedBudget);
+      if (!mounted) return;
+      if (widgetFeedback != null && widgetFeedback.trim().isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(widgetFeedback)),
+        );
+      }
+      Navigator.of(context).pop();
     } catch (_) {
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -2429,7 +2593,10 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Delete', style: TextStyle(color: AppColors.red)),
+              child: const Text(
+                'Delete',
+                style: TextStyle(color: AppColors.red),
+              ),
             ),
           ],
         ),
@@ -2723,6 +2890,32 @@ class _BudgetRecurrenceBadge extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.w600,
           color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class _BudgetWidgetBadge extends StatelessWidget {
+  const _BudgetWidgetBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.primaryLight.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: AppColors.primaryLight.withValues(alpha: 0.25),
+        ),
+      ),
+      child: const Text(
+        'Widget',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: AppColors.primaryLight,
         ),
       ),
     );

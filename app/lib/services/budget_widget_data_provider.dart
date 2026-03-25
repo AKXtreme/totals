@@ -1,50 +1,48 @@
+import 'package:flutter/material.dart';
 import 'package:totals/models/budget.dart';
 import 'package:totals/models/category.dart';
 import 'package:totals/repositories/category_repository.dart';
 import 'package:totals/services/budget_service.dart';
-import 'package:totals/utils/text_utils.dart';
 
-class BudgetWidgetSnapshot {
-  final String period;
-  final String periodLabel;
-  final bool isEmpty;
-  final String emptyMessage;
-  final double assignedRaw;
-  final double activityRaw;
-  final double availableRaw;
+class BudgetWidgetBudgetSnapshot {
+  final int budgetId;
+  final String name;
+  final double spentRaw;
+  final double amountRaw;
   final double percentUsed;
-  final String assignedLabel;
-  final String activityLabel;
-  final String availableLabel;
-  final double needsAvailableRaw;
-  final double wantsAvailableRaw;
-  final String needsAvailableLabel;
-  final String wantsAvailableLabel;
+  final double ringPercent;
+  final String compactValueLabel;
+  final String expandedValueLabel;
+  final String colorHex;
+
+  const BudgetWidgetBudgetSnapshot({
+    required this.budgetId,
+    required this.name,
+    required this.spentRaw,
+    required this.amountRaw,
+    required this.percentUsed,
+    required this.ringPercent,
+    required this.compactValueLabel,
+    required this.expandedValueLabel,
+    required this.colorHex,
+  });
+}
+
+class BudgetWidgetPayload {
+  final Map<int, BudgetWidgetBudgetSnapshot> budgetsById;
+  final bool hasAnyBudgets;
+  final String emptyMessage;
   final String lastUpdated;
 
-  const BudgetWidgetSnapshot({
-    required this.period,
-    required this.periodLabel,
-    required this.isEmpty,
+  const BudgetWidgetPayload({
+    required this.budgetsById,
+    required this.hasAnyBudgets,
     required this.emptyMessage,
-    required this.assignedRaw,
-    required this.activityRaw,
-    required this.availableRaw,
-    required this.percentUsed,
-    required this.assignedLabel,
-    required this.activityLabel,
-    required this.availableLabel,
-    required this.needsAvailableRaw,
-    required this.wantsAvailableRaw,
-    required this.needsAvailableLabel,
-    required this.wantsAvailableLabel,
     required this.lastUpdated,
   });
 }
 
 class BudgetWidgetDataProvider {
-  static const List<String> supportedPeriods = ['monthly'];
-
   final BudgetService _budgetService;
   final CategoryRepository _categoryRepository;
 
@@ -54,193 +52,154 @@ class BudgetWidgetDataProvider {
   })  : _budgetService = budgetService ?? BudgetService(),
         _categoryRepository = categoryRepository ?? CategoryRepository();
 
-  Future<Map<String, BudgetWidgetSnapshot>> getAllPeriodSnapshots() async {
-    final snapshots = <String, BudgetWidgetSnapshot>{};
+  Future<BudgetWidgetPayload> getWidgetPayload() async {
+    final statuses = await _budgetService.getAllBudgetStatuses();
+    final visibleStatuses = statuses
+        .where(
+          (status) => status.budget.overlapsRange(
+            status.periodStart,
+            status.periodEnd,
+          ),
+        )
+        .toList(growable: false);
 
-    final categoryStatuses = await _budgetService.getCategoryBudgetStatuses();
     final categories = await _categoryRepository.getCategories();
     final categoryById = {
       for (final category in categories)
         if (category.id != null) category.id!: category,
     };
 
-    for (final period in supportedPeriods) {
-      final periodStatuses =
-          await _budgetService.getBudgetStatusesByType(period);
-      snapshots[period] = _buildSnapshot(
-        period: period,
-        periodStatuses: periodStatuses,
-        allCategoryStatuses: categoryStatuses,
+    final budgetsById = <int, BudgetWidgetBudgetSnapshot>{};
+    for (final status in visibleStatuses) {
+      final budgetId = status.budget.id;
+      if (budgetId == null) continue;
+      budgetsById[budgetId] = _buildBudgetSnapshot(
+        status: status,
         categoryById: categoryById,
       );
     }
 
-    return snapshots;
-  }
+    final hasAnyBudgets = budgetsById.isNotEmpty;
 
-  BudgetWidgetSnapshot _buildSnapshot({
-    required String period,
-    required List<BudgetStatus> periodStatuses,
-    required List<BudgetStatus> allCategoryStatuses,
-    required Map<int, Category> categoryById,
-  }) {
-    final rangeStart = _periodRangeStart(period);
-    final rangeEnd = _periodRangeEnd(period, rangeStart);
-
-    final visiblePeriodStatuses = periodStatuses
-        .where((status) => status.budget.overlapsRange(rangeStart, rangeEnd))
-        .toList(growable: false);
-
-    final matchingCategoryStatuses = allCategoryStatuses
-        .where((status) => _matchesPeriod(status.budget, period))
-        .where((status) => status.budget.overlapsRange(rangeStart, rangeEnd))
-        .toList(growable: false);
-
-    final combinedStatuses = <BudgetStatus>[
-      ...visiblePeriodStatuses,
-      ...matchingCategoryStatuses,
-    ];
-
-    final hasAnyBudgets = combinedStatuses.isNotEmpty;
-
-    final assignedRaw = combinedStatuses.fold<double>(
-      0.0,
-      (sum, status) => sum + status.budget.amount,
-    );
-    final activityRaw = combinedStatuses.fold<double>(
-      0.0,
-      (sum, status) => sum + status.spent,
-    );
-    final availableRaw = assignedRaw - activityRaw;
-
-    final percentUsed = assignedRaw > 0
-        ? ((activityRaw / assignedRaw) * 100).clamp(0.0, 999.0).toDouble()
-        : 0.0;
-
-    final needsAvailableRaw = _sumGroupAvailable(
-      statuses: combinedStatuses,
-      categoryById: categoryById,
-      group: _BudgetGroup.needs,
-    );
-    final wantsAvailableRaw = _sumGroupAvailable(
-      statuses: combinedStatuses,
-      categoryById: categoryById,
-      group: _BudgetGroup.wants,
-    );
-
-    return BudgetWidgetSnapshot(
-      period: period,
-      periodLabel: _periodLabel(period),
-      isEmpty: !hasAnyBudgets,
-      emptyMessage: "You currently don't have any budgets.",
-      assignedRaw: assignedRaw,
-      activityRaw: activityRaw,
-      availableRaw: availableRaw,
-      percentUsed: percentUsed,
-      assignedLabel: formatAmountForWidget(assignedRaw),
-      activityLabel: formatAmountForWidget(activityRaw),
-      availableLabel: formatAmountForWidget(availableRaw),
-      needsAvailableRaw: needsAvailableRaw,
-      wantsAvailableRaw: wantsAvailableRaw,
-      needsAvailableLabel: formatAmountForWidget(needsAvailableRaw),
-      wantsAvailableLabel: formatAmountForWidget(wantsAvailableRaw),
+    return BudgetWidgetPayload(
+      budgetsById: budgetsById,
+      hasAnyBudgets: hasAnyBudgets,
+      emptyMessage: hasAnyBudgets
+          ? 'Choose up to 3 budgets in Totals.'
+          : 'Create a budget to show it here.',
       lastUpdated: getLastUpdatedTimestamp(),
     );
   }
 
-  double _sumGroupAvailable({
-    required List<BudgetStatus> statuses,
+  BudgetWidgetBudgetSnapshot _buildBudgetSnapshot({
+    required BudgetStatus status,
     required Map<int, Category> categoryById,
-    required _BudgetGroup group,
   }) {
-    return statuses.fold<double>(0.0, (sum, status) {
-      final bucket = _groupForBudget(status.budget, categoryById);
-      if (bucket != group) return sum;
-      return sum + (status.budget.amount - status.spent);
-    });
+    final budget = status.budget;
+    final color = _resolveBudgetColor(
+      budget: budget,
+      categoryById: categoryById,
+    );
+    final budgetName =
+        budget.name.trim().isEmpty ? 'Budget' : budget.name.trim();
+    final spentLabel = _formatMetricNumber(status.spent);
+    final amountLabel = _formatMetricNumber(budget.amount);
+
+    return BudgetWidgetBudgetSnapshot(
+      budgetId: budget.id!,
+      name: budgetName,
+      spentRaw: status.spent,
+      amountRaw: budget.amount,
+      percentUsed: status.percentageUsed,
+      ringPercent: status.percentageUsed.clamp(0.0, 100.0).toDouble(),
+      compactValueLabel: spentLabel,
+      expandedValueLabel: '$spentLabel / $amountLabel',
+      colorHex: _colorToHex(color),
+    );
   }
 
-  _BudgetGroup _groupForBudget(Budget budget, Map<int, Category> categoryById) {
-    final ids = budget.selectedCategoryIds;
-    if (ids.isEmpty) return _BudgetGroup.needs;
+  Color _resolveBudgetColor({
+    required Budget budget,
+    required Map<int, Category> categoryById,
+  }) {
+    final categories = budget.selectedCategoryIds
+        .map((id) => categoryById[id])
+        .whereType<Category>()
+        .toList(growable: false);
 
-    var hasWants = false;
-    var hasNeeds = false;
-    for (final id in ids) {
-      final category = categoryById[id];
-      if (category == null) continue;
-      if (category.essential) {
-        hasNeeds = true;
-      } else {
-        hasWants = true;
+    for (final category in categories) {
+      final explicitColorKey = _normalizeColorKey(category.colorKey) ??
+          _extractLegacyColorKey(category.iconKey);
+      if (explicitColorKey != null) {
+        return _colorFromKey(explicitColorKey);
       }
     }
-    if (hasWants) return _BudgetGroup.wants;
-    if (hasNeeds) return _BudgetGroup.needs;
-    return _BudgetGroup.needs;
+
+    final seed = categories.isNotEmpty
+        ? categories.map((category) => category.name).join('|')
+        : budget.name;
+    return _kBudgetWidgetPalette[
+        _hashSeed(seed) % _kBudgetWidgetPalette.length];
   }
 
-  bool _matchesPeriod(Budget budget, String period) {
-    final frame = _normalizeTimeFrame(budget.timeFrame);
-    if (frame == 'never') return true;
-    return frame == period;
+  String? _normalizeColorKey(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    return trimmed;
   }
 
-  String _normalizeTimeFrame(String? raw) {
-    final value = raw?.trim().toLowerCase();
-    if (value == null || value.isEmpty) return 'monthly';
-    if (value == 'unlimited') return 'never';
+  String? _extractLegacyColorKey(String? iconKey) {
+    if (iconKey == null || iconKey.isEmpty) return null;
+    const prefix = 'color:';
+    if (!iconKey.startsWith(prefix)) return null;
+    final value = iconKey.substring(prefix.length).trim();
+    if (value.isEmpty) return null;
     return value;
   }
 
-  String _periodLabel(String period) {
-    switch (period) {
-      case 'daily':
-        return 'Daily';
-      case 'yearly':
-        return 'Yearly';
-      default:
-        return 'Monthly';
-    }
+  Color _colorFromKey(String colorKey) {
+    return _kBudgetWidgetColors[colorKey] ?? _kBudgetWidgetPalette.first;
   }
 
-  DateTime _periodRangeStart(String period) {
-    final now = DateTime.now();
-    switch (period) {
-      case 'daily':
-        return DateTime(now.year, now.month, now.day);
-      case 'yearly':
-        return DateTime(now.year, 1, 1);
-      default:
-        return DateTime(now.year, now.month, 1);
+  int _hashSeed(String value) {
+    var hash = 0;
+    for (final codeUnit in value.trim().toLowerCase().codeUnits) {
+      hash = ((hash * 31) + codeUnit) & 0x7fffffff;
     }
+    return hash;
   }
 
-  DateTime _periodRangeEnd(String period, DateTime start) {
-    switch (period) {
-      case 'daily':
-        return DateTime(start.year, start.month, start.day, 23, 59, 59, 999);
-      case 'yearly':
-        return DateTime(start.year, 12, 31, 23, 59, 59, 999);
-      default:
-        return DateTime(
-          start.year,
-          start.month + 1,
-          1,
-        ).subtract(const Duration(milliseconds: 1));
+  String _formatMetricNumber(double amount) {
+    final absolute = amount.abs();
+    final sign = amount < 0 ? '-' : '';
+
+    if (absolute >= 1000000) {
+      final value = absolute / 1000000;
+      return '$sign${_formatCompactDecimal(value)}M';
     }
+    if (absolute >= 1000) {
+      final value = absolute / 1000;
+      return '$sign${_formatCompactDecimal(value)}K';
+    }
+    if (absolute >= 100) {
+      return '$sign${absolute.round()}';
+    }
+    if (absolute == absolute.roundToDouble()) {
+      return '$sign${absolute.toInt()}';
+    }
+    return '$sign${absolute.toStringAsFixed(1)}';
   }
 
-  String formatAmountForWidget(double amount) {
-    if (amount.abs() >= 1000) {
-      final abbreviated = formatNumberAbbreviated(amount).replaceAll(' ', '');
-      return '$abbreviated ETB';
-    }
+  String _formatCompactDecimal(double value) {
+    final formatted = value.toStringAsFixed(value >= 10 ? 0 : 1);
+    return formatted.replaceFirst(RegExp(r'\.0$'), '');
+  }
 
-    final rounded = amount.roundToDouble();
-    final formatted =
-        formatNumberWithComma(rounded).replaceFirst(RegExp(r'\.00$'), '');
-    return '$formatted ETB';
+  String _colorToHex(Color color) {
+    final red = (color.r * 255).round().toRadixString(16).padLeft(2, '0');
+    final green = (color.g * 255).round().toRadixString(16).padLeft(2, '0');
+    final blue = (color.b * 255).round().toRadixString(16).padLeft(2, '0');
+    return '#${(red + green + blue).toUpperCase()}';
   }
 
   String getLastUpdatedTimestamp() {
@@ -253,7 +212,35 @@ class BudgetWidgetDataProvider {
   }
 }
 
-enum _BudgetGroup {
-  needs,
-  wants,
-}
+const Map<String, Color> _kBudgetWidgetColors = {
+  'blue': Color(0xFF60A5FA),
+  'emerald': Color(0xFF34D399),
+  'amber': Color(0xFFFBBF24),
+  'red': Color(0xFFFB7185),
+  'rose': Color(0xFFFB7185),
+  'magenta': Color(0xFFD946EF),
+  'violet': Color(0xFF8B5CF6),
+  'indigo': Color(0xFF6366F1),
+  'teal': Color(0xFF14B8A6),
+  'mint': Color(0xFF34D399),
+  'orange': Color(0xFFF97316),
+  'tangerine': Color(0xFFFF8C42),
+  'yellow': Color(0xFFEAB308),
+  'cyan': Color(0xFF06B6D4),
+  'sky': Color(0xFF0EA5E9),
+  'lime': Color(0xFF84CC16),
+  'pink': Color(0xFFEC4899),
+  'brown': Color(0xFFA16207),
+  'gray': Color(0xFF94A3B8),
+};
+
+const List<Color> _kBudgetWidgetPalette = [
+  Color(0xFF34D399),
+  Color(0xFF60A5FA),
+  Color(0xFFEC4899),
+  Color(0xFFF59E0B),
+  Color(0xFF8B5CF6),
+  Color(0xFF06B6D4),
+  Color(0xFFF97316),
+  Color(0xFF84CC16),
+];
