@@ -25,6 +25,7 @@ class WidgetService {
       'budget_widget_empty_message';
   static const String _budgetWidgetLastUpdatedKey =
       'budget_widget_last_updated';
+  static const String _budgetWidgetStylesKey = 'budget_widget_styles';
 
   static WidgetDataProvider? _dataProvider;
   static BudgetWidgetDataProvider? _budgetDataProvider;
@@ -113,6 +114,7 @@ class WidgetService {
     try {
       final payload = await budgetDataProvider.getWidgetPayload();
       final selectedIds = await getBudgetWidgetSelectedIds();
+      final stylesById = await getBudgetWidgetStylePreferences();
       final sanitizedIds = selectedIds
           .where(payload.budgetsById.containsKey)
           .take(maxBudgetWidgetBudgets)
@@ -142,6 +144,13 @@ class WidgetService {
         if (index < sanitizedIds.length) {
           final snapshot = payload.budgetsById[sanitizedIds[index]];
           if (snapshot != null) {
+            final stylePreference = stylesById[snapshot.budgetId];
+            final resolvedIconKey =
+                _normalizeBudgetWidgetIconKey(stylePreference?.iconKey) ??
+                    snapshot.defaultIconKey;
+            final resolvedColorKey =
+                _normalizeBudgetWidgetColorKey(stylePreference?.colorKey) ??
+                    snapshot.defaultColorKey;
             await HomeWidget.saveWidgetData<String>(
               '${prefix}_budget_id',
               snapshot.budgetId.toString(),
@@ -175,8 +184,13 @@ class WidgetService {
               snapshot.ringPercent.toString(),
             );
             await HomeWidget.saveWidgetData<String>(
+              '${prefix}_icon_key',
+              resolvedIconKey,
+            );
+            await HomeWidget.saveWidgetData<String>(
               '${prefix}_color',
-              snapshot.colorHex,
+              _budgetWidgetColorHexForKey(resolvedColorKey) ??
+                  snapshot.colorHex,
             );
             continue;
           }
@@ -190,10 +204,13 @@ class WidgetService {
         await HomeWidget.saveWidgetData<String>('${prefix}_amount_raw', '0');
         await HomeWidget.saveWidgetData<String>('${prefix}_percent', '0');
         await HomeWidget.saveWidgetData<String>('${prefix}_ring_percent', '0');
+        await HomeWidget.saveWidgetData<String>('${prefix}_icon_key', '');
         await HomeWidget.saveWidgetData<String>('${prefix}_color', '');
       }
 
-      await HomeWidget.updateWidget(androidName: budgetAndroidWidgetName);
+      await HomeWidget.updateWidget(
+        qualifiedAndroidName: budgetAndroidWidgetQualifiedName,
+      );
 
       if (updateRefreshState) {
         await WidgetRefreshStateService.instance
@@ -263,17 +280,41 @@ class WidgetService {
     return _decodeIntList(raw);
   }
 
-  static Future<BudgetWidgetSelectionResult> addBudgetToWidget(
+  static Future<BudgetWidgetStylePreference?> getBudgetWidgetStylePreference(
     int budgetId,
   ) async {
+    final styles = await getBudgetWidgetStylePreferences();
+    return styles[budgetId];
+  }
+
+  static Future<Map<int, BudgetWidgetStylePreference>>
+      getBudgetWidgetStylePreferences() async {
+    final raw = await HomeWidget.getWidgetData<String>(
+      _budgetWidgetStylesKey,
+      defaultValue: '{}',
+    );
+    return _decodeBudgetWidgetStyleMap(raw);
+  }
+
+  static Future<BudgetWidgetSelectionResult> addBudgetToWidget(
+    int budgetId, {
+    BudgetWidgetStylePreference? stylePreference,
+  }) async {
     final selectedIds = await getBudgetWidgetSelectedIds();
     if (selectedIds.contains(budgetId)) {
+      if (stylePreference != null) {
+        await _saveBudgetWidgetStylePreference(budgetId, stylePreference);
+      }
+      await refreshBudgetWidget();
       return BudgetWidgetSelectionResult.alreadySelected;
     }
     if (selectedIds.length >= maxBudgetWidgetBudgets) {
       return BudgetWidgetSelectionResult.limitReached;
     }
 
+    if (stylePreference != null) {
+      await _saveBudgetWidgetStylePreference(budgetId, stylePreference);
+    }
     final nextIds = [...selectedIds, budgetId];
     await _saveBudgetWidgetSelectedIds(nextIds);
     await refreshBudgetWidget();
@@ -333,6 +374,33 @@ class WidgetService {
     );
   }
 
+  static Future<void> _saveBudgetWidgetStylePreference(
+    int budgetId,
+    BudgetWidgetStylePreference stylePreference,
+  ) async {
+    if (budgetId <= 0) return;
+
+    final normalizedIconKey =
+        _normalizeBudgetWidgetIconKey(stylePreference.iconKey) ??
+            _kDefaultBudgetWidgetIconKey;
+    final normalizedColorKey =
+        _normalizeBudgetWidgetColorKey(stylePreference.colorKey) ??
+            _kDefaultBudgetWidgetColorKey;
+    final current = await getBudgetWidgetStylePreferences();
+    current[budgetId] = BudgetWidgetStylePreference(
+      iconKey: normalizedIconKey,
+      colorKey: normalizedColorKey,
+    );
+
+    await HomeWidget.saveWidgetData<String>(
+      _budgetWidgetStylesKey,
+      jsonEncode({
+        for (final entry in current.entries)
+          entry.key.toString(): entry.value.toJson(),
+      }),
+    );
+  }
+
   static List<int> _decodeIntList(String? raw) {
     if (raw == null || raw.trim().isEmpty) return const [];
 
@@ -354,6 +422,57 @@ class WidgetService {
     }
   }
 
+  static Map<int, BudgetWidgetStylePreference> _decodeBudgetWidgetStyleMap(
+    String? raw,
+  ) {
+    if (raw == null || raw.trim().isEmpty) return const {};
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const {};
+
+      final styles = <int, BudgetWidgetStylePreference>{};
+      decoded.forEach((key, value) {
+        final budgetId = int.tryParse(key.toString());
+        if (budgetId == null || budgetId <= 0 || value is! Map) return;
+
+        final iconKey =
+            _normalizeBudgetWidgetIconKey(value['iconKey']?.toString()) ??
+                _kDefaultBudgetWidgetIconKey;
+        final colorKey =
+            _normalizeBudgetWidgetColorKey(value['colorKey']?.toString()) ??
+                _kDefaultBudgetWidgetColorKey;
+
+        styles[budgetId] = BudgetWidgetStylePreference(
+          iconKey: iconKey,
+          colorKey: colorKey,
+        );
+      });
+      return styles;
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  static String? _normalizeBudgetWidgetIconKey(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    if (!_kBudgetWidgetSupportedIconKeys.contains(trimmed)) return null;
+    return trimmed;
+  }
+
+  static String? _normalizeBudgetWidgetColorKey(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    if (!_kBudgetWidgetColorHexByKey.containsKey(trimmed)) return null;
+    return trimmed;
+  }
+
+  static String? _budgetWidgetColorHexForKey(String? colorKey) {
+    if (colorKey == null) return null;
+    return _kBudgetWidgetColorHexByKey[colorKey];
+  }
+
   static bool _sameIds(List<int> left, List<int> right) {
     if (left.length != right.length) return false;
     for (var index = 0; index < left.length; index++) {
@@ -368,3 +487,48 @@ enum BudgetWidgetSelectionResult {
   alreadySelected,
   limitReached,
 }
+
+class BudgetWidgetStylePreference {
+  final String iconKey;
+  final String colorKey;
+
+  const BudgetWidgetStylePreference({
+    required this.iconKey,
+    required this.colorKey,
+  });
+
+  Map<String, String> toJson() => {
+        'iconKey': iconKey,
+        'colorKey': colorKey,
+      };
+}
+
+const String _kDefaultBudgetWidgetIconKey = 'more_horiz';
+const String _kDefaultBudgetWidgetColorKey = 'mint';
+
+const Set<String> _kBudgetWidgetSupportedIconKeys = {
+  'payments',
+  'gift',
+  'home',
+  'bolt',
+  'shopping_cart',
+  'directions_car',
+  'restaurant',
+  'checkroom',
+  'health',
+  'phone',
+  'request_quote',
+  'spa',
+  'more_horiz',
+};
+
+const Map<String, String> _kBudgetWidgetColorHexByKey = {
+  'mint': '#34D399',
+  'blue': '#60A5FA',
+  'pink': '#EC4899',
+  'violet': '#8B7CF6',
+  'amber': '#F1B556',
+  'teal': '#2FB5A8',
+  'orange': '#F28C5B',
+  'cyan': '#46B8D9',
+};

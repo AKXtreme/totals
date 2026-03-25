@@ -10,21 +10,29 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
+import es.antonborri.home_widget.HomeWidgetPlugin
 import es.antonborri.home_widget.HomeWidgetProvider
-import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 class BudgetWidgetProvider : HomeWidgetProvider() {
     companion object {
         private const val MAX_BUDGETS = 3
+        private const val MATERIAL_ICONS_FONT_ASSET = "flutter_assets/fonts/MaterialIcons-Regular.otf"
+
+        @Volatile
+        private var materialIconsTypeface: Typeface? = null
     }
 
     private data class BudgetWidgetItem(
@@ -32,6 +40,7 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
         val compactValue: String,
         val expandedValue: String,
         val ringPercent: Double,
+        val iconKey: String,
         val color: Int
     )
 
@@ -39,9 +48,26 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
         val widthDp: Int,
         val heightDp: Int,
         val legendVisible: Boolean,
-        val expandedValuesVisible: Boolean,
-        val namesVisible: Boolean
+        val fractionVisible: Boolean
     )
+
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == AppWidgetManager.ACTION_APPWIDGET_UPDATE) {
+            val appWidgetManager = AppWidgetManager.getInstance(context)
+            val widgetIds = intent.getIntArrayExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS)
+                ?: appWidgetManager.getAppWidgetIds(
+                    android.content.ComponentName(context, BudgetWidgetProvider::class.java)
+                )
+
+            if (widgetIds.isNotEmpty()) {
+                val prefs = HomeWidgetPlugin.getData(context)
+                onUpdate(context, appWidgetManager, widgetIds, prefs)
+            }
+            return
+        }
+
+        super.onReceive(context, intent)
+    }
 
     override fun onAppWidgetOptionsChanged(
         context: Context,
@@ -50,7 +76,8 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
         newOptions: Bundle
     ) {
         super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
-        onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+        val prefs = HomeWidgetPlugin.getData(context)
+        onUpdate(context, appWidgetManager, intArrayOf(appWidgetId), prefs)
     }
 
     override fun onUpdate(
@@ -108,15 +135,13 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
             ?: 72
 
         val legendVisible = widthDp >= 176 && heightDp >= 58
-        val expandedValuesVisible = widthDp >= 248
-        val namesVisible = widthDp >= 320
+        val fractionVisible = widthDp >= 300
 
         return WidgetMode(
             widthDp = widthDp,
             heightDp = heightDp,
             legendVisible = legendVisible,
-            expandedValuesVisible = expandedValuesVisible,
-            namesVisible = namesVisible
+            fractionVisible = fractionVisible
         )
     }
 
@@ -136,6 +161,10 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
                 ?.toDoubleOrNull()
                 ?.coerceIn(0.0, 100.0)
                 ?: 0.0
+            val iconKey = widgetData.getString("${prefix}_icon_key", "more_horiz")
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: "more_horiz"
             val color = parseColorHex(widgetData.getString("${prefix}_color", null))
 
             items += BudgetWidgetItem(
@@ -143,6 +172,7 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
                 compactValue = compactValue,
                 expandedValue = expandedValue,
                 ringPercent = ringPercent,
+                iconKey = iconKey,
                 color = color
             )
         }
@@ -161,10 +191,10 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
             R.id.budget_item_row_1,
             R.id.budget_item_row_2
         )
-        val dotIds = intArrayOf(
-            R.id.budget_item_dot_0,
-            R.id.budget_item_dot_1,
-            R.id.budget_item_dot_2
+        val iconIds = intArrayOf(
+            R.id.budget_item_icon_0,
+            R.id.budget_item_icon_1,
+            R.id.budget_item_icon_2
         )
         val nameIds = intArrayOf(
             R.id.budget_item_name_0,
@@ -182,16 +212,13 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
             if (mode.legendVisible) View.VISIBLE else View.GONE
         )
         val valueColor = ContextCompat.getColor(context, R.color.budget_widget_value)
+        val subtleColor = ContextCompat.getColor(context, R.color.budget_widget_subtle)
 
-        val valueTextSize = when {
-            mode.namesVisible -> 15f
-            mode.expandedValuesVisible -> 16f
-            else -> 17f
-        }
+        val valueTextSize = 16f
 
         for (index in 0 until MAX_BUDGETS) {
             val rowId = rowIds[index]
-            val dotId = dotIds[index]
+            val iconId = iconIds[index]
             val nameId = nameIds[index]
             val valueId = valueIds[index]
 
@@ -202,13 +229,29 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
 
             val item = items[index]
             views.setViewVisibility(rowId, View.VISIBLE)
-            views.setTextViewText(nameId, item.name)
-            views.setTextViewText(valueId, formatPercentText(item.ringPercent))
-            views.setTextColor(dotId, item.color)
+            val iconBitmap = createLegendIconBitmap(
+                context = context,
+                iconKey = item.iconKey,
+                color = item.color
+            )
+            if (iconBitmap != null) {
+                views.setImageViewBitmap(iconId, iconBitmap)
+            } else {
+                views.setImageViewResource(iconId, resolveLegendIconRes(item.iconKey))
+                views.setInt(iconId, "setColorFilter", item.color)
+            }
+            views.setTextViewText(
+                valueId,
+                if (mode.fractionVisible) {
+                    createExpandedValueText(item.expandedValue, subtleColor)
+                } else {
+                    formatPercentText(item.ringPercent)
+                }
+            )
             views.setTextColor(nameId, valueColor)
             views.setTextColor(valueId, valueColor)
-            views.setViewVisibility(nameId, View.VISIBLE)
-            views.setViewVisibility(valueId, if (mode.namesVisible) View.VISIBLE else View.GONE)
+            views.setViewVisibility(nameId, View.GONE)
+            views.setViewVisibility(valueId, View.VISIBLE)
             views.setTextViewTextSize(nameId, TypedValue.COMPLEX_UNIT_SP, valueTextSize)
             views.setTextViewTextSize(valueId, TypedValue.COMPLEX_UNIT_SP, valueTextSize)
         }
@@ -267,8 +310,7 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
 
         val sizeDp = when {
             !mode.legendVisible -> (min(mode.widthDp, mode.heightDp) - 6).coerceIn(72, 98)
-            mode.namesVisible -> 82
-            mode.expandedValuesVisible -> 80
+            mode.fractionVisible -> 82
             else -> 76
         }
         val density = context.resources.displayMetrics.density
@@ -295,10 +337,6 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
             strokeCap = Paint.Cap.ROUND
             strokeWidth = ringStrokeWidth
         }
-        val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-        }
-
         items.forEach { item ->
             if (radius <= ringStrokeWidth / 2f) return@forEach
 
@@ -308,7 +346,7 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
                 center + radius,
                 center + radius
             )
-            trackPaint.color = applyAlpha(item.color, 0.22f)
+            trackPaint.color = applyAlpha(item.color, 0.16f)
             ringPaint.color = item.color
 
             canvas.drawArc(rect, -90f, 360f, false, trackPaint)
@@ -317,13 +355,6 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
             if (sweep > 0.5f) {
                 canvas.drawArc(rect, -90f, sweep, false, ringPaint)
             }
-
-            val dotAngle = Math.toRadians((-90f + sweep).toDouble())
-            val dotRadius = ringStrokeWidth * 0.56f
-            val dotX = center + (radius * cos(dotAngle)).toFloat()
-            val dotY = center + (radius * sin(dotAngle)).toFloat()
-            dotPaint.color = item.color
-            canvas.drawCircle(dotX, dotY, dotRadius, dotPaint)
 
             radius -= ringStrokeWidth + gap
         }
@@ -340,6 +371,78 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
         }
     }
 
+    private fun createLegendIconBitmap(
+        context: Context,
+        iconKey: String,
+        color: Int
+    ): Bitmap? {
+        val glyph = resolveLegendIconGlyph(iconKey) ?: return null
+        val typeface = loadMaterialIconsTypeface(context) ?: return null
+        val density = context.resources.displayMetrics.density
+        val sizePx = (18f * density).roundToInt().coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color
+            textAlign = Paint.Align.CENTER
+            textSize = sizePx * 0.95f
+            this.typeface = typeface
+            style = Paint.Style.FILL
+        }
+        val baseline = (sizePx / 2f) - ((paint.descent() + paint.ascent()) / 2f)
+        canvas.drawText(glyph, sizePx / 2f, baseline, paint)
+        return bitmap
+    }
+
+    private fun loadMaterialIconsTypeface(context: Context): Typeface? {
+        materialIconsTypeface?.let { return it }
+        return try {
+            Typeface.createFromAsset(context.assets, MATERIAL_ICONS_FONT_ASSET).also {
+                materialIconsTypeface = it
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun resolveLegendIconGlyph(iconKey: String?): String? {
+        val codePoint = when (iconKey?.trim()) {
+            "payments" -> 0xF0058
+            "gift" -> 0xF61A
+            "home" -> 0xF7F5
+            "bolt" -> 0xF5CA
+            "shopping_cart" -> 0xF0171
+            "directions_car" -> 0xF6B3
+            "restaurant" -> 0xF0108
+            "checkroom" -> 0xF639
+            "health" -> 0xF7DF
+            "phone" -> 0xF0078
+            "request_quote" -> 0xF0104
+            "spa" -> 0xF01AD
+            "more_horiz" -> 0xF8D9
+            else -> return null
+        }
+        return String(Character.toChars(codePoint))
+    }
+
+    private fun resolveLegendIconRes(iconKey: String?): Int {
+        return when (iconKey?.trim()) {
+            "payments" -> android.R.drawable.ic_menu_save
+            "gift" -> android.R.drawable.ic_menu_share
+            "home" -> android.R.drawable.ic_menu_myplaces
+            "bolt" -> android.R.drawable.ic_lock_idle_charging
+            "shopping_cart" -> android.R.drawable.ic_menu_agenda
+            "directions_car" -> android.R.drawable.ic_menu_directions
+            "restaurant" -> android.R.drawable.ic_menu_slideshow
+            "checkroom" -> android.R.drawable.ic_menu_crop
+            "health" -> android.R.drawable.ic_menu_info_details
+            "phone" -> android.R.drawable.ic_menu_call
+            "request_quote" -> android.R.drawable.ic_menu_edit
+            "spa" -> android.R.drawable.ic_menu_gallery
+            else -> android.R.drawable.ic_menu_more
+        }
+    }
+
     private fun applyAlpha(color: Int, factor: Float): Int {
         val alpha = (255 * factor).roundToInt().coerceIn(0, 255)
         return Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
@@ -347,5 +450,47 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
 
     private fun formatPercentText(percent: Double): String {
         return "${percent.roundToInt()}%"
+    }
+
+    private fun createExpandedValueText(
+        expandedValue: String,
+        subtleColor: Int
+    ): CharSequence {
+        val normalizedValue = normalizeExpandedValueText(expandedValue)
+        val slashIndex = normalizedValue.indexOf('/')
+        if (slashIndex < 0 || slashIndex + 1 >= normalizedValue.length) {
+            return normalizedValue
+        }
+
+        return SpannableString(normalizedValue).apply {
+            setSpan(
+                ForegroundColorSpan(subtleColor),
+                slashIndex + 1,
+                normalizedValue.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            setSpan(
+                RelativeSizeSpan(0.9f),
+                slashIndex + 1,
+                normalizedValue.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+    }
+
+    private fun normalizeExpandedValueText(expandedValue: String): String {
+        val trimmedValue = expandedValue.trim()
+        if (trimmedValue.isEmpty()) return expandedValue
+
+        val slashIndex = trimmedValue.indexOf('/')
+        val normalizedValue = if (slashIndex <= 0 || slashIndex + 1 >= trimmedValue.length) {
+            trimmedValue
+        } else {
+            val left = trimmedValue.substring(0, slashIndex).trimEnd()
+            val right = trimmedValue.substring(slashIndex + 1).trimStart()
+            "$left /$right"
+        }
+
+        return normalizedValue.replace(Regex("\\betb\\b", RegexOption.IGNORE_CASE), "ETB")
     }
 }

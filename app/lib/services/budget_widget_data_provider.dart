@@ -13,6 +13,8 @@ class BudgetWidgetBudgetSnapshot {
   final double ringPercent;
   final String compactValueLabel;
   final String expandedValueLabel;
+  final String defaultIconKey;
+  final String defaultColorKey;
   final String colorHex;
 
   const BudgetWidgetBudgetSnapshot({
@@ -24,6 +26,8 @@ class BudgetWidgetBudgetSnapshot {
     required this.ringPercent,
     required this.compactValueLabel,
     required this.expandedValueLabel,
+    required this.defaultIconKey,
+    required this.defaultColorKey,
     required this.colorHex,
   });
 }
@@ -96,7 +100,12 @@ class BudgetWidgetDataProvider {
     required Map<int, Category> categoryById,
   }) {
     final budget = status.budget;
-    final color = _resolveBudgetColor(
+    final defaultColorKey = _resolveBudgetColorKey(
+      budget: budget,
+      categoryById: categoryById,
+    );
+    final color = _colorFromKey(defaultColorKey);
+    final defaultIconKey = _resolveBudgetIconKey(
       budget: budget,
       categoryById: categoryById,
     );
@@ -113,12 +122,14 @@ class BudgetWidgetDataProvider {
       percentUsed: status.percentageUsed,
       ringPercent: status.percentageUsed.clamp(0.0, 100.0).toDouble(),
       compactValueLabel: spentLabel,
-      expandedValueLabel: '$spentLabel / $amountLabel',
+      expandedValueLabel: '$spentLabel /$amountLabel ETB',
+      defaultIconKey: defaultIconKey,
+      defaultColorKey: defaultColorKey,
       colorHex: _colorToHex(color),
     );
   }
 
-  Color _resolveBudgetColor({
+  String _resolveBudgetIconKey({
     required Budget budget,
     required Map<int, Category> categoryById,
   }) {
@@ -128,18 +139,35 @@ class BudgetWidgetDataProvider {
         .toList(growable: false);
 
     for (final category in categories) {
-      final explicitColorKey = _normalizeColorKey(category.colorKey) ??
-          _extractLegacyColorKey(category.iconKey);
+      final iconKey = _normalizeIconKey(category.iconKey);
+      if (iconKey != null) return iconKey;
+    }
+
+    return _kDefaultBudgetWidgetIconKey;
+  }
+
+  String _resolveBudgetColorKey({
+    required Budget budget,
+    required Map<int, Category> categoryById,
+  }) {
+    final categories = budget.selectedCategoryIds
+        .map((id) => categoryById[id])
+        .whereType<Category>()
+        .toList(growable: false);
+
+    for (final category in categories) {
+      final explicitColorKey = _normalizeWidgetColorKey(category.colorKey) ??
+          _normalizeWidgetColorKey(_extractLegacyColorKey(category.iconKey));
       if (explicitColorKey != null) {
-        return _colorFromKey(explicitColorKey);
+        return explicitColorKey;
       }
     }
 
     final seed = categories.isNotEmpty
         ? categories.map((category) => category.name).join('|')
         : budget.name;
-    return _kBudgetWidgetPalette[
-        _hashSeed(seed) % _kBudgetWidgetPalette.length];
+    return _kBudgetWidgetFallbackColorKeys[
+        _hashSeed(seed) % _kBudgetWidgetFallbackColorKeys.length];
   }
 
   String? _normalizeColorKey(String? value) {
@@ -155,6 +183,21 @@ class BudgetWidgetDataProvider {
     final value = iconKey.substring(prefix.length).trim();
     if (value.isEmpty) return null;
     return value;
+  }
+
+  String? _normalizeIconKey(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    if (trimmed.startsWith('color:')) return null;
+    if (!_kSupportedBudgetWidgetIconKeys.contains(trimmed)) return null;
+    return trimmed;
+  }
+
+  String? _normalizeWidgetColorKey(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    if (!_kBudgetWidgetColors.containsKey(trimmed)) return null;
+    return trimmed;
   }
 
   Color _colorFromKey(String colorKey) {
@@ -213,34 +256,52 @@ class BudgetWidgetDataProvider {
 }
 
 const Map<String, Color> _kBudgetWidgetColors = {
-  'blue': Color(0xFF60A5FA),
-  'emerald': Color(0xFF34D399),
-  'amber': Color(0xFFFBBF24),
-  'red': Color(0xFFFB7185),
-  'rose': Color(0xFFFB7185),
-  'magenta': Color(0xFFD946EF),
-  'violet': Color(0xFF8B5CF6),
-  'indigo': Color(0xFF6366F1),
-  'teal': Color(0xFF14B8A6),
   'mint': Color(0xFF34D399),
-  'orange': Color(0xFFF97316),
-  'tangerine': Color(0xFFFF8C42),
-  'yellow': Color(0xFFEAB308),
-  'cyan': Color(0xFF06B6D4),
-  'sky': Color(0xFF0EA5E9),
-  'lime': Color(0xFF84CC16),
+  'blue': Color(0xFF60A5FA),
   'pink': Color(0xFFEC4899),
-  'brown': Color(0xFFA16207),
-  'gray': Color(0xFF94A3B8),
+  'violet': Color(0xFF8B7CF6),
+  'amber': Color(0xFFF1B556),
+  'teal': Color(0xFF2FB5A8),
+  'orange': Color(0xFFF28C5B),
+  'cyan': Color(0xFF46B8D9),
 };
+
+const String _kDefaultBudgetWidgetIconKey = 'more_horiz';
+
+const Set<String> _kSupportedBudgetWidgetIconKeys = {
+  'payments',
+  'gift',
+  'home',
+  'bolt',
+  'shopping_cart',
+  'directions_car',
+  'restaurant',
+  'checkroom',
+  'health',
+  'phone',
+  'request_quote',
+  'spa',
+  'more_horiz',
+};
+
+const List<String> _kBudgetWidgetFallbackColorKeys = [
+  'mint',
+  'blue',
+  'pink',
+  'violet',
+  'amber',
+  'teal',
+  'orange',
+  'cyan',
+];
 
 const List<Color> _kBudgetWidgetPalette = [
   Color(0xFF34D399),
   Color(0xFF60A5FA),
   Color(0xFFEC4899),
-  Color(0xFFF59E0B),
-  Color(0xFF8B5CF6),
-  Color(0xFF06B6D4),
-  Color(0xFFF97316),
-  Color(0xFF84CC16),
+  Color(0xFF8B7CF6),
+  Color(0xFFF1B556),
+  Color(0xFF2FB5A8),
+  Color(0xFFF28C5B),
+  Color(0xFF46B8D9),
 ];

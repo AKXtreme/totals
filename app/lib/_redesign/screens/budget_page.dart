@@ -15,6 +15,7 @@ import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/budget_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/services/widget_service.dart';
+import 'package:totals/utils/category_icons.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/_redesign/theme/app_icons.dart';
 
@@ -48,6 +49,44 @@ const List<_BudgetCategoryColorOption> _kBudgetCategoryColorOptions = [
   _BudgetCategoryColorOption(key: 'pink', color: Color(0xFFEC4899)),
   _BudgetCategoryColorOption(key: 'brown', color: Color(0xFFA16207)),
   _BudgetCategoryColorOption(key: 'gray', color: Color(0xFF6B7280)),
+];
+
+const List<_BudgetCategoryColorOption> _kBudgetWidgetColorOptions = [
+  _BudgetCategoryColorOption(key: 'mint', color: Color(0xFF34D399)),
+  _BudgetCategoryColorOption(key: 'blue', color: Color(0xFF60A5FA)),
+  _BudgetCategoryColorOption(key: 'pink', color: Color(0xFFEC4899)),
+  _BudgetCategoryColorOption(key: 'violet', color: Color(0xFF8B7CF6)),
+  _BudgetCategoryColorOption(key: 'amber', color: Color(0xFFF1B556)),
+  _BudgetCategoryColorOption(key: 'teal', color: Color(0xFF2FB5A8)),
+  _BudgetCategoryColorOption(key: 'orange', color: Color(0xFFF28C5B)),
+  _BudgetCategoryColorOption(key: 'cyan', color: Color(0xFF46B8D9)),
+];
+
+const Set<String> _kBudgetWidgetSupportedIconKeys = {
+  'payments',
+  'gift',
+  'home',
+  'bolt',
+  'shopping_cart',
+  'directions_car',
+  'restaurant',
+  'checkroom',
+  'health',
+  'phone',
+  'request_quote',
+  'spa',
+  'more_horiz',
+};
+
+const List<String> _kBudgetWidgetFallbackColorKeys = [
+  'mint',
+  'blue',
+  'pink',
+  'violet',
+  'amber',
+  'teal',
+  'orange',
+  'cyan',
 ];
 
 // ── Compact amount formatter ────────────────────────────────────────────────
@@ -1441,6 +1480,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
   Set<int> _selectedBudgetWidgetIds = <int>{};
   bool _isHomescreenWidgetStateLoading = true;
   bool _showOnHomescreenWidget = false;
+  String _selectedWidgetIconKey = 'more_horiz';
+  String _selectedWidgetColorKey = 'mint';
 
   bool get _isEdit => widget.existing != null;
   DateTime get _selectedMonthStart =>
@@ -1502,6 +1543,8 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
       _selectedPeriod = 'monthly';
     }
 
+    _selectedWidgetIconKey = _resolveDefaultWidgetIconKey();
+    _selectedWidgetColorKey = _resolveDefaultWidgetColorKey();
     _loadHomescreenWidgetState();
   }
 
@@ -1564,6 +1607,58 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     return trimmed;
   }
 
+  String? _normalizeWidgetColorKey(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    for (final option in _kBudgetWidgetColorOptions) {
+      if (option.key == trimmed) return trimmed;
+    }
+    return null;
+  }
+
+  String? _normalizeWidgetIconKey(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    if (trimmed.startsWith('color:')) return null;
+    if (!_kBudgetWidgetSupportedIconKeys.contains(trimmed)) return null;
+    return trimmed;
+  }
+
+  String _resolveDefaultWidgetIconKey() {
+    for (final categoryId in _selectedCategoryIds) {
+      final category = widget.transactionProvider.getCategoryById(categoryId);
+      final iconKey = _normalizeWidgetIconKey(category?.iconKey);
+      if (iconKey != null) return iconKey;
+    }
+    return 'more_horiz';
+  }
+
+  String _resolveDefaultWidgetColorKey() {
+    for (final categoryId in _selectedCategoryIds) {
+      final category = widget.transactionProvider.getCategoryById(categoryId);
+      final colorKey = _normalizeWidgetColorKey(category?.colorKey) ??
+          _normalizeWidgetColorKey(_extractColorKey(category?.iconKey));
+      if (colorKey != null) return colorKey;
+    }
+
+    final seed = _nameController.text.trim().isNotEmpty
+        ? _nameController.text.trim()
+        : 'budget';
+    var hash = 0;
+    for (final codeUnit in seed.toLowerCase().codeUnits) {
+      hash = ((hash * 31) + codeUnit) & 0x7fffffff;
+    }
+    return _kBudgetWidgetFallbackColorKeys[
+        hash % _kBudgetWidgetFallbackColorKeys.length];
+  }
+
+  Color _widgetColorFromKey(String colorKey) {
+    for (final option in _kBudgetWidgetColorOptions) {
+      if (option.key == colorKey) return option.color;
+    }
+    return _kBudgetWidgetColorOptions.first.color;
+  }
+
   Category? _findCategoryByName({
     required String name,
     required String flow,
@@ -1613,13 +1708,23 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
 
   Future<void> _loadHomescreenWidgetState() async {
     final selectedIds = await WidgetService.getBudgetWidgetSelectedIds();
+    final existingBudgetId = _existingBudgetId;
+    final stylePreference = existingBudgetId == null
+        ? null
+        : await WidgetService.getBudgetWidgetStylePreference(existingBudgetId);
     if (!mounted) return;
 
     final selectedSet = selectedIds.toSet();
     setState(() {
       _selectedBudgetWidgetIds = selectedSet;
       _showOnHomescreenWidget =
-          _existingBudgetId != null && selectedSet.contains(_existingBudgetId);
+          existingBudgetId != null && selectedSet.contains(existingBudgetId);
+      _selectedWidgetIconKey =
+          _normalizeWidgetIconKey(stylePreference?.iconKey) ??
+              _resolveDefaultWidgetIconKey();
+      _selectedWidgetColorKey =
+          _normalizeWidgetColorKey(stylePreference?.colorKey) ??
+              _resolveDefaultWidgetColorKey();
       _isHomescreenWidgetStateLoading = false;
     });
   }
@@ -1653,7 +1758,13 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
       await WidgetService.removeBudgetFromWidget(originalBudgetId);
     }
 
-    final addResult = await WidgetService.addBudgetToWidget(savedBudgetId);
+    final addResult = await WidgetService.addBudgetToWidget(
+      savedBudgetId,
+      stylePreference: BudgetWidgetStylePreference(
+        iconKey: _selectedWidgetIconKey,
+        colorKey: _selectedWidgetColorKey,
+      ),
+    );
     switch (addResult) {
       case BudgetWidgetSelectionResult.added:
         final pinRequested =
@@ -1769,6 +1880,138 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
       }
     });
     _newCategoryFocus.unfocus();
+  }
+
+  Widget _buildHomescreenWidgetStyleSection(ThemeData theme) {
+    final selectedColor = _widgetColorFromKey(_selectedWidgetColorKey);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Divider(
+            height: 1,
+            color: AppColors.borderColor(context),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Icon',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.textSecondary(context),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const itemSize = 42.0;
+              const gap = 8.0;
+              final rawCount =
+                  ((constraints.maxWidth + gap) / (itemSize + gap)).floor();
+              final crossAxisCount = rawCount.clamp(4, 6);
+
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: categoryIconOptions.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  mainAxisSpacing: gap,
+                  crossAxisSpacing: gap,
+                  mainAxisExtent: itemSize,
+                ),
+                itemBuilder: (context, index) {
+                  final option = categoryIconOptions[index];
+                  final selected = option.key == _selectedWidgetIconKey;
+                  return Material(
+                    color: selected
+                        ? selectedColor.withValues(alpha: 0.15)
+                        : AppColors.surfaceColor(context),
+                    borderRadius: BorderRadius.circular(10),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () {
+                        setState(() => _selectedWidgetIconKey = option.key);
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: selected
+                                ? selectedColor
+                                : AppColors.borderColor(context),
+                            width: selected ? 2 : 1,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          option.icon,
+                          size: 20,
+                          color: selected
+                              ? selectedColor
+                              : AppColors.textSecondary(context),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Color',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.textSecondary(context),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 34,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _kBudgetWidgetColorOptions.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final option = _kBudgetWidgetColorOptions[index];
+                final selected = option.key == _selectedWidgetColorKey;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() => _selectedWidgetColorKey = option.key);
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: option.color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: selected
+                            ? AppColors.textPrimary(context)
+                            : Colors.transparent,
+                        width: 2,
+                      ),
+                      boxShadow: selected
+                          ? [
+                              BoxShadow(
+                                color: option.color.withValues(alpha: 0.28),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ]
+                          : null,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -2188,40 +2431,52 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                           color: AppColors.surfaceColor(context),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: SwitchListTile(
-                          title: Text(
-                            'Show on homescreen widget',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: AppColors.textPrimary(context),
-                              fontWeight: FontWeight.w500,
+                        child: Column(
+                          children: [
+                            SwitchListTile(
+                              title: Text(
+                                'Show on homescreen widget',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: AppColors.textPrimary(context),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              subtitle: Text(
+                                _isHomescreenWidgetStateLoading
+                                    ? 'Checking available widget spots...'
+                                    : '${_draftWidgetSpotsLeft.toInt()} ${_draftWidgetSpotsLeft == 1 ? 'spot' : 'spots'} left on the homescreen widget',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: AppColors.textSecondary(context),
+                                ),
+                              ),
+                              value: _showOnHomescreenWidget,
+                              onChanged: _isHomescreenWidgetStateLoading ||
+                                      _isSaving
+                                  ? null
+                                  : (value) {
+                                      if (value &&
+                                          !_canEnableHomescreenWidgetToggle) {
+                                        return;
+                                      }
+                                      setState(
+                                        () => _showOnHomescreenWidget = value,
+                                      );
+                                    },
+                              activeColor: AppColors.primaryLight,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
                             ),
-                          ),
-                          subtitle: Text(
-                            _isHomescreenWidgetStateLoading
-                                ? 'Checking available widget spots...'
-                                : '${_draftWidgetSpotsLeft.toInt()} ${_draftWidgetSpotsLeft == 1 ? 'spot' : 'spots'} left on the homescreen widget',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary(context),
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOut,
+                              child: _showOnHomescreenWidget
+                                  ? _buildHomescreenWidgetStyleSection(theme)
+                                  : const SizedBox.shrink(),
                             ),
-                          ),
-                          value: _showOnHomescreenWidget,
-                          onChanged: _isHomescreenWidgetStateLoading ||
-                                  _isSaving
-                              ? null
-                              : (value) {
-                                  if (value &&
-                                      !_canEnableHomescreenWidgetToggle) {
-                                    return;
-                                  }
-                                  setState(
-                                      () => _showOnHomescreenWidget = value);
-                                },
-                          activeColor: AppColors.primaryLight,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 12),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 24),
