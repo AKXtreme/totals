@@ -43,6 +43,8 @@ enum _AnalyticsHeatmapMode { all, expense, income }
 
 enum _AnalyticsHeatmapView { daily, monthly }
 
+enum _AnalyticsLineChartPeriod { weekly, monthly, yearly }
+
 enum _AnalyticsBarChartPeriod { weekly, monthly, yearly }
 
 enum _AnalyticsChartSection {
@@ -91,7 +93,7 @@ extension on _AnalyticsChartSection {
       case _AnalyticsChartSection.expenseBubble:
         return 'Focus the category bubbles on a specific bank or date range.';
       case _AnalyticsChartSection.lineChart:
-        return 'Focus daily net flow on a specific bank.';
+        return 'Focus income and expense trends on a specific bank.';
       case _AnalyticsChartSection.barChart:
         return 'Tune flow, period, and bank for the category bar chart.';
       case _AnalyticsChartSection.pieChart:
@@ -491,6 +493,10 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     mode: _AnalyticsHeatmapMode.expense,
   );
   _AnalyticsHeatmapView _analyticsHeatmapView = _AnalyticsHeatmapView.daily;
+  _AnalyticsLineChartPeriod _analyticsLineChartPeriod =
+      _AnalyticsLineChartPeriod.monthly;
+  int _analyticsLineChartOffset = 0;
+  int _analyticsBarChartOffset = 0;
   DateTime? _analyticsHeatmapFocusMonth;
   _AnalyticsChartSection _analyticsSelectedChartSection =
       _AnalyticsChartSection.heatmap;
@@ -613,15 +619,45 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           break;
         case _AnalyticsChartSection.lineChart:
           _analyticsLineFilter = filter;
+          _analyticsLineChartOffset = 0;
           break;
         case _AnalyticsChartSection.barChart:
           _analyticsBarFilter = filter;
+          _analyticsBarChartOffset = 0;
           break;
         case _AnalyticsChartSection.pieChart:
           _analyticsPieFilter = filter;
           break;
       }
     });
+  }
+
+  void _setAnalyticsLineChartPeriod(_AnalyticsLineChartPeriod period) {
+    if (_analyticsLineChartPeriod == period && _analyticsLineChartOffset == 0) {
+      return;
+    }
+    setState(() {
+      _analyticsLineChartPeriod = period;
+      _analyticsLineChartOffset = 0;
+    });
+  }
+
+  void _navigateAnalyticsLineChartPeriod({required bool newer}) {
+    final nextOffset = newer
+        ? math.min(0, _analyticsLineChartOffset + 1)
+        : _analyticsLineChartOffset - 1;
+    if (nextOffset == _analyticsLineChartOffset) return;
+    HapticFeedback.selectionClick();
+    setState(() => _analyticsLineChartOffset = nextOffset);
+  }
+
+  void _navigateAnalyticsBarChartPeriod({required bool newer}) {
+    final nextOffset = newer
+        ? math.min(0, _analyticsBarChartOffset + 1)
+        : _analyticsBarChartOffset - 1;
+    if (nextOffset == _analyticsBarChartOffset) return;
+    HapticFeedback.selectionClick();
+    setState(() => _analyticsBarChartOffset = nextOffset);
   }
 
   void _setAnalyticsChartFlowMode(
@@ -929,6 +965,9 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     final totalPages = transactionsViewData?.totalPages ?? 1;
     final safePage = transactionsViewData?.safePage ?? 0;
     final flatItems = transactionsViewData?.flatItems ?? const <Object>[];
+    final showsStickyPagination = _subTab == _SubTab.transactions &&
+        flatItems.isNotEmpty &&
+        totalPages > 1;
     final transactionsListKey = ValueKey<_ActivityTransactionsViewCacheKey?>(
       transactionsViewData == null ? null : _activityTransactionsViewCacheKey,
     );
@@ -978,17 +1017,6 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
               },
             ),
           ),
-          if (totalPages > 1)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                child: _PaginationBar(
-                  currentPage: safePage,
-                  totalPages: totalPages,
-                  onPageChanged: _setActivityTransactionsPage,
-                ),
-              ),
-            ),
         ],
       ] else if (_subTab == _SubTab.analytics) ...[
         ..._buildAnalyticsSlivers(provider),
@@ -1005,20 +1033,46 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           ledgerViewSummary: ledgerViewSummary,
         ),
         Expanded(
-          child: RefreshIndicator(
-            color: AppColors.primaryLight,
-            onRefresh: provider.loadData,
-            child: CustomScrollView(
-              controller: _activityScrollController,
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverFadeTransition(
-                  opacity: _subTabFadeAnimation,
-                  sliver: SliverMainAxisGroup(slivers: dynamicSlivers),
+          child: Stack(
+            children: [
+              RefreshIndicator(
+                color: AppColors.primaryLight,
+                onRefresh: provider.loadData,
+                child: CustomScrollView(
+                  controller: _activityScrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    SliverFadeTransition(
+                      opacity: _subTabFadeAnimation,
+                      sliver: SliverMainAxisGroup(slivers: dynamicSlivers),
+                    ),
+                    SliverPadding(
+                      padding: EdgeInsets.only(
+                        bottom: showsStickyPagination ? 104 : 24,
+                      ),
+                    ),
+                  ],
                 ),
-                const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
-              ],
-            ),
+              ),
+              if (showsStickyPagination)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: SafeArea(
+                    top: false,
+                    minimum: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: _PaginationBar(
+                        currentPage: safePage,
+                        totalPages: totalPages,
+                        onPageChanged: _setActivityTransactionsPage,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ],
@@ -1335,13 +1389,20 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         );
       case _AnalyticsChartSection.lineChart:
         final filter = _analyticsLineFilter;
-        final snapshot = _buildAnalyticsSnapshot(
+        final filteredTransactions = _analyticsTransactionsForFilter(
           provider,
-          sourceTransactions: _analyticsTransactionsForFilter(provider, filter),
-          anchorTransactions: provider.allTransactions,
+          filter,
         );
         return _AnalyticsLineChartCard(
-          snapshot: snapshot,
+          provider: provider,
+          transactions: filteredTransactions,
+          period: _analyticsLineChartPeriod,
+          periodOffset: _analyticsLineChartOffset,
+          onPeriodChanged: _setAnalyticsLineChartPeriod,
+          onNavigateToOlderPeriod: () =>
+              _navigateAnalyticsLineChartPeriod(newer: false),
+          onNavigateToNewerPeriod: () =>
+              _navigateAnalyticsLineChartPeriod(newer: true),
           activeFilterCount: _AnalyticsChartSection.lineChart.activeFilterCount(
             filter,
           ),
@@ -1359,6 +1420,11 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           provider: provider,
           transactions: filteredTransactions,
           filter: filter,
+          periodOffset: _analyticsBarChartOffset,
+          onNavigateToOlderPeriod: () =>
+              _navigateAnalyticsBarChartPeriod(newer: false),
+          onNavigateToNewerPeriod: () =>
+              _navigateAnalyticsBarChartPeriod(newer: true),
           activeFilterCount: _AnalyticsChartSection.barChart.activeFilterCount(
             filter,
           ),
@@ -2887,10 +2953,6 @@ String _formatCompactSignedEtb(double value) {
   if (value.abs() < 0.001) return '';
   final sign = value >= 0 ? '+' : '-';
   return '$sign${_formatEtbAbbrev(value.abs())}';
-}
-
-String _formatAnalyticsEtbAmount(double value) {
-  return formatNumberWithComma(value).replaceFirst(RegExp(r'\.00$'), '');
 }
 
 String _formatMonthYear(DateTime date) {
@@ -5385,10 +5447,110 @@ class _AnalyticsHorizontalSwipeBlocker extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
+      // Consume horizontal drags so embedded charts do not bubble them upward.
       onHorizontalDragStart: (_) {},
       onHorizontalDragUpdate: (_) {},
       onHorizontalDragEnd: (_) {},
       child: child,
+    );
+  }
+}
+
+class _AnalyticsSwipePager extends StatefulWidget {
+  final double height;
+  final Object recenterKey;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+  final IndexedWidgetBuilder itemBuilder;
+
+  const _AnalyticsSwipePager({
+    required this.height,
+    required this.recenterKey,
+    this.onPrevious,
+    this.onNext,
+    required this.itemBuilder,
+  });
+
+  @override
+  State<_AnalyticsSwipePager> createState() => _AnalyticsSwipePagerState();
+}
+
+class _AnalyticsSwipePagerState extends State<_AnalyticsSwipePager> {
+  late final PageController _pageController;
+  bool _isRecenteringPage = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: 1);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnalyticsSwipePager oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.recenterKey != widget.recenterKey &&
+        _pageController.hasClients &&
+        (_pageController.page?.round() ?? 1) != 1) {
+      _pageController.jumpToPage(1);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _commitPageChange(int page) {
+    if (_isRecenteringPage || page == 1) return;
+
+    setState(() => _isRecenteringPage = true);
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(1);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() => _isRecenteringPage = false);
+    });
+
+    if (page == 0) {
+      widget.onPrevious?.call();
+    } else {
+      widget.onNext?.call();
+    }
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (_isRecenteringPage || notification.depth != 0) return false;
+    if (notification is! ScrollEndNotification) return false;
+
+    final metrics = notification.metrics;
+    if (metrics is! PageMetrics) return false;
+
+    final page = metrics.page?.round() ?? 1;
+    _commitPageChange(page);
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOutCubic,
+      alignment: Alignment.topCenter,
+      child: SizedBox(
+        height: widget.height,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: 3,
+            physics: const PageScrollPhysics(),
+            itemBuilder: widget.itemBuilder,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -5953,211 +6115,676 @@ class _AnalyticsLegendAmountItem extends StatelessWidget {
   }
 }
 
-List<double> _analyticsDaySeries(
-  Map<int, double> valuesByDay,
-  DateTime monthDate,
-) {
-  final dayCount = DateTime(monthDate.year, monthDate.month + 1, 0).day;
-  return List<double>.generate(
-    dayCount,
-    (index) => valuesByDay[index + 1] ?? 0.0,
-    growable: false,
-  );
-}
-
-Widget _buildAnalyticsDayAxisTitle(
+Widget _buildAnalyticsTrendBottomAxisTitle(
   BuildContext context,
   double value,
-  TitleMeta meta,
-  int dayCount,
-) {
-  final day = value.toInt();
-  final shouldShow = day == 1 ||
-      day == dayCount ||
-      day == 7 ||
-      day == 14 ||
-      day == 21 ||
-      day == 28;
-  if (day < 1 || day > dayCount || !shouldShow) {
+  TitleMeta meta, {
+  required _AnalyticsLineChartPeriod period,
+  required List<DateTime> bucketDates,
+}) {
+  if ((value - value.roundToDouble()).abs() > 0.001) {
     return const SizedBox.shrink();
   }
 
+  final index = value.toInt();
+  if (index < 0 || index >= bucketDates.length) return const SizedBox.shrink();
+
+  final labelStride = switch (period) {
+    _AnalyticsLineChartPeriod.weekly => 1,
+    _AnalyticsLineChartPeriod.monthly => 5,
+    _AnalyticsLineChartPeriod.yearly => 3,
+  };
+  final shouldShow =
+      index == 0 || index == bucketDates.length - 1 || index % labelStride == 0;
+  if (!shouldShow) return const SizedBox.shrink();
+
+  final label = period == _AnalyticsLineChartPeriod.yearly
+      ? DateFormat('MMM').format(bucketDates[index])
+      : DateFormat('MMM d').format(bucketDates[index]);
+
   return SideTitleWidget(
     axisSide: meta.axisSide,
-    child: Text(
-      '$day',
-      style: TextStyle(
-        color: AppColors.textTertiary(context),
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
+    child: Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: AppColors.textTertiary(context),
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     ),
   );
 }
 
-Widget _buildAnalyticsValueAxisTitle(
+Widget _buildAnalyticsTrendValueAxisTitle(
   BuildContext context,
   double value,
   TitleMeta meta,
 ) {
-  if (value.abs() < 0.001) return const SizedBox.shrink();
-
   return SideTitleWidget(
     axisSide: meta.axisSide,
-    child: Text(
-      '${value < 0 ? '-' : ''}${_formatEtbAbbrev(value.abs())}',
-      style: TextStyle(
-        color: AppColors.textTertiary(context),
-        fontSize: 11,
-        fontWeight: FontWeight.w500,
+    child: Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: Text(
+        value.abs() < 0.001 ? '0' : _formatEtbAbbrev(value),
+        maxLines: 1,
+        softWrap: false,
+        textAlign: TextAlign.right,
+        style: TextStyle(
+          color: AppColors.textTertiary(context),
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     ),
   );
 }
 
+double _resolveAnalyticsTrendChartMax(double maxValue) {
+  if (maxValue <= 0) return 100.0;
+
+  final roughStep = maxValue / 4;
+  final magnitude =
+      math.pow(10, (math.log(roughStep) / math.ln10).floor()).toDouble();
+  final normalized = roughStep / magnitude;
+
+  double niceNormalized;
+  if (normalized <= 1) {
+    niceNormalized = 1;
+  } else if (normalized <= 2) {
+    niceNormalized = 2;
+  } else if (normalized <= 2.5) {
+    niceNormalized = 2.5;
+  } else if (normalized <= 5) {
+    niceNormalized = 5;
+  } else {
+    niceNormalized = 10;
+  }
+
+  final step = niceNormalized * magnitude;
+  return step * 4;
+}
+
+String _formatAnalyticsDateRange(DateTime start, DateTime end) {
+  if (start.year == end.year) {
+    if (start.month == end.month) {
+      return '${DateFormat('MMM d').format(start)} - ${DateFormat('d, yyyy').format(end)}';
+    }
+    return '${DateFormat('MMM d').format(start)} - ${DateFormat('MMM d, yyyy').format(end)}';
+  }
+  return '${DateFormat('MMM d, yyyy').format(start)} - ${DateFormat('MMM d, yyyy').format(end)}';
+}
+
+DateTime _shiftAnalyticsLineAnchorDate(
+  DateTime anchor,
+  _AnalyticsLineChartPeriod period,
+  int periodOffset,
+) {
+  switch (period) {
+    case _AnalyticsLineChartPeriod.weekly:
+      return DateTime(
+          anchor.year, anchor.month, anchor.day + (periodOffset * 7));
+    case _AnalyticsLineChartPeriod.monthly:
+      return DateTime(anchor.year, anchor.month + periodOffset, 1);
+    case _AnalyticsLineChartPeriod.yearly:
+      return DateTime(anchor.year + periodOffset, 1, 1);
+  }
+}
+
+DateTime _shiftAnalyticsBarAnchorDate(
+  DateTime anchor,
+  _AnalyticsBarChartPeriod period,
+  int periodOffset,
+) {
+  switch (period) {
+    case _AnalyticsBarChartPeriod.weekly:
+      return DateTime(
+          anchor.year, anchor.month, anchor.day + (periodOffset * 7));
+    case _AnalyticsBarChartPeriod.monthly:
+      return DateTime(anchor.year, anchor.month + periodOffset, 1);
+    case _AnalyticsBarChartPeriod.yearly:
+      return DateTime(anchor.year + periodOffset, 1, 1);
+  }
+}
+
 class _AnalyticsLineChartCard extends StatelessWidget {
-  final _AnalyticsSnapshot snapshot;
+  final TransactionProvider provider;
+  final List<Transaction> transactions;
+  final _AnalyticsLineChartPeriod period;
+  final int periodOffset;
+  final ValueChanged<_AnalyticsLineChartPeriod>? onPeriodChanged;
+  final VoidCallback? onNavigateToOlderPeriod;
+  final VoidCallback? onNavigateToNewerPeriod;
   final int activeFilterCount;
   final VoidCallback? onOpenFilterSheet;
   final VoidCallback? onChartPickerTap;
 
   const _AnalyticsLineChartCard({
-    required this.snapshot,
+    required this.provider,
+    required this.transactions,
+    required this.period,
+    this.periodOffset = 0,
+    this.onPeriodChanged,
+    this.onNavigateToOlderPeriod,
+    this.onNavigateToNewerPeriod,
     this.activeFilterCount = 0,
     this.onOpenFilterSheet,
     this.onChartPickerTap,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final monthLabel = DateFormat('MMMM yyyy').format(snapshot.monthDate);
-    final values = _analyticsDaySeries(snapshot.netByDay, snapshot.monthDate);
-    final hasData = values.any((value) => value.abs() > 0.001);
-    final dayCount = values.length;
-    final maxAbs = values.fold<double>(
-      0.0,
-      (currentMax, value) => math.max(currentMax, value.abs()),
-    );
-    final chartMax = math.max(100.0, maxAbs * 1.22).toDouble();
-    final interval = math.max(100.0, chartMax / 3).toDouble();
+  DateTime _anchorDate() {
+    DateTime? latest;
+    for (final transaction in transactions) {
+      final dt = _parseTransactionTime(transaction.time);
+      if (dt == null) continue;
+      if (latest == null || dt.isAfter(latest)) {
+        latest = dt;
+      }
+    }
 
-    return _AnalyticsHorizontalSwipeBlocker(
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-        decoration: BoxDecoration(
-          color: AppColors.cardColor(context),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.borderColor(context)),
+    final anchor = latest ?? DateTime.now();
+    return DateTime(anchor.year, anchor.month, anchor.day);
+  }
+
+  _AnalyticsLineSeries _buildSeries(int effectivePeriodOffset) {
+    final anchorDate = _shiftAnalyticsLineAnchorDate(
+      _anchorDate(),
+      period,
+      effectivePeriodOffset,
+    );
+    late final List<DateTime> bucketDates;
+    late final List<double> incomeValues;
+    late final List<double> expenseValues;
+    late final String supportingText;
+    late final String rangeLabel;
+
+    switch (period) {
+      case _AnalyticsLineChartPeriod.weekly:
+        {
+          final startDate = anchorDate.subtract(
+            Duration(days: anchorDate.weekday - DateTime.monday),
+          );
+          final endDate = startDate.add(const Duration(days: 6));
+          bucketDates = List<DateTime>.generate(
+            7,
+            (index) => startDate.add(Duration(days: index)),
+            growable: false,
+          );
+          incomeValues = List<double>.filled(7, 0.0);
+          expenseValues = List<double>.filled(7, 0.0);
+          supportingText = _formatAnalyticsDateRange(startDate, endDate);
+          rangeLabel = 'Week of ${DateFormat('MMM d').format(startDate)}';
+          break;
+        }
+      case _AnalyticsLineChartPeriod.monthly:
+        {
+          final startDate = DateTime(anchorDate.year, anchorDate.month, 1);
+          final dayCount =
+              DateTime(anchorDate.year, anchorDate.month + 1, 0).day;
+          bucketDates = List<DateTime>.generate(
+            dayCount,
+            (index) => startDate.add(Duration(days: index)),
+            growable: false,
+          );
+          incomeValues = List<double>.filled(dayCount, 0.0);
+          expenseValues = List<double>.filled(dayCount, 0.0);
+          supportingText = DateFormat('MMMM yyyy').format(startDate);
+          rangeLabel = DateFormat('MMM yyyy').format(startDate);
+          break;
+        }
+      case _AnalyticsLineChartPeriod.yearly:
+        {
+          final startMonth = DateTime(anchorDate.year, 1, 1);
+          bucketDates = List<DateTime>.generate(
+            12,
+            (index) => DateTime(startMonth.year, startMonth.month + index, 1),
+            growable: false,
+          );
+          incomeValues = List<double>.filled(12, 0.0);
+          expenseValues = List<double>.filled(12, 0.0);
+          supportingText = 'Jan - Dec ${startMonth.year}';
+          rangeLabel = '${startMonth.year}';
+          break;
+        }
+    }
+
+    for (final transaction in transactions) {
+      final dt = _parseTransactionTime(transaction.time);
+      if (dt == null) continue;
+      if (provider.isSelfTransfer(transaction)) continue;
+
+      final category = provider.getCategoryById(transaction.categoryId);
+      if (category?.uncategorized == true) continue;
+
+      final amount = transaction.amount.abs();
+      if (amount <= 0.001) continue;
+
+      int? bucketIndex;
+      switch (period) {
+        case _AnalyticsLineChartPeriod.weekly:
+          {
+            final dateOnly = DateTime(dt.year, dt.month, dt.day);
+            final startDate = bucketDates.first;
+            final endDate = bucketDates.last;
+            if (dateOnly.isBefore(startDate) || dateOnly.isAfter(endDate)) {
+              continue;
+            }
+            bucketIndex = dateOnly.difference(startDate).inDays;
+            break;
+          }
+        case _AnalyticsLineChartPeriod.monthly:
+          {
+            final dateOnly = DateTime(dt.year, dt.month, dt.day);
+            final startDate = bucketDates.first;
+            final endDate = bucketDates.last;
+            if (dateOnly.isBefore(startDate) || dateOnly.isAfter(endDate)) {
+              continue;
+            }
+            bucketIndex = dateOnly.difference(startDate).inDays;
+            break;
+          }
+        case _AnalyticsLineChartPeriod.yearly:
+          {
+            final monthDate = DateTime(dt.year, dt.month, 1);
+            final startMonth = bucketDates.first;
+            final endMonth = bucketDates.last;
+            if (monthDate.isBefore(startMonth) || monthDate.isAfter(endMonth)) {
+              continue;
+            }
+            bucketIndex = (monthDate.year - startMonth.year) * 12 +
+                monthDate.month -
+                startMonth.month;
+            break;
+          }
+      }
+
+      if (bucketIndex < 0 || bucketIndex >= bucketDates.length) continue;
+
+      if (transaction.type == 'CREDIT') {
+        incomeValues[bucketIndex] += amount;
+      } else if (transaction.type == 'DEBIT') {
+        expenseValues[bucketIndex] += amount;
+      }
+    }
+
+    final totalIncome =
+        incomeValues.fold<double>(0.0, (sum, value) => sum + value);
+    final totalExpense =
+        expenseValues.fold<double>(0.0, (sum, value) => sum + value);
+    final maxIncome = incomeValues.fold<double>(0.0, math.max);
+    final maxExpense = expenseValues.fold<double>(0.0, math.max);
+    final maxValue = math.max(maxIncome, maxExpense);
+
+    return _AnalyticsLineSeries(
+      period: period,
+      bucketDates: bucketDates,
+      incomeValues: incomeValues,
+      expenseValues: expenseValues,
+      totalIncome: totalIncome,
+      totalExpense: totalExpense,
+      maxValue: maxValue,
+      supportingText: supportingText,
+      rangeLabel: rangeLabel,
+      emptyMessage: 'No income or expense data for $rangeLabel.',
+    );
+  }
+
+  double _pageHeight(_AnalyticsLineSeries series) {
+    return series.maxValue > 0.001 ? 252 : 248;
+  }
+
+  Widget _buildPage(BuildContext context, _AnalyticsLineSeries series) {
+    final leftAxisReservedWidth =
+        period == _AnalyticsLineChartPeriod.yearly ? 52.0 : 36.0;
+    const rightAxisReservedWidth = 12.0;
+    final hasData = series.maxValue > 0.001;
+    final chartMax = _resolveAnalyticsTrendChartMax(series.maxValue);
+    final interval = chartMax / 4;
+    final pointCount = series.bucketDates.length;
+
+    return Column(
+      key: ValueKey<String>('line-page-${period.name}-${series.rangeLabel}'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          series.supportingText,
+          style: TextStyle(
+            color: AppColors.textSecondary(context),
+            fontSize: 12,
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _AnalyticsPrimaryChartHeader(
-              chartLabel: 'Line Chart',
-              headline: 'Net Flow',
-              supportingText: 'Daily movement for $monthLabel',
-              activeFilterCount: activeFilterCount,
-              onOpenFilterSheet: onOpenFilterSheet,
-              onChartPickerTap: onChartPickerTap,
-            ),
-            const SizedBox(height: 12),
-            if (!hasData)
-              const _AnalyticsChartEmptyState(
-                message: 'No net flow data for this month.',
-              )
-            else
-              SizedBox(
-                height: 220,
-                child: LineChart(
-                  LineChartData(
-                    minX: 1,
-                    maxX: dayCount.toDouble(),
-                    minY: -chartMax,
-                    maxY: chartMax,
-                    lineTouchData: LineTouchData(enabled: true),
-                    gridData: FlGridData(
-                      show: true,
-                      drawVerticalLine: false,
-                      horizontalInterval: interval,
-                      getDrawingHorizontalLine: (value) => FlLine(
-                        color: AppColors.borderColor(context),
-                        strokeWidth: value.abs() < 0.001 ? 1.2 : 0.8,
-                      ),
-                    ),
-                    titlesData: FlTitlesData(
-                      topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          interval: 1,
-                          reservedSize: 28,
-                          getTitlesWidget: (value, meta) =>
-                              _buildAnalyticsDayAxisTitle(
-                            context,
-                            value,
-                            meta,
-                            dayCount,
-                          ),
-                        ),
-                      ),
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          interval: interval,
-                          reservedSize: 48,
-                          getTitlesWidget: (value, meta) =>
-                              _buildAnalyticsValueAxisTitle(
-                            context,
-                            value,
-                            meta,
-                          ),
-                        ),
-                      ),
-                    ),
-                    borderData: FlBorderData(show: false),
-                    extraLinesData: ExtraLinesData(
-                      horizontalLines: [
-                        HorizontalLine(
-                          y: 0,
-                          color: AppColors.borderColor(context),
-                          strokeWidth: 1,
-                        ),
-                      ],
-                    ),
-                    lineBarsData: [
-                      LineChartBarData(
-                        spots: [
-                          for (int index = 0; index < values.length; index++)
-                            FlSpot((index + 1).toDouble(), values[index]),
-                        ],
-                        isCurved: true,
-                        curveSmoothness: 0.24,
-                        color: const Color(0xFF6D7EE8),
-                        barWidth: 3,
-                        isStrokeCapRound: true,
-                        dotData: const FlDotData(show: false),
-                        belowBarData: BarAreaData(
-                          show: true,
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              const Color(0xFF6D7EE8).withValues(alpha: 0.24),
-                              const Color(0xFF6D7EE8).withValues(alpha: 0.02),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+        const SizedBox(height: 12),
+        if (!hasData)
+          _AnalyticsChartEmptyState(
+            message: series.emptyMessage,
+          )
+        else ...[
+          SizedBox(
+            height: 184,
+            child: LineChart(
+              LineChartData(
+                minX: 0,
+                maxX: pointCount <= 1 ? 1 : (pointCount - 1).toDouble(),
+                minY: 0,
+                maxY: chartMax,
+                clipData: const FlClipData.all(),
+                lineTouchData: const LineTouchData(enabled: false),
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: interval,
+                  getDrawingHorizontalLine: (value) => FlLine(
+                    color:
+                        AppColors.borderColor(context).withValues(alpha: 0.7),
+                    strokeWidth: 0.9,
+                    dashArray: const [3, 4],
                   ),
                 ),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: rightAxisReservedWidth,
+                      getTitlesWidget: (value, meta) => const SizedBox.shrink(),
+                    ),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 1,
+                      reservedSize: 38,
+                      getTitlesWidget: (value, meta) =>
+                          _buildAnalyticsTrendBottomAxisTitle(
+                        context,
+                        value,
+                        meta,
+                        period: series.period,
+                        bucketDates: series.bucketDates,
+                      ),
+                    ),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: interval,
+                      reservedSize: leftAxisReservedWidth,
+                      getTitlesWidget: (value, meta) =>
+                          _buildAnalyticsTrendValueAxisTitle(
+                        context,
+                        value,
+                        meta,
+                      ),
+                    ),
+                  ),
+                ),
+                borderData: FlBorderData(
+                  show: true,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppColors.borderColor(context),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: [
+                      for (int index = 0; index < pointCount; index++)
+                        FlSpot(index.toDouble(), series.incomeValues[index]),
+                    ],
+                    isCurved: true,
+                    curveSmoothness: 0.32,
+                    preventCurveOverShooting: true,
+                    color: AppColors.incomeSuccess,
+                    barWidth: 2.2,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: false),
+                    belowBarData: BarAreaData(show: false),
+                  ),
+                  LineChartBarData(
+                    spots: [
+                      for (int index = 0; index < pointCount; index++)
+                        FlSpot(index.toDouble(), series.expenseValues[index]),
+                    ],
+                    isCurved: true,
+                    curveSmoothness: 0.32,
+                    preventCurveOverShooting: true,
+                    color: AppColors.red,
+                    barWidth: 2.2,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: false),
+                    belowBarData: BarAreaData(show: false),
+                  ),
+                ],
               ),
-          ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Padding(
+            padding: EdgeInsets.only(left: leftAxisReservedWidth),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                Text(
+                  '+ ETB ${_formatEtbAbbrev(series.totalIncome)}',
+                  style: TextStyle(
+                    color: AppColors.incomeSuccess,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  '- ETB ${_formatEtbAbbrev(series.totalExpense)}',
+                  style: TextStyle(
+                    color: AppColors.red,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  'Peak: ETB ${_formatEtbAbbrev(series.maxValue)}',
+                  style: TextStyle(
+                    color: AppColors.textSecondary(context),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  series.rangeLabel,
+                  style: TextStyle(
+                    color: AppColors.textSecondary(context),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final previousSeries = _buildSeries(periodOffset - 1);
+    final currentSeries = _buildSeries(periodOffset);
+    final hasNewerPeriod = periodOffset < 0;
+    final nextSeries =
+        hasNewerPeriod ? _buildSeries(periodOffset + 1) : currentSeries;
+    final viewportHeight = math.max(
+      _pageHeight(previousSeries),
+      math.max(_pageHeight(currentSeries), _pageHeight(nextSeries)),
+    );
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _AnalyticsPrimaryChartHeader(
+            chartLabel: 'Line Chart',
+            headline: '',
+            supportingText: '',
+            activeFilterCount: activeFilterCount,
+            onOpenFilterSheet: onOpenFilterSheet,
+            onChartPickerTap: onChartPickerTap,
+            details: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Income vs Expense',
+                        style: TextStyle(
+                          color: AppColors.textPrimary(context),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    _AnalyticsLinePeriodToggle(
+                      selectedPeriod: period,
+                      onChanged: onPeriodChanged ?? (_) {},
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _AnalyticsSwipePager(
+                  height: viewportHeight,
+                  recenterKey:
+                      Object.hash(period, periodOffset, transactions.length),
+                  onPrevious: onNavigateToOlderPeriod,
+                  onNext: hasNewerPeriod ? onNavigateToNewerPeriod : null,
+                  itemBuilder: (context, index) {
+                    final series = index == 0
+                        ? previousSeries
+                        : index == 1
+                            ? currentSeries
+                            : nextSeries;
+                    return _buildPage(context, series);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalyticsLineSeries {
+  final _AnalyticsLineChartPeriod period;
+  final List<DateTime> bucketDates;
+  final List<double> incomeValues;
+  final List<double> expenseValues;
+  final double totalIncome;
+  final double totalExpense;
+  final double maxValue;
+  final String supportingText;
+  final String rangeLabel;
+  final String emptyMessage;
+
+  const _AnalyticsLineSeries({
+    required this.period,
+    required this.bucketDates,
+    required this.incomeValues,
+    required this.expenseValues,
+    required this.totalIncome,
+    required this.totalExpense,
+    required this.maxValue,
+    required this.supportingText,
+    required this.rangeLabel,
+    required this.emptyMessage,
+  });
+}
+
+class _AnalyticsLinePeriodToggle extends StatelessWidget {
+  final _AnalyticsLineChartPeriod selectedPeriod;
+  final ValueChanged<_AnalyticsLineChartPeriod> onChanged;
+
+  const _AnalyticsLinePeriodToggle({
+    required this.selectedPeriod,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.mutedFill(context).withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.all(2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _AnalyticsLinePeriodToggleOption(
+            label: 'Week',
+            selected: selectedPeriod == _AnalyticsLineChartPeriod.weekly,
+            onTap: () => onChanged(_AnalyticsLineChartPeriod.weekly),
+          ),
+          _AnalyticsLinePeriodToggleOption(
+            label: 'Month',
+            selected: selectedPeriod == _AnalyticsLineChartPeriod.monthly,
+            onTap: () => onChanged(_AnalyticsLineChartPeriod.monthly),
+          ),
+          _AnalyticsLinePeriodToggleOption(
+            label: 'Year',
+            selected: selectedPeriod == _AnalyticsLineChartPeriod.yearly,
+            onTap: () => onChanged(_AnalyticsLineChartPeriod.yearly),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalyticsLinePeriodToggleOption extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _AnalyticsLinePeriodToggleOption({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.cardColor(context) : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: selected
+                ? AppColors.textPrimary(context)
+                : AppColors.textSecondary(context),
+          ),
         ),
       ),
     );
@@ -6168,6 +6795,9 @@ class _AnalyticsBarChartCard extends StatelessWidget {
   final TransactionProvider provider;
   final List<Transaction> transactions;
   final _AnalyticsHeatmapFilter filter;
+  final int periodOffset;
+  final VoidCallback? onNavigateToOlderPeriod;
+  final VoidCallback? onNavigateToNewerPeriod;
   final int activeFilterCount;
   final VoidCallback? onOpenFilterSheet;
   final VoidCallback? onChartPickerTap;
@@ -6176,6 +6806,9 @@ class _AnalyticsBarChartCard extends StatelessWidget {
     required this.provider,
     required this.transactions,
     required this.filter,
+    this.periodOffset = 0,
+    this.onNavigateToOlderPeriod,
+    this.onNavigateToNewerPeriod,
     this.activeFilterCount = 0,
     this.onOpenFilterSheet,
     this.onChartPickerTap,
@@ -6242,9 +6875,13 @@ class _AnalyticsBarChartCard extends StatelessWidget {
     }
   }
 
-  _AnalyticsBarSeries _buildSeries() {
+  _AnalyticsBarSeries _buildSeries(int effectivePeriodOffset) {
     final mode = _effectiveMode;
-    final anchor = _anchorDate();
+    final anchor = _shiftAnalyticsBarAnchorDate(
+      _anchorDate(),
+      filter.barPeriod,
+      effectivePeriodOffset,
+    );
     const weeklyLabels = <String>[
       'Mon',
       'Tue',
@@ -6370,8 +7007,10 @@ class _AnalyticsBarChartCard extends StatelessWidget {
     );
 
     final periodLabel = switch (filter.barPeriod) {
-      _AnalyticsBarChartPeriod.weekly =>
-        '${DateFormat('MMM d').format(weekStart)} - ${DateFormat('MMM d, yyyy').format(weekStart.add(const Duration(days: 6)))}',
+      _AnalyticsBarChartPeriod.weekly => _formatAnalyticsDateRange(
+          weekStart,
+          weekStart.add(const Duration(days: 6)),
+        ),
       _AnalyticsBarChartPeriod.monthly =>
         'W1 - W5 in ${DateFormat('MMMM yyyy').format(anchor)}',
       _AnalyticsBarChartPeriod.yearly => 'Jan - Dec ${anchor.year}',
@@ -6390,13 +7029,161 @@ class _AnalyticsBarChartCard extends StatelessWidget {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final series = _buildSeries();
+  double _pageHeight(_AnalyticsBarSeries series) {
+    final hasData = series.totalsByBucket.fold<double>(0.0, math.max) > 0.001;
+    return hasData ? 354 : 276;
+  }
+
+  Widget _buildPage(BuildContext context, _AnalyticsBarSeries series) {
     final maxValue = series.totalsByBucket.fold<double>(0.0, math.max);
     final chartMax = maxValue <= 0 ? 100.0 : math.max(100.0, maxValue * 1.18);
     final interval = math.max(25.0, chartMax / 4);
     final hasData = maxValue > 0.001;
+
+    return Column(
+      key: ValueKey<String>(
+        'bar-page-${filter.barPeriod.name}-${_effectiveMode.name}-${series.supportingText}',
+      ),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          series.title,
+          style: TextStyle(
+            color: AppColors.textPrimary(context),
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          series.supportingText,
+          style: TextStyle(
+            color: AppColors.textSecondary(context),
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (!hasData)
+          _AnalyticsChartEmptyState(
+            message: series.emptyMessage,
+          )
+        else ...[
+          SizedBox(
+            height: 208,
+            child: BarChart(
+              BarChartData(
+                alignment: BarChartAlignment.spaceAround,
+                minY: 0,
+                maxY: chartMax,
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: interval,
+                  getDrawingHorizontalLine: (value) => FlLine(
+                    color:
+                        AppColors.borderColor(context).withValues(alpha: 0.65),
+                    strokeWidth: 0.8,
+                    dashArray: const [4, 4],
+                  ),
+                ),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  leftTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 28,
+                      getTitlesWidget: (value, meta) {
+                        final index = value.toInt();
+                        if (index < 0 || index >= series.labels.length) {
+                          return const SizedBox.shrink();
+                        }
+                        return SideTitleWidget(
+                          axisSide: meta.axisSide,
+                          space: 8,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              series.labels[index],
+                              style: TextStyle(
+                                color: AppColors.textTertiary(context),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                borderData: FlBorderData(show: false),
+                barTouchData: BarTouchData(
+                  enabled: true,
+                  touchTooltipData: BarTouchTooltipData(
+                    tooltipRoundedRadius: 12,
+                    tooltipPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    fitInsideHorizontally: true,
+                    fitInsideVertically: true,
+                    getTooltipColor: (group) => AppColors.cardColor(context),
+                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                      final index = group.x.toInt();
+                      return BarTooltipItem(
+                        '${series.labels[index]}\nETB ${_formatEtbAbbrev(series.totalsByBucket[index])}',
+                        TextStyle(
+                          color: AppColors.textPrimary(context),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          height: 1.35,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                barGroups: [
+                  for (int index = 0; index < series.labels.length; index++)
+                    _buildAnalyticsBarGroup(
+                      index: index,
+                      categories: series.categories,
+                      width: _barWidth(),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 78,
+            child: _AnalyticsBarCategoryScroller(
+              categories: series.categories,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final previousSeries = _buildSeries(periodOffset - 1);
+    final currentSeries = _buildSeries(periodOffset);
+    final hasNewerPeriod = periodOffset < 0;
+    final nextSeries =
+        hasNewerPeriod ? _buildSeries(periodOffset + 1) : currentSeries;
+    final viewportHeight = math.max(
+      _pageHeight(previousSeries),
+      math.max(_pageHeight(currentSeries), _pageHeight(nextSeries)),
+    );
 
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
@@ -6410,119 +7197,31 @@ class _AnalyticsBarChartCard extends StatelessWidget {
         children: [
           _AnalyticsPrimaryChartHeader(
             chartLabel: 'Bar Chart',
-            headline: series.title,
-            supportingText: series.supportingText,
+            headline: '',
+            supportingText: '',
             activeFilterCount: activeFilterCount,
             onOpenFilterSheet: onOpenFilterSheet,
             onChartPickerTap: onChartPickerTap,
+            details: _AnalyticsSwipePager(
+              height: viewportHeight,
+              recenterKey: Object.hash(
+                filter.barPeriod,
+                _effectiveMode,
+                periodOffset,
+                transactions.length,
+              ),
+              onPrevious: onNavigateToOlderPeriod,
+              onNext: hasNewerPeriod ? onNavigateToNewerPeriod : null,
+              itemBuilder: (context, index) {
+                final series = index == 0
+                    ? previousSeries
+                    : index == 1
+                        ? currentSeries
+                        : nextSeries;
+                return _buildPage(context, series);
+              },
+            ),
           ),
-          const SizedBox(height: 12),
-          if (!hasData)
-            _AnalyticsChartEmptyState(
-              message: series.emptyMessage,
-            )
-          else ...[
-            SizedBox(
-              height: 228,
-              child: BarChart(
-                BarChartData(
-                  alignment: BarChartAlignment.spaceAround,
-                  minY: 0,
-                  maxY: chartMax,
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: interval,
-                    getDrawingHorizontalLine: (value) => FlLine(
-                      color: AppColors.borderColor(context)
-                          .withValues(alpha: 0.65),
-                      strokeWidth: 0.8,
-                      dashArray: const [4, 4],
-                    ),
-                  ),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    leftTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 28,
-                        getTitlesWidget: (value, meta) {
-                          final index = value.toInt();
-                          if (index < 0 || index >= series.labels.length) {
-                            return const SizedBox.shrink();
-                          }
-                          return SideTitleWidget(
-                            axisSide: meta.axisSide,
-                            space: 8,
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                series.labels[index],
-                                style: TextStyle(
-                                  color: AppColors.textTertiary(context),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  barTouchData: BarTouchData(
-                    enabled: true,
-                    touchTooltipData: BarTouchTooltipData(
-                      tooltipRoundedRadius: 12,
-                      tooltipPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      fitInsideHorizontally: true,
-                      fitInsideVertically: true,
-                      getTooltipColor: (group) => AppColors.cardColor(context),
-                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        final index = group.x.toInt();
-                        return BarTooltipItem(
-                          '${series.labels[index]}\nETB ${_formatAnalyticsEtbAmount(series.totalsByBucket[index])}',
-                          TextStyle(
-                            color: AppColors.textPrimary(context),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            height: 1.35,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  barGroups: [
-                    for (int index = 0; index < series.labels.length; index++)
-                      _buildAnalyticsBarGroup(
-                        index: index,
-                        categories: series.categories,
-                        width: _barWidth(),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 108,
-              child: _AnalyticsBarCategoryScroller(
-                categories: series.categories,
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -6695,7 +7394,7 @@ class _AnalyticsBarCategoryItem extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         Text(
-          'ETB ${_formatAnalyticsEtbAmount(stat.total)}',
+          'ETB ${_formatEtbAbbrev(stat.total)}',
           textAlign: TextAlign.right,
           style: TextStyle(
             color: AppColors.textPrimary(context),
@@ -7915,26 +8614,32 @@ class _PaginationBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: AppColors.cardColor(context),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.borderColor(context)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: AppColors.isDark(context) ? 0.24 : 0.08,
+            ),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Previous arrow
           _ArrowButton(
             icon: AppIcons.chevron_left_rounded,
             enabled: currentPage > 0,
             onTap: () => onPageChanged(currentPage - 1),
           ),
-          const SizedBox(width: 4),
-          // Page numbers
+          const SizedBox(width: 8),
           ..._buildPageButtons(context),
-          const SizedBox(width: 4),
-          // Next arrow
+          const SizedBox(width: 8),
           _ArrowButton(
             icon: AppIcons.chevron_right_rounded,
             enabled: currentPage < totalPages - 1,
@@ -8015,8 +8720,8 @@ class _ArrowButton extends StatelessWidget {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
-        width: 32,
-        height: 32,
+        width: 34,
+        height: 34,
         decoration: BoxDecoration(
           color: enabled
               ? AppColors.primaryLight.withValues(alpha: 0.1)
@@ -8051,9 +8756,9 @@ class _PageButton extends StatelessWidget {
     return GestureDetector(
       onTap: isCurrent ? null : onTap,
       child: Container(
-        width: 32,
-        height: 32,
-        margin: const EdgeInsets.symmetric(horizontal: 2),
+        width: 34,
+        height: 34,
+        margin: const EdgeInsets.symmetric(horizontal: 3),
         decoration: BoxDecoration(
           color: isCurrent ? AppColors.primaryLight : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
@@ -8081,8 +8786,8 @@ class _Ellipsis extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 24,
-      height: 32,
+      width: 28,
+      height: 34,
       child: Center(
         child: Text(
           '...',
