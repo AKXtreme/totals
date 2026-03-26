@@ -1,27 +1,70 @@
 import 'dart:convert';
 
+import 'package:totals/data/all_banks_from_assets.dart';
+import 'package:totals/models/bank.dart';
+
+final List<Bank> _knownBanks = AllBanksFromAssets.getAllBanks();
+final Set<int> _knownBankIds = {
+  for (final bank in _knownBanks) bank.id,
+};
+final Map<String, int> _bankIdLookup = _buildBankIdLookup();
+
+Map<String, int> _buildBankIdLookup() {
+  final lookup = <String, int>{};
+  for (final bank in _knownBanks) {
+    _addBankLookup(lookup, bank.name, bank.id);
+    _addBankLookup(lookup, bank.shortName, bank.id);
+    for (final code in bank.codes) {
+      _addBankLookup(lookup, code, bank.id);
+    }
+  }
+  return lookup;
+}
+
+void _addBankLookup(Map<String, int> lookup, String value, int bankId) {
+  final normalized = _normalizeBankLookupKey(value);
+  if (normalized.isEmpty) return;
+  lookup.putIfAbsent(normalized, () => bankId);
+}
+
+String _normalizeBankLookupKey(String value) {
+  return value.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+}
+
+String? _asText(dynamic value) {
+  final text = value?.toString().trim();
+  if (text == null || text.isEmpty) return null;
+  return text;
+}
+
 class AccountShareEntry {
   final int bankId;
   final String accountNumber;
+  final String? name;
+  final String? bankName;
+  final String? bankShortName;
 
   const AccountShareEntry({
     required this.bankId,
     required this.accountNumber,
+    this.name,
+    this.bankName,
+    this.bankShortName,
   });
 
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toJson({String? fallbackName}) {
+    final resolvedName = _asText(name) ?? _asText(fallbackName);
     return {
-      'bankId': bankId,
-      'accountNumber': accountNumber,
+      if (resolvedName != null) 'name': resolvedName,
+      'bankId': bankId.toString(),
+      'number': accountNumber,
     };
   }
 
   static AccountShareEntry? tryFromJson(Map<String, dynamic> json) {
-    final bankId = _asInt(json['bankId']) ??
-        _asInt(json['bank']) ??
-        _asInt(json['bank_id']) ??
-        _asInt(json['bankID']);
+    final bankId = _resolveBankId(json);
     final accountNumber = (json['accountNumber'] ??
+            json['number'] ??
             json['account'] ??
             json['accountNo'] ??
             json['account_number'])
@@ -33,18 +76,72 @@ class AccountShareEntry {
     return AccountShareEntry(
       bankId: bankId,
       accountNumber: accountNumber,
+      name: _asText(
+        json['name'] ?? json['accountName'] ?? json['label'] ?? json['title'],
+      ),
+      bankName: _extractBankName(json),
+      bankShortName: _extractBankShortName(json),
+    );
+  }
+
+  static int? _resolveBankId(Map<String, dynamic> json) {
+    final explicitBankId = _asInt(json['bankId']) ??
+        _asInt(json['bank_id']) ??
+        _asInt(json['bankID']);
+    if (explicitBankId != null) return explicitBankId;
+
+    final bankValue = json['bank'];
+    if (bankValue is int) return bankValue;
+    if (bankValue is num) return bankValue.toInt();
+
+    final bankText = _asText(bankValue);
+    if (bankText != null) {
+      final parsedId = int.tryParse(bankText);
+      if (parsedId != null && _knownBankIds.contains(parsedId)) {
+        return parsedId;
+      }
+    }
+
+    final candidates = <String?>[
+      bankText,
+      _asText(json['bankName']),
+      _asText(json['bankShort']),
+      _asText(json['bankShortName']),
+      _asText(json['shortName']),
+    ];
+
+    for (final candidate in candidates) {
+      if (candidate == null) continue;
+      final resolved = _bankIdLookup[_normalizeBankLookupKey(candidate)];
+      if (resolved != null) return resolved;
+    }
+
+    return null;
+  }
+
+  static String? _extractBankName(Map<String, dynamic> json) {
+    final bankValue = json['bank'];
+    if (bankValue is String && int.tryParse(bankValue.trim()) == null) {
+      return _asText(bankValue);
+    }
+    return _asText(json['bankName']);
+  }
+
+  static String? _extractBankShortName(Map<String, dynamic> json) {
+    return _asText(
+      json['bankShort'] ?? json['bankShortName'] ?? json['shortName'],
     );
   }
 
   static int? _asInt(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '');
+    return int.tryParse(value?.toString().trim() ?? '');
   }
 }
 
 class AccountSharePayload {
-  static const int currentVersion = 1;
+  static const int currentVersion = 2;
   static const String prefix = 'totals:accounts:';
   static const String _defaultName = 'Imported Account';
 
@@ -60,16 +157,13 @@ class AccountSharePayload {
 
   Map<String, dynamic> toJson() {
     return {
-      'version': version,
-      'name': name,
-      'accounts': accounts.map((entry) => entry.toJson()).toList(),
+      'profile': name,
+      'accounts': accounts.map((entry) => entry.toJson(fallbackName: name)).toList(),
     };
   }
 
   static String encode(AccountSharePayload payload) {
-    final jsonString = jsonEncode(payload.toJson());
-    final encoded = base64UrlEncode(utf8.encode(jsonString));
-    return '$prefix$encoded';
+    return jsonEncode(payload.toJson());
   }
 
   static AccountSharePayload? decode(String raw) {
@@ -125,8 +219,8 @@ class AccountSharePayload {
       return null;
     }
 
-    if (jsonValue is Map<String, dynamic>) {
-      return tryFromJson(jsonValue);
+    if (jsonValue is Map) {
+      return tryFromJson(Map<String, dynamic>.from(jsonValue));
     }
     if (jsonValue is List) {
       return tryFromLegacyList(jsonValue);
@@ -156,14 +250,14 @@ class AccountSharePayload {
     }
     if (entries.isEmpty) return null;
 
-    final name = (json['name'] ??
-            json['displayName'] ??
-            json['accountHolderName'] ??
-            json['holderName'] ??
-            json['fullName'])
-        ?.toString()
-        .trim();
-    final resolvedName = (name == null || name.isEmpty) ? _defaultName : name;
+    final name = _asText(json['profile']) ??
+        _asText(json['name']) ??
+        _asText(json['displayName']) ??
+        _asText(json['accountHolderName']) ??
+        _asText(json['holderName']) ??
+        _asText(json['fullName']);
+    final resolvedName =
+        (name == null || name.isEmpty) ? _resolveNameFromEntries(entries) : name;
     final version = _asInt(json['version']) ??
         _asInt(json['schemaVersion']) ??
         _asInt(json['v']) ??
@@ -171,7 +265,7 @@ class AccountSharePayload {
 
     return AccountSharePayload(
       version: version,
-      name: resolvedName,
+      name: resolvedName ?? _defaultName,
       accounts: entries,
     );
   }
@@ -180,17 +274,27 @@ class AccountSharePayload {
     if (rawAccounts is! List) return const <AccountShareEntry>[];
     final entries = <AccountShareEntry>[];
     for (final entry in rawAccounts) {
-      if (entry is Map<String, dynamic>) {
-        final parsed = AccountShareEntry.tryFromJson(entry);
+      if (entry is Map) {
+        final parsed = AccountShareEntry.tryFromJson(
+          Map<String, dynamic>.from(entry),
+        );
         if (parsed != null) entries.add(parsed);
       }
     }
     return entries;
   }
 
+  static String? _resolveNameFromEntries(List<AccountShareEntry> entries) {
+    for (final entry in entries) {
+      final resolved = _asText(entry.name);
+      if (resolved != null) return resolved;
+    }
+    return null;
+  }
+
   static int? _asInt(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '');
+    return int.tryParse(value?.toString().trim() ?? '');
   }
 }

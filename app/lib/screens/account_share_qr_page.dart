@@ -140,6 +140,7 @@ class _AccountShareQrPageState extends State<AccountShareQrPage> {
         .map((account) => AccountShareEntry(
               bankId: account.bank,
               accountNumber: account.accountNumber,
+              name: account.accountHolderName.trim(),
             ))
         .toList();
     if (entries.isEmpty) return null;
