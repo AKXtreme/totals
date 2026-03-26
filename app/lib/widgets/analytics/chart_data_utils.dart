@@ -55,8 +55,8 @@ class ChartDataUtils {
   }) {
     final now = baseDate;
     int daysSinceMonday = (now.weekday - 1) % 7;
-    final weekStart =
-        DateTime(now.year, now.month, now.day).subtract(Duration(days: daysSinceMonday));
+    final weekStart = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: daysSinceMonday));
     final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final totals = List<double>.filled(7, 0.0);
 
@@ -88,8 +88,7 @@ class ChartDataUtils {
   }) {
     final now = baseDate;
     final monthStart = DateTime(now.year, now.month, 1);
-    final weeksInMonth = ((now.difference(monthStart).inDays) / 7).ceil();
-    final bucketCount = weeksInMonth.clamp(1, 4).toInt();
+    const bucketCount = 5;
     final totals = List<double>.filled(bucketCount, 0.0);
 
     for (final transaction in transactions) {
@@ -100,13 +99,9 @@ class ChartDataUtils {
           transactionDate.month != now.month) {
         continue;
       }
-      final day = _dateOnly(transactionDate);
-      final diffDays = day.difference(monthStart).inDays;
-      if (diffDays < 0) continue;
-      final weekIndex = (diffDays / 7).floor();
-      if (weekIndex >= 0 && weekIndex < totals.length) {
-        totals[weekIndex] += transaction.amount;
-      }
+      final weekIndex =
+          ((transactionDate.day - 1) / 7).floor().clamp(0, 4).toInt();
+      totals[weekIndex] += transaction.amount;
     }
 
     return List.generate(bucketCount, (index) {
@@ -161,11 +156,11 @@ class ChartDataUtils {
     });
   }
 
-  static int getCurrentDayIndex(List<ChartDataPoint> data, DateTime baseDate, String period) {
+  static int getCurrentDayIndex(
+      List<ChartDataPoint> data, DateTime baseDate, String period) {
     final now = baseDate;
-    
+
     if (period == 'Week') {
-      // Find the index that matches today's date
       for (int i = 0; i < data.length; i++) {
         if (data[i].date != null) {
           final dataDate = data[i].date!;
@@ -176,18 +171,11 @@ class ChartDataUtils {
           }
         }
       }
-      // Fallback: return today's weekday index (0-6, where 0 is Saturday)
-      int daysSinceSaturday = (now.weekday + 1) % 7;
-      return daysSinceSaturday.clamp(0, data.length - 1);
+      return (now.weekday - 1).clamp(0, data.length - 1);
     } else if (period == 'Month') {
-      // Find current week index
-      final monthStart = DateTime(now.year, now.month, 1);
-      final weekNumber = ((now.difference(monthStart).inDays) / 7).floor();
-      return weekNumber.clamp(0, data.length - 1);
+      return (((now.day - 1) / 7).floor()).clamp(0, data.length - 1).toInt();
     } else {
-      // For year view, return current month index
       return (now.month - 1).clamp(0, data.length - 1);
     }
   }
 }
-

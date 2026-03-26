@@ -12,7 +12,6 @@ import 'package:totals/widgets/analytics/filter_section.dart';
 import 'package:totals/widgets/analytics/income_expense_cards.dart';
 import 'package:totals/widgets/analytics/chart_type_selector.dart';
 import 'package:totals/widgets/analytics/chart_container.dart';
-import 'package:totals/widgets/analytics/category_breakdown.dart';
 import 'package:totals/widgets/analytics/transactions_list.dart';
 import 'package:totals/widgets/analytics/chart_data_point.dart';
 import 'package:totals/widgets/analytics/chart_data_utils.dart';
@@ -36,6 +35,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   String? _selectedAccountFilter;
   String _sortBy = 'Date';
   String _chartType = 'Heatmap';
+  String _barChartFlow = 'Expense';
   int _timeFrameOffset = 0;
   Set<int?> _selectedIncomeCategoryIds = {};
   Set<int?> _selectedExpenseCategoryIds = {};
@@ -85,6 +85,24 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     } else {
       return DateTime(now.year + effectiveOffset, now.month, now.day);
     }
+  }
+
+  void _setSelectedPeriod(String period) {
+    if (_timeFramePageController.hasClients) {
+      _timeFramePageController.jumpToPage(1);
+    }
+    setState(() {
+      _selectedPeriod = period;
+      _timeFrameOffset = 0;
+    });
+  }
+
+  void _setBarChartFlow(String flow) {
+    final normalized = flow == 'Income' ? 'Income' : 'Expense';
+    setState(() {
+      _barChartFlow = normalized;
+      _selectedCard = normalized;
+    });
   }
 
   void _resetTimeFrame() {
@@ -373,11 +391,30 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   List<Transaction> _filterTransactionsForBarChart(
-      List<Transaction> allTransactions) {
-    if (_selectedBankFilter == null) return allTransactions;
-    return allTransactions
-        .where((t) => t.bankId == _selectedBankFilter)
-        .toList();
+    List<Transaction> allTransactions,
+    Map<int, List<AccountSummary>> accountsByBank,
+    AccountSummary? selectedAccount,
+    TransactionProvider provider,
+  ) {
+    final filtered = <Transaction>[];
+    for (final transaction in allTransactions) {
+      if (!_hasMatchingAccount(transaction, accountsByBank)) {
+        continue;
+      }
+      if (provider.isSelfTransfer(transaction)) {
+        continue;
+      }
+      if (_selectedBankFilter != null &&
+          transaction.bankId != _selectedBankFilter) {
+        continue;
+      }
+      if (selectedAccount != null &&
+          !_matchesSelectedAccount(transaction, selectedAccount)) {
+        continue;
+      }
+      filtered.add(transaction);
+    }
+    return filtered;
   }
 
   List<Transaction> _filterTransactionsForPnl(
@@ -656,11 +693,14 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         _pruneSelection(filteredTransactions
             .map((transaction) => transaction.reference)
             .toSet());
-        final barChartTransactions =
-            _filterByCategorySelections(_filterTransactionsForBarChart(allTransactions));
-        final pnlTransactions =
-            _filterByCategorySelections(
-                _filterTransactionsForPnl(allTransactions, selectedAccount));
+        final barChartTransactions = _filterTransactionsForBarChart(
+          allTransactions,
+          accountsByBank,
+          selectedAccount,
+          provider,
+        );
+        final pnlTransactions = _filterByCategorySelections(
+            _filterTransactionsForPnl(allTransactions, selectedAccount));
 
         final chartData = _getChartData(filteredTransactions, baseDate);
         final chartDataByOffset = <int, List<ChartDataPoint>>{};
@@ -703,31 +743,28 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    TimePeriodSelector(
-                      selectedPeriod: _selectedPeriod,
-                      onPeriodChanged: (period) {
-                        setState(() {
-                          _selectedPeriod = period;
-                          _timeFrameOffset = 0;
-                        });
-                      },
-                      onPeriodChange: () {
-                        if (_timeFramePageController.hasClients) {
-                          _timeFramePageController.jumpToPage(1);
-                        }
-                      },
-                      onInsightsTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => InsightsPage(
-                              transactions: filteredTransactions,
-                              periodLabel: 'Based on $_selectedPeriod view',
+                    if (_chartType != 'Bar Chart') ...[
+                      TimePeriodSelector(
+                        selectedPeriod: _selectedPeriod,
+                        onPeriodChanged: _setSelectedPeriod,
+                        onPeriodChange: () {
+                          if (_timeFramePageController.hasClients) {
+                            _timeFramePageController.jumpToPage(1);
+                          }
+                        },
+                        onInsightsTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => InsightsPage(
+                                transactions: filteredTransactions,
+                                periodLabel: 'Based on $_selectedPeriod view',
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 24),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                    ],
                     FilterSection(
                       bankSummaries: bankSummaries,
                       selectedBankFilter: _selectedBankFilter,
@@ -747,21 +784,26 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ),
                     if (_selectedBankFilter != null) const SizedBox(height: 16),
                     const SizedBox(height: 24),
-                    IncomeExpenseCards(
-                      selectedCard: _selectedCard,
-                      selectedPeriod: _selectedPeriod,
-                      selectedBankFilter: _selectedBankFilter,
-                      selectedAccountFilter: _selectedAccountFilter,
-                      selectedIncomeCategoryIds: _selectedIncomeCategoryIds,
-                      selectedExpenseCategoryIds: _selectedExpenseCategoryIds,
-                      getBaseDate: _getBaseDate,
-                      onCardSelected: (card) {
-                        setState(() {
-                          _selectedCard = card;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 24),
+                    if (_chartType != 'Bar Chart') ...[
+                      IncomeExpenseCards(
+                        selectedCard: _selectedCard,
+                        selectedPeriod: _selectedPeriod,
+                        selectedBankFilter: _selectedBankFilter,
+                        selectedAccountFilter: _selectedAccountFilter,
+                        selectedIncomeCategoryIds: _selectedIncomeCategoryIds,
+                        selectedExpenseCategoryIds: _selectedExpenseCategoryIds,
+                        getBaseDate: _getBaseDate,
+                        onCardSelected: (card) {
+                          setState(() {
+                            _selectedCard = card;
+                            if (card != null) {
+                              _barChartFlow = card;
+                            }
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                    ],
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
@@ -794,6 +836,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                           onChartTypeChanged: (type) {
                             setState(() {
                               _chartType = type;
+                              if (type == 'Bar Chart') {
+                                _selectedCard = _barChartFlow;
+                              }
                             });
                           },
                         ),
@@ -811,9 +856,14 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                       getBaseDate: _getBaseDate,
                       getChartDataForOffset: getChartDataForOffset,
                       selectedCard: _selectedCard,
+                      barChartFlow: _barChartFlow,
                       barChartTransactions: barChartTransactions,
                       pnlTransactions: pnlTransactions,
+                      selectedIncomeCategoryIds: _selectedIncomeCategoryIds,
+                      selectedExpenseCategoryIds: _selectedExpenseCategoryIds,
                       dateForTransaction: _resolveTransactionDate,
+                      onBarChartFlowChanged: _setBarChartFlow,
+                      onBarChartPeriodChanged: _setSelectedPeriod,
                       onCalendarCellSelected: (date) {
                         _openCalendarTransactions(
                           date,
