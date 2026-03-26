@@ -848,6 +848,7 @@ class _QuickAccessAccountsSheetState extends State<_QuickAccessAccountsSheet>
           (account) => AccountShareEntry(
             bankId: account.bank,
             accountNumber: account.accountNumber,
+            name: account.accountHolderName.trim(),
           ),
         )
         .toList(growable: false);

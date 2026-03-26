@@ -8131,6 +8131,20 @@ class _AccountsBalanceCard extends StatelessWidget {
                   fontWeight: FontWeight.w500,
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                balanceLabel,
+                style: const TextStyle(
+                  color: AppColors.white,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                ),
+              ),
               const Spacer(),
               GestureDetector(
                 onTap: onToggleBalance,
@@ -8143,16 +8157,6 @@ class _AccountsBalanceCard extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            balanceLabel,
-            style: const TextStyle(
-              color: AppColors.white,
-              fontSize: 32,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-            ),
           ),
           const SizedBox(height: 6),
           Text(
@@ -10858,8 +10862,9 @@ class _AnalyticsChartFilterSheetState
                         Expanded(
                           child: _DatePickerField(
                             hint: 'End date',
-                            value:
-                                _endDate != null ? _formatDate(_endDate!) : null,
+                            value: _endDate != null
+                                ? _formatDate(_endDate!)
+                                : null,
                             onTap: () => _pickDate(isStart: false),
                             onClear: _endDate != null
                                 ? () => setState(() => _endDate = null)

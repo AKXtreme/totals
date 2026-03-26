@@ -284,7 +284,8 @@ class _RedesignHomePageState extends State<RedesignHomePage>
                                 amountColor: isCredit
                                     ? AppColors.incomeSuccess
                                     : AppColors.red,
-                                name: _transactionCounterparty(transaction, isSelfTransfer: isSelfTransfer),
+                                name: _transactionCounterparty(transaction,
+                                    isSelfTransfer: isSelfTransfer),
                                 timestamp: _transactionTimeLabel(transaction),
                                 selected: selected,
                                 onTap: _isSelecting
@@ -493,7 +494,8 @@ String _amountLabel(double amount, {required bool isCredit}) {
   return '${isCredit ? '+' : '-'} ETB $formatted';
 }
 
-String _transactionCounterparty(Transaction transaction, {bool isSelfTransfer = false}) {
+String _transactionCounterparty(Transaction transaction,
+    {bool isSelfTransfer = false}) {
   final receiver = transaction.receiver?.trim();
   final creditor = transaction.creditor?.trim();
   if (receiver != null && receiver.isNotEmpty) return receiver.toUpperCase();
@@ -568,6 +570,20 @@ class _TotalBalanceCard extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  'ETB $displayBalance',
+                  style: const TextStyle(
+                    color: AppColors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                  ),
+                ),
                 const Spacer(),
                 IconButton(
                   onPressed: onToggleBalance,
@@ -586,16 +602,6 @@ class _TotalBalanceCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              'ETB $displayBalance',
-              style: const TextStyle(
-                color: AppColors.white,
-                fontSize: 32,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-              ),
-            ),
             const SizedBox(height: 6),
             InkWell(
               onTap: onBreakdownTap,
@@ -612,7 +618,7 @@ class _TotalBalanceCard extends StatelessWidget {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Icon(
                       AppIcons.arrow_forward,
                       size: 14,
@@ -897,6 +903,20 @@ class _HomeLoadingSkeletonState extends State<_HomeLoadingSkeleton>
                   fontWeight: FontWeight.w500,
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 12),
+            Row(
+              children: [
+                Text(
+                  'ETB ...',
+                style: TextStyle(
+                  color: AppColors.white.withValues(alpha: 0.74),
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                ),
+              ),
               const Spacer(),
               Icon(
                 AppIcons.visibility_off_outlined,
@@ -904,16 +924,6 @@ class _HomeLoadingSkeletonState extends State<_HomeLoadingSkeleton>
                 color: AppColors.white.withValues(alpha: 0.42),
               ),
             ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'ETB ...',
-            style: TextStyle(
-              color: AppColors.white.withValues(alpha: 0.74),
-              fontSize: 32,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-            ),
           ),
           const SizedBox(height: 12),
           Text(
