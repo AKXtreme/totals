@@ -62,6 +62,65 @@ const List<_BudgetCategoryColorOption> _kBudgetWidgetColorOptions = [
   _BudgetCategoryColorOption(key: 'cyan', color: Color(0xFF46B8D9)),
 ];
 
+const List<CategoryIconOption> _kBudgetWidgetIconOptions = [
+  ...categoryIconOptions,
+  CategoryIconOption(
+    key: 'savings',
+    icon: Icons.savings_rounded,
+    label: 'Savings',
+  ),
+  CategoryIconOption(
+    key: 'flight',
+    icon: Icons.flight_rounded,
+    label: 'Travel',
+  ),
+  CategoryIconOption(
+    key: 'school',
+    icon: Icons.school_rounded,
+    label: 'Education',
+  ),
+  CategoryIconOption(
+    key: 'sports_esports',
+    icon: Icons.sports_esports_rounded,
+    label: 'Gaming',
+  ),
+  CategoryIconOption(
+    key: 'pets',
+    icon: Icons.pets_rounded,
+    label: 'Pets',
+  ),
+  CategoryIconOption(
+    key: 'movie',
+    icon: Icons.movie_rounded,
+    label: 'Entertainment',
+  ),
+  CategoryIconOption(
+    key: 'fitness_center',
+    icon: Icons.fitness_center_rounded,
+    label: 'Fitness',
+  ),
+  CategoryIconOption(
+    key: 'medical_services',
+    icon: Icons.medical_services_rounded,
+    label: 'Medical',
+  ),
+  CategoryIconOption(
+    key: 'local_gas_station',
+    icon: Icons.local_gas_station_rounded,
+    label: 'Fuel',
+  ),
+  CategoryIconOption(
+    key: 'celebration',
+    icon: Icons.celebration_rounded,
+    label: 'Celebration',
+  ),
+  CategoryIconOption(
+    key: 'subscriptions',
+    icon: Icons.subscriptions_rounded,
+    label: 'Subscriptions',
+  ),
+];
+
 const Set<String> _kBudgetWidgetSupportedIconKeys = {
   'payments',
   'gift',
@@ -76,6 +135,17 @@ const Set<String> _kBudgetWidgetSupportedIconKeys = {
   'request_quote',
   'spa',
   'more_horiz',
+  'savings',
+  'flight',
+  'school',
+  'sports_esports',
+  'pets',
+  'movie',
+  'fitness_center',
+  'medical_services',
+  'local_gas_station',
+  'celebration',
+  'subscriptions',
 };
 
 const List<String> _kBudgetWidgetFallbackColorKeys = [
@@ -1903,28 +1973,24 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
             ),
           ),
           const SizedBox(height: 8),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              const itemSize = 42.0;
-              const gap = 8.0;
-              final rawCount =
-                  ((constraints.maxWidth + gap) / (itemSize + gap)).floor();
-              final crossAxisCount = rawCount.clamp(4, 6);
-
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: categoryIconOptions.length,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  mainAxisSpacing: gap,
-                  crossAxisSpacing: gap,
-                  mainAxisExtent: itemSize,
-                ),
-                itemBuilder: (context, index) {
-                  final option = categoryIconOptions[index];
-                  final selected = option.key == _selectedWidgetIconKey;
-                  return Material(
+          SizedBox(
+            height: 92,
+            child: GridView.builder(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: _kBudgetWidgetIconOptions.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                mainAxisExtent: 42,
+              ),
+              itemBuilder: (context, index) {
+                final option = _kBudgetWidgetIconOptions[index];
+                final selected = option.key == _selectedWidgetIconKey;
+                return Tooltip(
+                  message: option.label,
+                  child: Material(
                     color: selected
                         ? selectedColor.withValues(alpha: 0.15)
                         : AppColors.surfaceColor(context),
@@ -1954,10 +2020,17 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                         ),
                       ),
                     ),
-                  );
-                },
-              );
-            },
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Swipe sideways to see more icons.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.textSecondary(context),
+            ),
           ),
           const SizedBox(height: 14),
           Text(

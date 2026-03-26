@@ -420,6 +420,17 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
             "request_quote" -> 0xF0104
             "spa" -> 0xF01AD
             "more_horiz" -> 0xF8D9
+            "savings" -> 0xF0128
+            "flight" -> 0xF772
+            "school" -> 0xF012E
+            "sports_esports" -> 0xF01BC
+            "pets" -> 0xF0077
+            "movie" -> 0xF8E7
+            "fitness_center" -> 0xF767
+            "medical_services" -> 0xF8B0
+            "local_gas_station" -> 0xF86D
+            "celebration" -> 0xF625
+            "subscriptions" -> 0xF01ED
             else -> return null
         }
         return String(Character.toChars(codePoint))
@@ -439,6 +450,17 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
             "phone" -> android.R.drawable.ic_menu_call
             "request_quote" -> android.R.drawable.ic_menu_edit
             "spa" -> android.R.drawable.ic_menu_gallery
+            "savings" -> android.R.drawable.ic_menu_save
+            "flight" -> android.R.drawable.ic_menu_compass
+            "school" -> android.R.drawable.ic_menu_info_details
+            "sports_esports" -> android.R.drawable.ic_media_play
+            "pets" -> android.R.drawable.ic_menu_myplaces
+            "movie" -> android.R.drawable.ic_menu_slideshow
+            "fitness_center" -> android.R.drawable.ic_menu_manage
+            "medical_services" -> android.R.drawable.ic_menu_info_details
+            "local_gas_station" -> android.R.drawable.ic_menu_directions
+            "celebration" -> android.R.drawable.ic_menu_today
+            "subscriptions" -> android.R.drawable.ic_menu_recent_history
             else -> android.R.drawable.ic_menu_more
         }
     }

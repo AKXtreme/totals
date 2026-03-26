@@ -282,6 +282,17 @@ const Set<String> _kSupportedBudgetWidgetIconKeys = {
   'request_quote',
   'spa',
   'more_horiz',
+  'savings',
+  'flight',
+  'school',
+  'sports_esports',
+  'pets',
+  'movie',
+  'fitness_center',
+  'medical_services',
+  'local_gas_station',
+  'celebration',
+  'subscriptions',
 };
 
 const List<String> _kBudgetWidgetFallbackColorKeys = [

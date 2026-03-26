@@ -520,6 +520,17 @@ const Set<String> _kBudgetWidgetSupportedIconKeys = {
   'request_quote',
   'spa',
   'more_horiz',
+  'savings',
+  'flight',
+  'school',
+  'sports_esports',
+  'pets',
+  'movie',
+  'fitness_center',
+  'medical_services',
+  'local_gas_station',
+  'celebration',
+  'subscriptions',
 };
 
 const Map<String, String> _kBudgetWidgetColorHexByKey = {
