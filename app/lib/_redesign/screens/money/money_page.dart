@@ -495,8 +495,10 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   _AnalyticsHeatmapView _analyticsHeatmapView = _AnalyticsHeatmapView.daily;
   _AnalyticsLineChartPeriod _analyticsLineChartPeriod =
       _AnalyticsLineChartPeriod.monthly;
+  int _analyticsBubbleChartOffset = 0;
   int _analyticsLineChartOffset = 0;
   int _analyticsBarChartOffset = 0;
+  int _analyticsPieChartOffset = 0;
   DateTime? _analyticsHeatmapFocusMonth;
   _AnalyticsChartSection _analyticsSelectedChartSection =
       _AnalyticsChartSection.heatmap;
@@ -605,10 +607,177 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     }
   }
 
+  bool _analyticsFilterUsesDateRange(_AnalyticsHeatmapFilter filter) {
+    return filter.startDate != null || filter.endDate != null;
+  }
+
+  int _analyticsMonthDelta(DateTime targetMonth, DateTime anchorMonth) {
+    return (targetMonth.year - anchorMonth.year) * 12 +
+        targetMonth.month -
+        anchorMonth.month;
+  }
+
+  DateTime _resolveChartVisibleMonth(
+    List<Transaction> transactions, {
+    required int periodOffset,
+  }) {
+    final anchorMonth = _resolveAnalyticsChartAnchorMonth(transactions);
+    return DateTime(anchorMonth.year, anchorMonth.month + periodOffset, 1);
+  }
+
+  int _resolveLineChartOffsetForVisibleStart(
+    List<Transaction> transactions, {
+    required DateTime visibleStart,
+    required _AnalyticsLineChartPeriod period,
+  }) {
+    final anchorDate = _resolveAnalyticsChartAnchorDate(transactions);
+    switch (period) {
+      case _AnalyticsLineChartPeriod.weekly:
+        final anchorWeekStart = anchorDate.subtract(
+          Duration(days: anchorDate.weekday - DateTime.monday),
+        );
+        final targetWeekStart = visibleStart.subtract(
+          Duration(days: visibleStart.weekday - DateTime.monday),
+        );
+        return targetWeekStart.difference(anchorWeekStart).inDays ~/ 7;
+      case _AnalyticsLineChartPeriod.monthly:
+        final anchorMonth = DateTime(anchorDate.year, anchorDate.month, 1);
+        final targetMonth = DateTime(visibleStart.year, visibleStart.month, 1);
+        return _analyticsMonthDelta(targetMonth, anchorMonth);
+      case _AnalyticsLineChartPeriod.yearly:
+        return visibleStart.year - anchorDate.year;
+    }
+  }
+
+  int _resolveBarChartOffsetForVisibleStart(
+    List<Transaction> transactions, {
+    required DateTime visibleStart,
+    required _AnalyticsBarChartPeriod period,
+  }) {
+    final anchorDate = _resolveAnalyticsChartAnchorDate(transactions);
+    switch (period) {
+      case _AnalyticsBarChartPeriod.weekly:
+        final anchorWeekStart = anchorDate.subtract(
+          Duration(days: anchorDate.weekday - DateTime.monday),
+        );
+        final targetWeekStart = visibleStart.subtract(
+          Duration(days: visibleStart.weekday - DateTime.monday),
+        );
+        return targetWeekStart.difference(anchorWeekStart).inDays ~/ 7;
+      case _AnalyticsBarChartPeriod.monthly:
+        final anchorMonth = DateTime(anchorDate.year, anchorDate.month, 1);
+        final targetMonth = DateTime(visibleStart.year, visibleStart.month, 1);
+        return _analyticsMonthDelta(targetMonth, anchorMonth);
+      case _AnalyticsBarChartPeriod.yearly:
+        return visibleStart.year - anchorDate.year;
+    }
+  }
+
+  int _resolveChartOffsetForFilterChange(
+    TransactionProvider provider, {
+    required _AnalyticsChartSection section,
+    required _AnalyticsHeatmapFilter currentFilter,
+    required _AnalyticsHeatmapFilter nextFilter,
+  }) {
+    switch (section) {
+      case _AnalyticsChartSection.heatmap:
+        return 0;
+      case _AnalyticsChartSection.expenseBubble:
+        if (_analyticsFilterUsesDateRange(currentFilter) ||
+            _analyticsFilterUsesDateRange(nextFilter)) {
+          return 0;
+        }
+        final currentTransactions = _analyticsTransactionsForFilter(
+          provider,
+          currentFilter,
+        );
+        final nextTransactions = _analyticsTransactionsForFilter(
+          provider,
+          nextFilter,
+        );
+        final currentVisibleMonth = _resolveChartVisibleMonth(
+          currentTransactions,
+          periodOffset: _analyticsBubbleChartOffset,
+        );
+        final nextAnchorMonth = _resolveAnalyticsChartAnchorMonth(
+          nextTransactions,
+        );
+        return _analyticsMonthDelta(currentVisibleMonth, nextAnchorMonth);
+      case _AnalyticsChartSection.lineChart:
+        final currentTransactions = _analyticsTransactionsForFilter(
+          provider,
+          currentFilter,
+        );
+        final nextTransactions = _analyticsTransactionsForFilter(
+          provider,
+          nextFilter,
+        );
+        final visibleStart = _resolveLineChartWindow(
+          currentTransactions,
+          period: _analyticsLineChartPeriod,
+          periodOffset: _analyticsLineChartOffset,
+        ).start;
+        return _resolveLineChartOffsetForVisibleStart(
+          nextTransactions,
+          visibleStart: visibleStart,
+          period: _analyticsLineChartPeriod,
+        );
+      case _AnalyticsChartSection.barChart:
+        final currentTransactions = _analyticsTransactionsForFilter(
+          provider,
+          currentFilter,
+        );
+        final nextTransactions = _analyticsTransactionsForFilter(
+          provider,
+          nextFilter,
+        );
+        final visibleStart = _resolveBarChartWindow(
+          currentTransactions,
+          period: currentFilter.barPeriod,
+          periodOffset: _analyticsBarChartOffset,
+        ).start;
+        return _resolveBarChartOffsetForVisibleStart(
+          nextTransactions,
+          visibleStart: visibleStart,
+          period: nextFilter.barPeriod,
+        );
+      case _AnalyticsChartSection.pieChart:
+        if (_analyticsFilterUsesDateRange(currentFilter) ||
+            _analyticsFilterUsesDateRange(nextFilter)) {
+          return 0;
+        }
+        final currentTransactions = _analyticsTransactionsForFilter(
+          provider,
+          currentFilter,
+        );
+        final nextTransactions = _analyticsTransactionsForFilter(
+          provider,
+          nextFilter,
+        );
+        final currentVisibleMonth = _resolveChartVisibleMonth(
+          currentTransactions,
+          periodOffset: _analyticsPieChartOffset,
+        );
+        final nextAnchorMonth = _resolveAnalyticsChartAnchorMonth(
+          nextTransactions,
+        );
+        return _analyticsMonthDelta(currentVisibleMonth, nextAnchorMonth);
+    }
+  }
+
   void _setAnalyticsFilterForSection(
+    TransactionProvider provider,
     _AnalyticsChartSection section,
     _AnalyticsHeatmapFilter filter,
   ) {
+    final currentFilter = _analyticsFilterForSection(section);
+    final nextOffset = _resolveChartOffsetForFilterChange(
+      provider,
+      section: section,
+      currentFilter: currentFilter,
+      nextFilter: filter,
+    );
+
     setState(() {
       switch (section) {
         case _AnalyticsChartSection.heatmap:
@@ -616,17 +785,19 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           break;
         case _AnalyticsChartSection.expenseBubble:
           _analyticsBubbleFilter = filter;
+          _analyticsBubbleChartOffset = nextOffset;
           break;
         case _AnalyticsChartSection.lineChart:
           _analyticsLineFilter = filter;
-          _analyticsLineChartOffset = 0;
+          _analyticsLineChartOffset = nextOffset;
           break;
         case _AnalyticsChartSection.barChart:
           _analyticsBarFilter = filter;
-          _analyticsBarChartOffset = 0;
+          _analyticsBarChartOffset = nextOffset;
           break;
         case _AnalyticsChartSection.pieChart:
           _analyticsPieFilter = filter;
+          _analyticsPieChartOffset = nextOffset;
           break;
       }
     });
@@ -660,14 +831,361 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     setState(() => _analyticsBarChartOffset = nextOffset);
   }
 
+  void _navigateAnalyticsBubbleChartPeriod({required bool newer}) {
+    final nextOffset = newer
+        ? math.min(0, _analyticsBubbleChartOffset + 1)
+        : _analyticsBubbleChartOffset - 1;
+    if (nextOffset == _analyticsBubbleChartOffset) return;
+    HapticFeedback.selectionClick();
+    setState(() => _analyticsBubbleChartOffset = nextOffset);
+  }
+
+  void _navigateAnalyticsPieChartPeriod({required bool newer}) {
+    final nextOffset = newer
+        ? math.min(0, _analyticsPieChartOffset + 1)
+        : _analyticsPieChartOffset - 1;
+    if (nextOffset == _analyticsPieChartOffset) return;
+    HapticFeedback.selectionClick();
+    setState(() => _analyticsPieChartOffset = nextOffset);
+  }
+
+  DateTime _resolveAnalyticsChartAnchorDate(
+    Iterable<Transaction> transactions,
+  ) {
+    DateTime? latestTransactionTime;
+    for (final transaction in transactions) {
+      final dt = _parseTransactionTime(transaction.time);
+      if (dt == null) continue;
+      if (latestTransactionTime == null || dt.isAfter(latestTransactionTime)) {
+        latestTransactionTime = dt;
+      }
+    }
+
+    final anchor = latestTransactionTime ?? DateTime.now();
+    return DateTime(anchor.year, anchor.month, anchor.day);
+  }
+
+  DateTime _resolveAnalyticsChartAnchorMonth(
+    Iterable<Transaction> transactions,
+  ) {
+    final anchorDate = _resolveAnalyticsChartAnchorDate(transactions);
+    return DateTime(anchorDate.year, anchorDate.month, 1);
+  }
+
+  _AnalyticsCategoryChartPage _buildAnalyticsCategoryChartPage({
+    required TransactionProvider provider,
+    required List<Transaction> transactions,
+    required _AnalyticsHeatmapFilter filter,
+    required bool expandedForDateRange,
+    int periodOffset = 0,
+  }) {
+    final anchorMonth = _resolveAnalyticsChartAnchorMonth(transactions);
+    final targetMonth =
+        DateTime(anchorMonth.year, anchorMonth.month + periodOffset, 1);
+    final snapshot = _buildAnalyticsSnapshot(
+      provider,
+      sourceTransactions: transactions,
+      categoryMode: filter.mode,
+      constrainSeriesToAnchorMonth: true,
+      anchorDate: targetMonth,
+    );
+
+    return _AnalyticsCategoryChartPage(
+      snapshot: snapshot,
+      periodLabel: _formatAnalyticsChartPeriodLabel(
+        filter: filter,
+        fallbackMonthDate: targetMonth,
+        expandedForDateRange: expandedForDateRange,
+      ),
+    );
+  }
+
+  List<Transaction> _transactionsWithinDateWindow(
+    List<Transaction> transactions, {
+    required DateTime start,
+    required DateTime endExclusive,
+  }) {
+    return transactions.where((transaction) {
+      final dt = _parseTransactionTime(transaction.time);
+      if (dt == null) return false;
+      return !dt.isBefore(start) && dt.isBefore(endExclusive);
+    }).toList(growable: false);
+  }
+
+  _AnalyticsDateWindow _resolveLineChartWindow(
+    List<Transaction> transactions, {
+    required _AnalyticsLineChartPeriod period,
+    required int periodOffset,
+  }) {
+    final anchorDate = _resolveAnalyticsChartAnchorDate(transactions);
+    final shiftedAnchor =
+        _shiftAnalyticsLineAnchorDate(anchorDate, period, periodOffset);
+
+    switch (period) {
+      case _AnalyticsLineChartPeriod.weekly:
+        final start = shiftedAnchor.subtract(
+          Duration(days: shiftedAnchor.weekday - DateTime.monday),
+        );
+        return _AnalyticsDateWindow(
+          start: start,
+          endExclusive: start.add(const Duration(days: 7)),
+        );
+      case _AnalyticsLineChartPeriod.monthly:
+        final start = DateTime(shiftedAnchor.year, shiftedAnchor.month, 1);
+        return _AnalyticsDateWindow(
+          start: start,
+          endExclusive: DateTime(start.year, start.month + 1, 1),
+        );
+      case _AnalyticsLineChartPeriod.yearly:
+        final start = DateTime(shiftedAnchor.year, 1, 1);
+        return _AnalyticsDateWindow(
+          start: start,
+          endExclusive: DateTime(start.year + 1, 1, 1),
+        );
+    }
+  }
+
+  String _formatLineChartWindowLabel(
+    _AnalyticsDateWindow window,
+    _AnalyticsLineChartPeriod period,
+  ) {
+    switch (period) {
+      case _AnalyticsLineChartPeriod.weekly:
+        return _formatAnalyticsDateRange(
+          window.start,
+          window.endExclusive.subtract(const Duration(days: 1)),
+        );
+      case _AnalyticsLineChartPeriod.monthly:
+        return DateFormat('MMMM yyyy').format(window.start);
+      case _AnalyticsLineChartPeriod.yearly:
+        return 'Jan - Dec ${window.start.year}';
+    }
+  }
+
+  _AnalyticsDateWindow _resolveBarChartWindow(
+    List<Transaction> transactions, {
+    required _AnalyticsBarChartPeriod period,
+    required int periodOffset,
+  }) {
+    final anchorDate = _resolveAnalyticsChartAnchorDate(transactions);
+    final shiftedAnchor =
+        _shiftAnalyticsBarAnchorDate(anchorDate, period, periodOffset);
+
+    switch (period) {
+      case _AnalyticsBarChartPeriod.weekly:
+        final start = shiftedAnchor.subtract(
+          Duration(days: shiftedAnchor.weekday - DateTime.monday),
+        );
+        return _AnalyticsDateWindow(
+          start: start,
+          endExclusive: start.add(const Duration(days: 7)),
+        );
+      case _AnalyticsBarChartPeriod.monthly:
+        final start = DateTime(shiftedAnchor.year, shiftedAnchor.month, 1);
+        return _AnalyticsDateWindow(
+          start: start,
+          endExclusive: DateTime(start.year, start.month + 1, 1),
+        );
+      case _AnalyticsBarChartPeriod.yearly:
+        final start = DateTime(shiftedAnchor.year, 1, 1);
+        return _AnalyticsDateWindow(
+          start: start,
+          endExclusive: DateTime(start.year + 1, 1, 1),
+        );
+    }
+  }
+
+  String _formatBarChartWindowLabel(
+    _AnalyticsDateWindow window,
+    _AnalyticsBarChartPeriod period,
+  ) {
+    switch (period) {
+      case _AnalyticsBarChartPeriod.weekly:
+        return _formatAnalyticsDateRange(
+          window.start,
+          window.endExclusive.subtract(const Duration(days: 1)),
+        );
+      case _AnalyticsBarChartPeriod.monthly:
+        return 'W1 - W5 in ${DateFormat('MMMM yyyy').format(window.start)}';
+      case _AnalyticsBarChartPeriod.yearly:
+        return 'Jan - Dec ${window.start.year}';
+    }
+  }
+
+  _AnalyticsSupportContext _buildActiveAnalyticsSupportContext(
+    TransactionProvider provider, {
+    required List<Transaction> heatmapTransactions,
+    required DateTime heatmapFocusMonth,
+  }) {
+    switch (_analyticsSelectedChartSection) {
+      case _AnalyticsChartSection.heatmap:
+        final periodStart = _analyticsHeatmapView == _AnalyticsHeatmapView.daily
+            ? _normalizeAnalyticsHeatmapMonth(heatmapFocusMonth)
+            : DateTime(heatmapFocusMonth.year, 1, 1);
+        final periodEnd = _analyticsHeatmapView == _AnalyticsHeatmapView.daily
+            ? DateTime(heatmapFocusMonth.year, heatmapFocusMonth.month + 1, 1)
+            : DateTime(heatmapFocusMonth.year + 1, 1, 1);
+        return _AnalyticsSupportContext(
+          transactions: _transactionsWithinDateWindow(
+            heatmapTransactions,
+            start: periodStart,
+            endExclusive: periodEnd,
+          ),
+          periodLabel: _formatAnalyticsSpendingPeriodLabel(
+            _analyticsHeatmapView,
+            _normalizeAnalyticsHeatmapMonth(heatmapFocusMonth),
+          ),
+          periodKey:
+              'heatmap-${_analyticsHeatmapView.name}-${periodStart.year}-${periodStart.month}',
+          showIncome: _analyticsHeatmapFilter.mode == _AnalyticsHeatmapMode.income,
+        );
+      case _AnalyticsChartSection.expenseBubble:
+        final filter = _analyticsBubbleFilter;
+        final filteredTransactions = _analyticsTransactionsForFilter(
+          provider,
+          filter,
+        );
+        final usesDateRange =
+            filter.startDate != null || filter.endDate != null;
+        if (usesDateRange) {
+          return _AnalyticsSupportContext(
+            transactions: filteredTransactions,
+            periodLabel: _formatAnalyticsChartPeriodLabel(
+              filter: filter,
+              fallbackMonthDate:
+                  _resolveAnalyticsChartAnchorMonth(filteredTransactions),
+              expandedForDateRange: true,
+            ),
+            periodKey:
+                'bubble-range-${filter.mode.name}-${filter.bankId ?? 'all'}-${filter.startDate?.millisecondsSinceEpoch ?? 'none'}-${filter.endDate?.millisecondsSinceEpoch ?? 'none'}',
+            showIncome: filter.mode == _AnalyticsHeatmapMode.income,
+          );
+        }
+        final targetMonth = DateTime(
+          _resolveAnalyticsChartAnchorMonth(filteredTransactions).year,
+          _resolveAnalyticsChartAnchorMonth(filteredTransactions).month +
+              _analyticsBubbleChartOffset,
+          1,
+        );
+        return _AnalyticsSupportContext(
+          transactions: _transactionsWithinDateWindow(
+            filteredTransactions,
+            start: targetMonth,
+            endExclusive: DateTime(targetMonth.year, targetMonth.month + 1, 1),
+          ),
+          periodLabel: _formatAnalyticsChartPeriodLabel(
+            filter: filter,
+            fallbackMonthDate: targetMonth,
+            expandedForDateRange: true,
+          ),
+          periodKey:
+              'bubble-${filter.mode.name}-${targetMonth.year}-${targetMonth.month}',
+          showIncome: filter.mode == _AnalyticsHeatmapMode.income,
+        );
+      case _AnalyticsChartSection.lineChart:
+        final filter = _analyticsLineFilter;
+        final filteredTransactions = _analyticsTransactionsForFilter(
+          provider,
+          filter,
+        );
+        final window = _resolveLineChartWindow(
+          filteredTransactions,
+          period: _analyticsLineChartPeriod,
+          periodOffset: _analyticsLineChartOffset,
+        );
+        return _AnalyticsSupportContext(
+          transactions: _transactionsWithinDateWindow(
+            filteredTransactions,
+            start: window.start,
+            endExclusive: window.endExclusive,
+          ),
+          periodLabel: _formatLineChartWindowLabel(
+            window,
+            _analyticsLineChartPeriod,
+          ),
+          periodKey:
+              'line-${_analyticsLineChartPeriod.name}-${window.start.year}-${window.start.month}-${window.start.day}',
+          showIncome: filter.mode == _AnalyticsHeatmapMode.income,
+        );
+      case _AnalyticsChartSection.barChart:
+        final filter = _analyticsBarFilter;
+        final filteredTransactions = _analyticsTransactionsForFilter(
+          provider,
+          filter,
+        );
+        final window = _resolveBarChartWindow(
+          filteredTransactions,
+          period: filter.barPeriod,
+          periodOffset: _analyticsBarChartOffset,
+        );
+        return _AnalyticsSupportContext(
+          transactions: _transactionsWithinDateWindow(
+            filteredTransactions,
+            start: window.start,
+            endExclusive: window.endExclusive,
+          ),
+          periodLabel: _formatBarChartWindowLabel(window, filter.barPeriod),
+          periodKey:
+              'bar-${filter.mode.name}-${filter.barPeriod.name}-${window.start.year}-${window.start.month}-${window.start.day}',
+          showIncome: filter.mode == _AnalyticsHeatmapMode.income,
+        );
+      case _AnalyticsChartSection.pieChart:
+        final filter = _analyticsPieFilter;
+        final filteredTransactions = _analyticsTransactionsForFilter(
+          provider,
+          filter,
+        );
+        final usesDateRange =
+            filter.startDate != null || filter.endDate != null;
+        if (usesDateRange) {
+          return _AnalyticsSupportContext(
+            transactions: filteredTransactions,
+            periodLabel: _formatAnalyticsChartPeriodLabel(
+              filter: filter,
+              fallbackMonthDate:
+                  _resolveAnalyticsChartAnchorMonth(filteredTransactions),
+            ),
+            periodKey:
+                'pie-range-${filter.mode.name}-${filter.bankId ?? 'all'}-${filter.startDate?.millisecondsSinceEpoch ?? 'none'}-${filter.endDate?.millisecondsSinceEpoch ?? 'none'}',
+            showIncome: filter.mode == _AnalyticsHeatmapMode.income,
+          );
+        }
+        final targetMonth = DateTime(
+          _resolveAnalyticsChartAnchorMonth(filteredTransactions).year,
+          _resolveAnalyticsChartAnchorMonth(filteredTransactions).month +
+              _analyticsPieChartOffset,
+          1,
+        );
+        return _AnalyticsSupportContext(
+          transactions: _transactionsWithinDateWindow(
+            filteredTransactions,
+            start: targetMonth,
+            endExclusive: DateTime(targetMonth.year, targetMonth.month + 1, 1),
+          ),
+          periodLabel: _formatAnalyticsChartPeriodLabel(
+            filter: filter,
+            fallbackMonthDate: targetMonth,
+          ),
+          periodKey:
+              'pie-${filter.mode.name}-${targetMonth.year}-${targetMonth.month}',
+          showIncome: filter.mode == _AnalyticsHeatmapMode.income,
+        );
+    }
+  }
+
   void _setAnalyticsChartFlowMode(
+    TransactionProvider provider,
     _AnalyticsChartSection section,
     _AnalyticsHeatmapMode mode,
   ) {
     if (mode == _AnalyticsHeatmapMode.all) return;
     final currentFilter = _analyticsFilterForSection(section);
     if (currentFilter.mode == mode) return;
-    _setAnalyticsFilterForSection(section, currentFilter.copyWith(mode: mode));
+    _setAnalyticsFilterForSection(
+      provider,
+      section,
+      currentFilter.copyWith(mode: mode),
+    );
   }
 
   List<Transaction> _analyticsTransactionsForFilter(
@@ -787,7 +1305,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     if (!mounted || selectedFilter == null) {
       return;
     }
-    _setAnalyticsFilterForSection(section, selectedFilter);
+    _setAnalyticsFilterForSection(provider, section, selectedFilter);
   }
 
   void _setSubTab(_SubTab nextTab) {
@@ -1281,23 +1799,37 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     );
     final heatmapFocusMonth =
         _resolveAnalyticsHeatmapFocusMonth(heatmapSnapshot.monthDate);
+    final activeSupportContext = _buildActiveAnalyticsSupportContext(
+      provider,
+      heatmapTransactions: heatmapTransactions,
+      heatmapFocusMonth: heatmapFocusMonth,
+    );
     final spendingByDaySnapshot = _buildAnalyticsSpendingByDaySnapshot(
       provider,
-      focusMonth: heatmapFocusMonth,
-      view: _analyticsHeatmapView,
-      filter: _analyticsHeatmapFilter,
+      transactions: activeSupportContext.transactions,
+      periodLabel: activeSupportContext.periodLabel,
+      periodKey: activeSupportContext.periodKey,
+      showIncome: activeSupportContext.showIncome,
     );
     final topRecipientsSnapshot = _buildAnalyticsTopRecipientsSnapshot(
       provider,
-      focusMonth: heatmapFocusMonth,
-      view: _analyticsHeatmapView,
-      filter: _analyticsHeatmapFilter,
+      transactions: activeSupportContext.transactions,
+      periodLabel: activeSupportContext.periodLabel,
+      periodKey: activeSupportContext.periodKey,
+      showIncome: activeSupportContext.showIncome,
     );
     final moneyFlowSnapshot = _buildAnalyticsMoneyFlowSnapshot(
+      transactions: activeSupportContext.transactions,
+      periodLabel: activeSupportContext.periodLabel,
+      periodKey: activeSupportContext.periodKey,
+    );
+    final overviewSnapshot = _buildAnalyticsSnapshot(
       provider,
-      focusMonth: heatmapFocusMonth,
-      view: _analyticsHeatmapView,
-      filter: _analyticsHeatmapFilter,
+      sourceTransactions: activeSupportContext.transactions,
+      anchorTransactions: activeSupportContext.transactions,
+      categoryMode: _analyticsFilterForSection(_analyticsSelectedChartSection)
+          .mode,
+      constrainSeriesToAnchorMonth: false,
     );
     return [
       SliverToBoxAdapter(
@@ -1317,7 +1849,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
               const SizedBox(height: 14),
               _AnalyticsMoneyFlowCard(snapshot: moneyFlowSnapshot),
               const SizedBox(height: 14),
-              _AnalyticsOverviewGrid(snapshot: heatmapSnapshot),
+              _AnalyticsOverviewGrid(snapshot: overviewSnapshot),
             ],
           ),
         ),
@@ -1359,22 +1891,63 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         );
         final usesDateRange =
             filter.startDate != null || filter.endDate != null;
-        final snapshot = _buildAnalyticsSnapshot(
-          provider,
-          sourceTransactions: filteredTransactions,
-          anchorTransactions: filteredTransactions,
-          categoryMode: filter.mode,
-          constrainSeriesToAnchorMonth: !usesDateRange,
-        );
+        final currentPage = usesDateRange
+            ? _AnalyticsCategoryChartPage(
+                snapshot: _buildAnalyticsSnapshot(
+                  provider,
+                  sourceTransactions: filteredTransactions,
+                  anchorTransactions: filteredTransactions,
+                  categoryMode: filter.mode,
+                  constrainSeriesToAnchorMonth: false,
+                ),
+                periodLabel: _formatAnalyticsChartPeriodLabel(
+                  filter: filter,
+                  fallbackMonthDate:
+                      _resolveAnalyticsChartAnchorMonth(filteredTransactions),
+                  expandedForDateRange: true,
+                ),
+              )
+            : _buildAnalyticsCategoryChartPage(
+                provider: provider,
+                transactions: filteredTransactions,
+                filter: filter,
+                expandedForDateRange: true,
+                periodOffset: _analyticsBubbleChartOffset,
+              );
+        final previousPage = usesDateRange
+            ? null
+            : _buildAnalyticsCategoryChartPage(
+                provider: provider,
+                transactions: filteredTransactions,
+                filter: filter,
+                expandedForDateRange: true,
+                periodOffset: _analyticsBubbleChartOffset - 1,
+              );
+        final hasNewerBubblePeriod =
+            !usesDateRange && _analyticsBubbleChartOffset < 0;
+        final nextPage = usesDateRange
+            ? null
+            : hasNewerBubblePeriod
+                ? _buildAnalyticsCategoryChartPage(
+                    provider: provider,
+                    transactions: filteredTransactions,
+                    filter: filter,
+                    expandedForDateRange: true,
+                    periodOffset: _analyticsBubbleChartOffset + 1,
+                  )
+                : currentPage;
         return _AnalyticsExpenseBubbleCard(
-          snapshot: snapshot,
+          currentPage: currentPage,
+          previousPage: previousPage,
+          nextPage: nextPage,
           showIncome: filter.mode == _AnalyticsHeatmapMode.income,
-          periodLabel: _formatAnalyticsChartPeriodLabel(
-            filter: filter,
-            fallbackMonthDate: snapshot.monthDate,
-            expandedForDateRange: true,
-          ),
           usesCustomDateRange: usesDateRange,
+          onNavigateToOlderPeriod: usesDateRange
+              ? null
+              : () => _navigateAnalyticsBubbleChartPeriod(newer: false),
+          onNavigateToNewerPeriod: hasNewerBubblePeriod
+              ? () => _navigateAnalyticsBubbleChartPeriod(newer: true)
+              : null,
           activeFilterCount:
               _AnalyticsChartSection.expenseBubble.activeFilterCount(filter),
           onOpenFilterSheet: () => _openAnalyticsFilterSheet(
@@ -1383,6 +1956,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           ),
           onChartPickerTap: _openAnalyticsChartSheet,
           onFlowModeChanged: (mode) => _setAnalyticsChartFlowMode(
+            provider,
             _AnalyticsChartSection.expenseBubble,
             mode,
           ),
@@ -1440,27 +2014,69 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         );
         final usesDateRange =
             filter.startDate != null || filter.endDate != null;
-        final snapshot = _buildAnalyticsSnapshot(
-          provider,
-          sourceTransactions: filteredTransactions,
-          anchorTransactions: filteredTransactions,
-          categoryMode: filter.mode,
-          constrainSeriesToAnchorMonth: !usesDateRange,
-        );
+        final currentPage = usesDateRange
+            ? _AnalyticsCategoryChartPage(
+                snapshot: _buildAnalyticsSnapshot(
+                  provider,
+                  sourceTransactions: filteredTransactions,
+                  anchorTransactions: filteredTransactions,
+                  categoryMode: filter.mode,
+                  constrainSeriesToAnchorMonth: false,
+                ),
+                periodLabel: _formatAnalyticsChartPeriodLabel(
+                  filter: filter,
+                  fallbackMonthDate:
+                      _resolveAnalyticsChartAnchorMonth(filteredTransactions),
+                ),
+              )
+            : _buildAnalyticsCategoryChartPage(
+                provider: provider,
+                transactions: filteredTransactions,
+                filter: filter,
+                expandedForDateRange: false,
+                periodOffset: _analyticsPieChartOffset,
+              );
+        final previousPage = usesDateRange
+            ? null
+            : _buildAnalyticsCategoryChartPage(
+                provider: provider,
+                transactions: filteredTransactions,
+                filter: filter,
+                expandedForDateRange: false,
+                periodOffset: _analyticsPieChartOffset - 1,
+              );
+        final hasNewerPiePeriod =
+            !usesDateRange && _analyticsPieChartOffset < 0;
+        final nextPage = usesDateRange
+            ? null
+            : hasNewerPiePeriod
+                ? _buildAnalyticsCategoryChartPage(
+                    provider: provider,
+                    transactions: filteredTransactions,
+                    filter: filter,
+                    expandedForDateRange: false,
+                    periodOffset: _analyticsPieChartOffset + 1,
+                  )
+                : currentPage;
         return _AnalyticsPieChartCard(
-          snapshot: snapshot,
+          currentPage: currentPage,
+          previousPage: previousPage,
+          nextPage: nextPage,
           showIncome: filter.mode == _AnalyticsHeatmapMode.income,
-          periodLabel: _formatAnalyticsChartPeriodLabel(
-            filter: filter,
-            fallbackMonthDate: snapshot.monthDate,
-          ),
           usesCustomDateRange: usesDateRange,
+          onNavigateToOlderPeriod: usesDateRange
+              ? null
+              : () => _navigateAnalyticsPieChartPeriod(newer: false),
+          onNavigateToNewerPeriod: hasNewerPiePeriod
+              ? () => _navigateAnalyticsPieChartPeriod(newer: true)
+              : null,
           activeFilterCount: _AnalyticsChartSection.pieChart.activeFilterCount(
             filter,
           ),
           onOpenFilterSheet: () => _openAnalyticsFilterSheet(
               provider, _AnalyticsChartSection.pieChart),
           onFlowModeChanged: (mode) => _setAnalyticsChartFlowMode(
+            provider,
             _AnalyticsChartSection.pieChart,
             mode,
           ),
@@ -1475,6 +2091,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     Iterable<Transaction>? anchorTransactions,
     _AnalyticsHeatmapMode categoryMode = _AnalyticsHeatmapMode.expense,
     bool constrainSeriesToAnchorMonth = true,
+    DateTime? anchorDate,
   }) {
     final transactions = sourceTransactions ?? provider.allTransactions;
     final anchorSource = anchorTransactions ?? transactions;
@@ -1487,7 +2104,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       }
     }
 
-    final anchor = latestTransactionTime ?? DateTime.now();
+    final anchor = anchorDate ?? latestTransactionTime ?? DateTime.now();
     final monthStart = DateTime(anchor.year, anchor.month, 1);
     final nextMonthStart = DateTime(anchor.year, anchor.month + 1, 1);
 
@@ -1646,40 +2263,32 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
 
   _AnalyticsSpendingByDaySnapshot _buildAnalyticsSpendingByDaySnapshot(
     TransactionProvider provider, {
-    required DateTime focusMonth,
-    required _AnalyticsHeatmapView view,
-    required _AnalyticsHeatmapFilter filter,
+    required List<Transaction> transactions,
+    required String periodLabel,
+    required String periodKey,
+    required bool showIncome,
   }) {
-    final normalizedFocus = _normalizeAnalyticsHeatmapMonth(focusMonth);
-    final periodStart = view == _AnalyticsHeatmapView.daily
-        ? normalizedFocus
-        : DateTime(normalizedFocus.year, 1, 1);
-    final periodEnd = view == _AnalyticsHeatmapView.daily
-        ? DateTime(normalizedFocus.year, normalizedFocus.month + 1, 1)
-        : DateTime(normalizedFocus.year + 1, 1, 1);
     final weekdayExpenseTotals = List<double>.filled(7, 0.0);
 
-    for (final transaction in provider.allTransactions) {
-      if (transaction.type != 'DEBIT') continue;
-      if (filter.bankId != null && transaction.bankId != filter.bankId) {
-        continue;
+    for (final transaction in transactions) {
+      if (showIncome) {
+        if (transaction.type != 'CREDIT') continue;
+      } else {
+        if (transaction.type != 'DEBIT') continue;
       }
-      if (filter.categoryId != null &&
-          transaction.categoryId != filter.categoryId) {
-        continue;
-      }
-
       final dt = _parseTransactionTime(transaction.time);
-      if (dt == null || dt.isBefore(periodStart) || !dt.isBefore(periodEnd)) {
-        continue;
-      }
+      if (dt == null) continue;
 
       final isSelfTransfer = provider.isSelfTransfer(transaction);
       final category = transaction.categoryId == null
           ? null
           : provider.getCategoryById(transaction.categoryId!);
       final isMisc = category?.uncategorized == true;
-      if (isSelfTransfer || isMisc) continue;
+      if (showIncome) {
+        if (isSelfTransfer) continue;
+      } else {
+        if (isSelfTransfer || isMisc) continue;
+      }
 
       final weekdayIndex = dt.weekday % 7; // Sunday = 0 ... Saturday = 6
       weekdayExpenseTotals[weekdayIndex] += transaction.amount;
@@ -1695,8 +2304,12 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     }
 
     return _AnalyticsSpendingByDaySnapshot(
-      periodDate: normalizedFocus,
-      view: view,
+      periodLabel: periodLabel,
+      periodKey: periodKey,
+      emptyLabel: showIncome
+          ? 'No income activity in $periodLabel.'
+          : 'No expenses in $periodLabel.',
+      showIncome: showIncome,
       weekdayExpenseTotals: weekdayExpenseTotals,
       peakWeekdayIndex: peakWeekdayIndex,
     );
@@ -1704,27 +2317,19 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
 
   _AnalyticsTopRecipientsSnapshot _buildAnalyticsTopRecipientsSnapshot(
     TransactionProvider provider, {
-    required DateTime focusMonth,
-    required _AnalyticsHeatmapView view,
-    required _AnalyticsHeatmapFilter filter,
+    required List<Transaction> transactions,
+    required String periodLabel,
+    required String periodKey,
+    required bool showIncome,
   }) {
-    final normalizedFocus = _normalizeAnalyticsHeatmapMonth(focusMonth);
-    final periodStart = view == _AnalyticsHeatmapView.daily
-        ? normalizedFocus
-        : DateTime(normalizedFocus.year, 1, 1);
-    final periodEnd = view == _AnalyticsHeatmapView.daily
-        ? DateTime(normalizedFocus.year, normalizedFocus.month + 1, 1)
-        : DateTime(normalizedFocus.year + 1, 1, 1);
     final recipientTotals = <String, _AnalyticsRecipientAccumulator>{};
     var recipientExpenseCount = 0;
 
-    for (final transaction in provider.allTransactions) {
-      if (!_matchesAnalyticsHeatmapFilterValue(transaction, filter)) continue;
-      if (transaction.type != 'DEBIT') continue;
-
-      final dt = _parseTransactionTime(transaction.time);
-      if (dt == null || dt.isBefore(periodStart) || !dt.isBefore(periodEnd)) {
-        continue;
+    for (final transaction in transactions) {
+      if (showIncome) {
+        if (transaction.type != 'CREDIT') continue;
+      } else {
+        if (transaction.type != 'DEBIT') continue;
       }
 
       final isSelfTransfer = provider.isSelfTransfer(transaction);
@@ -1732,7 +2337,11 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           ? null
           : provider.getCategoryById(transaction.categoryId!);
       final isMisc = category?.uncategorized == true;
-      if (isSelfTransfer || isMisc) continue;
+      if (showIncome) {
+        if (isSelfTransfer) continue;
+      } else {
+        if (isSelfTransfer || isMisc) continue;
+      }
 
       recipientExpenseCount += 1;
       final recipient = _transactionCounterparty(transaction);
@@ -1758,41 +2367,26 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         .toList(growable: false);
 
     return _AnalyticsTopRecipientsSnapshot(
-      periodDate: normalizedFocus,
-      view: view,
+      periodLabel: periodLabel,
+      periodKey: periodKey,
+      showIncome: showIncome,
       recipientExpenseCount: recipientExpenseCount,
       topRecipients: topRecipients,
     );
   }
 
-  _AnalyticsMoneyFlowSnapshot _buildAnalyticsMoneyFlowSnapshot(
-    TransactionProvider provider, {
-    required DateTime focusMonth,
-    required _AnalyticsHeatmapView view,
-    required _AnalyticsHeatmapFilter filter,
+  _AnalyticsMoneyFlowSnapshot _buildAnalyticsMoneyFlowSnapshot({
+    required List<Transaction> transactions,
+    required String periodLabel,
+    required String periodKey,
   }) {
-    final normalizedFocus = _normalizeAnalyticsHeatmapMonth(focusMonth);
-    final periodStart = view == _AnalyticsHeatmapView.daily
-        ? normalizedFocus
-        : DateTime(normalizedFocus.year, 1, 1);
-    final periodEnd = view == _AnalyticsHeatmapView.daily
-        ? DateTime(normalizedFocus.year, normalizedFocus.month + 1, 1)
-        : DateTime(normalizedFocus.year + 1, 1, 1);
-
     var totalTransactions = 0;
     var totalIncome = 0.0;
     var totalExpense = 0.0;
     var largestExpense = 0.0;
     var largestDeposit = 0.0;
 
-    for (final transaction in provider.allTransactions) {
-      if (!_matchesAnalyticsHeatmapFilterValue(transaction, filter)) continue;
-
-      final dt = _parseTransactionTime(transaction.time);
-      if (dt == null || dt.isBefore(periodStart) || !dt.isBefore(periodEnd)) {
-        continue;
-      }
-
+    for (final transaction in transactions) {
       totalTransactions += 1;
       if (transaction.type == 'CREDIT') {
         totalIncome += transaction.amount;
@@ -1809,8 +2403,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         : 0.0;
 
     return _AnalyticsMoneyFlowSnapshot(
-      periodDate: normalizedFocus,
-      view: view,
+      periodLabel: periodLabel,
+      periodKey: periodKey,
       totalTransactions: totalTransactions,
       netCashFlow: netCashFlow,
       savingsRate: savingsRate,
@@ -2998,14 +3592,6 @@ String _formatAnalyticsSpendingPeriodLabel(
       : '${periodDate.year}';
 }
 
-String _formatAnalyticsSpendingEmptyStateLabel(
-  _AnalyticsHeatmapView view,
-  DateTime periodDate,
-) {
-  final periodLabel = _formatAnalyticsSpendingPeriodLabel(view, periodDate);
-  return 'No expense activity in $periodLabel.';
-}
-
 String _formatFullMonthName(DateTime date) {
   return DateFormat('MMMM').format(date);
 }
@@ -3761,37 +4347,77 @@ class _AnalyticsSnapshot {
   });
 }
 
+class _AnalyticsCategoryChartPage {
+  final _AnalyticsSnapshot snapshot;
+  final String periodLabel;
+
+  const _AnalyticsCategoryChartPage({
+    required this.snapshot,
+    required this.periodLabel,
+  });
+}
+
+class _AnalyticsSupportContext {
+  final List<Transaction> transactions;
+  final String periodLabel;
+  final String periodKey;
+  final bool showIncome;
+
+  const _AnalyticsSupportContext({
+    required this.transactions,
+    required this.periodLabel,
+    required this.periodKey,
+    required this.showIncome,
+  });
+}
+
+class _AnalyticsDateWindow {
+  final DateTime start;
+  final DateTime endExclusive;
+
+  const _AnalyticsDateWindow({
+    required this.start,
+    required this.endExclusive,
+  });
+}
+
 class _AnalyticsSpendingByDaySnapshot {
-  final DateTime periodDate;
-  final _AnalyticsHeatmapView view;
+  final String periodLabel;
+  final String periodKey;
+  final String emptyLabel;
+  final bool showIncome;
   final List<double> weekdayExpenseTotals;
   final int peakWeekdayIndex;
 
   const _AnalyticsSpendingByDaySnapshot({
-    required this.periodDate,
-    required this.view,
+    required this.periodLabel,
+    required this.periodKey,
+    required this.emptyLabel,
+    required this.showIncome,
     required this.weekdayExpenseTotals,
     required this.peakWeekdayIndex,
   });
 }
 
 class _AnalyticsTopRecipientsSnapshot {
-  final DateTime periodDate;
-  final _AnalyticsHeatmapView view;
+  final String periodLabel;
+  final String periodKey;
+  final bool showIncome;
   final int recipientExpenseCount;
   final List<_AnalyticsRecipientStat> topRecipients;
 
   const _AnalyticsTopRecipientsSnapshot({
-    required this.periodDate,
-    required this.view,
+    required this.periodLabel,
+    required this.periodKey,
+    required this.showIncome,
     required this.recipientExpenseCount,
     required this.topRecipients,
   });
 }
 
 class _AnalyticsMoneyFlowSnapshot {
-  final DateTime periodDate;
-  final _AnalyticsHeatmapView view;
+  final String periodLabel;
+  final String periodKey;
   final int totalTransactions;
   final double netCashFlow;
   final double savingsRate;
@@ -3799,8 +4425,8 @@ class _AnalyticsMoneyFlowSnapshot {
   final double largestDeposit;
 
   const _AnalyticsMoneyFlowSnapshot({
-    required this.periodDate,
-    required this.view,
+    required this.periodLabel,
+    required this.periodKey,
     required this.totalTransactions,
     required this.netCashFlow,
     required this.savingsRate,
@@ -5705,112 +6331,176 @@ class _AnalyticsExpenseBubbleCard extends StatelessWidget {
     Offset(-104, 42),
   ];
 
-  final _AnalyticsSnapshot snapshot;
+  final _AnalyticsCategoryChartPage currentPage;
+  final _AnalyticsCategoryChartPage? previousPage;
+  final _AnalyticsCategoryChartPage? nextPage;
   final bool showIncome;
-  final String periodLabel;
   final bool usesCustomDateRange;
+  final VoidCallback? onNavigateToOlderPeriod;
+  final VoidCallback? onNavigateToNewerPeriod;
   final int activeFilterCount;
   final VoidCallback? onOpenFilterSheet;
   final VoidCallback? onChartPickerTap;
   final ValueChanged<_AnalyticsHeatmapMode>? onFlowModeChanged;
 
   const _AnalyticsExpenseBubbleCard({
-    required this.snapshot,
+    required this.currentPage,
+    this.previousPage,
+    this.nextPage,
     this.showIncome = false,
-    required this.periodLabel,
     this.usesCustomDateRange = false,
+    this.onNavigateToOlderPeriod,
+    this.onNavigateToNewerPeriod,
     this.activeFilterCount = 0,
     this.onOpenFilterSheet,
     this.onChartPickerTap,
     this.onFlowModeChanged,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final categories = snapshot.categories;
-    final total =
-        categories.fold<double>(0.0, (sum, item) => sum + item.amount);
-    final bubbleNodes = _buildBubbleNodes(categories: categories, total: total);
-    final bubbleChartExtents = _bubbleChartExtents(bubbleNodes);
-    final bubbleChartHeight = _bubbleChartHeight(bubbleChartExtents);
-    final emptyLabel = showIncome
+  String _emptyLabel() {
+    return showIncome
         ? usesCustomDateRange
             ? 'No categorized income for this range.'
             : 'No categorized income this month.'
         : usesCustomDateRange
             ? 'No categorized expenses for this range.'
             : 'No categorized expenses this month.';
+  }
 
-    return _AnalyticsHorizontalSwipeBlocker(
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-        decoration: BoxDecoration(
-          color: AppColors.cardColor(context),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.borderColor(context)),
+  double _legendHeight(int categoryCount) {
+    if (categoryCount <= 0) return 0;
+    final rowCount = (categoryCount / 2).ceil();
+    return (rowCount * 22) + ((rowCount - 1) * 8);
+  }
+
+  double _pageHeight(_AnalyticsCategoryChartPage page) {
+    final categories = page.snapshot.categories;
+    if (categories.isEmpty) return 200;
+
+    final total =
+        categories.fold<double>(0.0, (sum, item) => sum + item.amount);
+    final bubbleNodes = _buildBubbleNodes(categories: categories, total: total);
+    final bubbleChartExtents = _bubbleChartExtents(bubbleNodes);
+    final bubbleChartHeight = _bubbleChartHeight(bubbleChartExtents);
+
+    return 30 + bubbleChartHeight + 8 + _legendHeight(categories.length);
+  }
+
+  Widget _buildPage(BuildContext context, _AnalyticsCategoryChartPage page) {
+    final categories = page.snapshot.categories;
+    final total =
+        categories.fold<double>(0.0, (sum, item) => sum + item.amount);
+    final bubbleNodes = _buildBubbleNodes(categories: categories, total: total);
+    final bubbleChartExtents = _bubbleChartExtents(bubbleNodes);
+    final bubbleChartHeight = _bubbleChartHeight(bubbleChartExtents);
+
+    return Column(
+      key: ValueKey<String>(
+        'bubble-page-${showIncome ? 'income' : 'expense'}-${page.periodLabel}',
+      ),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          page.periodLabel,
+          style: TextStyle(
+            color: AppColors.textSecondary(context),
+            fontSize: 12,
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _AnalyticsPrimaryChartHeader(
-              chartLabel: 'Bubble Chart',
-              headline: '',
-              supportingText: periodLabel,
-              activeFilterCount: activeFilterCount,
-              onOpenFilterSheet: onOpenFilterSheet,
-              onChartPickerTap: onChartPickerTap,
-              details: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _AnalyticsFlowModeToggle(
-                    showIncome: showIncome,
-                    onChanged: onFlowModeChanged ?? (_) {},
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    periodLabel,
-                    style: TextStyle(
-                      color: AppColors.textSecondary(context),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
+        const SizedBox(height: 10),
+        if (categories.isEmpty)
+          _AnalyticsChartEmptyState(message: _emptyLabel(), height: 170)
+        else
+          SizedBox(
+            height: bubbleChartHeight,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final chartCenter = _bubbleChartCenter(
+                  extents: bubbleChartExtents,
+                  chartWidth: constraints.maxWidth,
+                  chartHeight: bubbleChartHeight,
+                );
+                return Stack(
+                  children: [
+                    for (final bubble in bubbleNodes)
+                      _buildBubble(
+                        context: context,
+                        chartCenter: chartCenter,
+                        bubble: bubble,
+                      ),
+                  ],
+                );
+              },
             ),
-            const SizedBox(height: 10),
-            if (categories.isEmpty)
-              _AnalyticsChartEmptyState(message: emptyLabel, height: 170)
-            else
-              SizedBox(
-                height: bubbleChartHeight,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final chartCenter = _bubbleChartCenter(
-                      extents: bubbleChartExtents,
-                      chartWidth: constraints.maxWidth,
-                      chartHeight: bubbleChartHeight,
-                    );
-                    return Stack(
-                      children: [
-                        for (final bubble in bubbleNodes)
-                          _buildBubble(
-                            context: context,
-                            chartCenter: chartCenter,
-                            bubble: bubble,
-                          ),
-                      ],
-                    );
-                  },
-                ),
+          ),
+        if (categories.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          ..._buildLegendRows(context, categories),
+        ],
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPager = previousPage != null && nextPage != null;
+    final previous = previousPage ?? currentPage;
+    final next = nextPage ?? currentPage;
+    final viewportHeight = math.max(
+      _pageHeight(previous),
+      math.max(_pageHeight(currentPage), _pageHeight(next)),
+    );
+
+    final child = Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _AnalyticsPrimaryChartHeader(
+            chartLabel: 'Bubble Chart',
+            headline: '',
+            supportingText: '',
+            activeFilterCount: activeFilterCount,
+            onOpenFilterSheet: onOpenFilterSheet,
+            onChartPickerTap: onChartPickerTap,
+            details: _AnalyticsFlowModeToggle(
+              showIncome: showIncome,
+              onChanged: onFlowModeChanged ?? (_) {},
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (!hasPager)
+            _buildPage(context, currentPage)
+          else
+            _AnalyticsSwipePager(
+              height: viewportHeight,
+              recenterKey: Object.hash(
+                showIncome,
+                currentPage.periodLabel,
+                previous.periodLabel,
+                next.periodLabel,
               ),
-            if (categories.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              ..._buildLegendRows(context, categories),
-            ],
-          ],
-        ),
+              onPrevious: onNavigateToOlderPeriod,
+              onNext: onNavigateToNewerPeriod,
+              itemBuilder: (context, index) {
+                final page = index == 0
+                    ? previous
+                    : index == 1
+                        ? currentPage
+                        : next;
+                return _buildPage(context, page);
+              },
+            ),
+        ],
       ),
     );
+
+    return hasPager ? child : _AnalyticsHorizontalSwipeBlocker(child: child);
   }
 
   List<Widget> _buildLegendRows(
@@ -7408,141 +8098,202 @@ class _AnalyticsBarCategoryItem extends StatelessWidget {
 }
 
 class _AnalyticsPieChartCard extends StatelessWidget {
-  final _AnalyticsSnapshot snapshot;
+  final _AnalyticsCategoryChartPage currentPage;
+  final _AnalyticsCategoryChartPage? previousPage;
+  final _AnalyticsCategoryChartPage? nextPage;
   final bool showIncome;
-  final String periodLabel;
   final bool usesCustomDateRange;
+  final VoidCallback? onNavigateToOlderPeriod;
+  final VoidCallback? onNavigateToNewerPeriod;
   final int activeFilterCount;
   final VoidCallback? onOpenFilterSheet;
   final ValueChanged<_AnalyticsHeatmapMode>? onFlowModeChanged;
   final VoidCallback? onChartPickerTap;
 
   const _AnalyticsPieChartCard({
-    required this.snapshot,
+    required this.currentPage,
+    this.previousPage,
+    this.nextPage,
     this.showIncome = false,
-    required this.periodLabel,
     this.usesCustomDateRange = false,
+    this.onNavigateToOlderPeriod,
+    this.onNavigateToNewerPeriod,
     this.activeFilterCount = 0,
     this.onOpenFilterSheet,
     this.onFlowModeChanged,
     this.onChartPickerTap,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final categories = snapshot.categories.take(6).toList(growable: false);
+  String _emptyLabel() {
+    return showIncome
+        ? usesCustomDateRange
+            ? 'No categorized income data for this range.'
+            : 'No categorized income data for this month.'
+        : usesCustomDateRange
+            ? 'No categorized expense data for this range.'
+            : 'No categorized expense data for this month.';
+  }
+
+  double _legendHeight(int categoryCount) {
+    if (categoryCount <= 0) return 0;
+    final rowCount = (categoryCount / 2).ceil();
+    return (rowCount * 22) + ((rowCount - 1) * 8);
+  }
+
+  double _pageHeight(_AnalyticsCategoryChartPage page) {
+    final categories = page.snapshot.categories.take(6).toList(growable: false);
     final total =
         categories.fold<double>(0.0, (sum, stat) => sum + stat.amount);
     final hasData = total > 0.001;
 
-    return _AnalyticsHorizontalSwipeBlocker(
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-        decoration: BoxDecoration(
-          color: AppColors.cardColor(context),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.borderColor(context)),
+    return 32 + 220 + (hasData ? 10 + _legendHeight(categories.length) : 0);
+  }
+
+  Widget _buildPage(BuildContext context, _AnalyticsCategoryChartPage page) {
+    final categories = page.snapshot.categories.take(6).toList(growable: false);
+    final total =
+        categories.fold<double>(0.0, (sum, stat) => sum + stat.amount);
+    final hasData = total > 0.001;
+
+    return Column(
+      key: ValueKey<String>(
+        'pie-page-${showIncome ? 'income' : 'expense'}-${page.periodLabel}',
+      ),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Category share for ${page.periodLabel}',
+          style: TextStyle(
+            color: AppColors.textSecondary(context),
+            fontSize: 12,
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _AnalyticsPrimaryChartHeader(
-              chartLabel: 'Pie Chart',
-              headline: '',
-              supportingText: 'Category share for $periodLabel',
-              activeFilterCount: activeFilterCount,
-              onOpenFilterSheet: onOpenFilterSheet,
-              details: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _AnalyticsFlowModeToggle(
-                    showIncome: showIncome,
-                    onChanged: onFlowModeChanged ?? (_) {},
+        const SizedBox(height: 12),
+        if (!hasData)
+          _AnalyticsChartEmptyState(
+            message: _emptyLabel(),
+          )
+        else
+          SizedBox(
+            height: 220,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                PieChart(
+                  PieChartData(
+                    sectionsSpace: 3,
+                    centerSpaceRadius: 54,
+                    sections: [
+                      for (final stat in categories)
+                        PieChartSectionData(
+                          value: stat.amount,
+                          color: stat.color,
+                          radius: 56,
+                          title: total <= 0
+                              ? ''
+                              : '${((stat.amount / total) * 100).round()}%',
+                          titleStyle: TextStyle(
+                            color: AppColors.textPrimary(context),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                    ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Category share for $periodLabel',
-                    style: TextStyle(
-                      color: AppColors.textSecondary(context),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-              onChartPickerTap: onChartPickerTap,
-            ),
-            const SizedBox(height: 12),
-            if (!hasData)
-              _AnalyticsChartEmptyState(
-                message: showIncome
-                    ? usesCustomDateRange
-                        ? 'No categorized income data for this range.'
-                        : 'No categorized income data for this month.'
-                    : usesCustomDateRange
-                        ? 'No categorized expense data for this range.'
-                        : 'No categorized expense data for this month.',
-              )
-            else
-              SizedBox(
-                height: 220,
-                child: Stack(
-                  alignment: Alignment.center,
+                ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    PieChart(
-                      PieChartData(
-                        sectionsSpace: 3,
-                        centerSpaceRadius: 54,
-                        sections: [
-                          for (final stat in categories)
-                            PieChartSectionData(
-                              value: stat.amount,
-                              color: stat.color,
-                              radius: 56,
-                              title: total <= 0
-                                  ? ''
-                                  : '${((stat.amount / total) * 100).round()}%',
-                              titleStyle: TextStyle(
-                                color: AppColors.textPrimary(context),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                        ],
+                    Text(
+                      'ETB ${_formatEtbAbbrev(total)}',
+                      style: TextStyle(
+                        color: AppColors.textPrimary(context),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'ETB ${_formatEtbAbbrev(total)}',
-                          style: TextStyle(
-                            color: AppColors.textPrimary(context),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          showIncome ? 'Income' : 'Expenses',
-                          style: TextStyle(
-                            color: AppColors.textSecondary(context),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    const SizedBox(height: 4),
+                    Text(
+                      showIncome ? 'Income' : 'Expenses',
+                      style: TextStyle(
+                        color: AppColors.textSecondary(context),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
+              ],
+            ),
+          ),
+        if (hasData) ...[
+          const SizedBox(height: 10),
+          ..._buildLegendRows(context, categories),
+        ],
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPager = previousPage != null && nextPage != null;
+    final previous = previousPage ?? currentPage;
+    final next = nextPage ?? currentPage;
+    final viewportHeight = math.max(
+      _pageHeight(previous),
+      math.max(_pageHeight(currentPage), _pageHeight(next)),
+    );
+
+    final child = Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _AnalyticsPrimaryChartHeader(
+            chartLabel: 'Pie Chart',
+            headline: '',
+            supportingText: '',
+            activeFilterCount: activeFilterCount,
+            onOpenFilterSheet: onOpenFilterSheet,
+            details: _AnalyticsFlowModeToggle(
+              showIncome: showIncome,
+              onChanged: onFlowModeChanged ?? (_) {},
+            ),
+            onChartPickerTap: onChartPickerTap,
+          ),
+          const SizedBox(height: 12),
+          if (!hasPager)
+            _buildPage(context, currentPage)
+          else
+            _AnalyticsSwipePager(
+              height: viewportHeight,
+              recenterKey: Object.hash(
+                showIncome,
+                currentPage.periodLabel,
+                previous.periodLabel,
+                next.periodLabel,
               ),
-            if (hasData) ...[
-              const SizedBox(height: 10),
-              ..._buildLegendRows(context, categories),
-            ],
-          ],
-        ),
+              onPrevious: onNavigateToOlderPeriod,
+              onNext: onNavigateToNewerPeriod,
+              itemBuilder: (context, index) {
+                final page = index == 0
+                    ? previous
+                    : index == 1
+                        ? currentPage
+                        : next;
+                return _buildPage(context, page);
+              },
+            ),
+        ],
       ),
     );
+
+    return hasPager ? child : _AnalyticsHorizontalSwipeBlocker(child: child);
   }
 
   List<Widget> _buildLegendRows(
@@ -7585,18 +8336,11 @@ class _AnalyticsSpendingByDayCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final maxValue = snapshot.weekdayExpenseTotals.fold<double>(0.0, math.max);
     final peakDay = _analyticsWeekdayLabel(snapshot.peakWeekdayIndex);
-    final periodLabel = _formatAnalyticsSpendingPeriodLabel(
-      snapshot.view,
-      snapshot.periodDate,
-    );
-    final periodKey =
-        '${snapshot.view.name}-${snapshot.periodDate.year}-${snapshot.periodDate.month}';
+    final periodLabel = snapshot.periodLabel;
+    final periodKey = snapshot.periodKey;
     final infoText = maxValue > 0
         ? 'Peak: $peakDay'
-        : _formatAnalyticsSpendingEmptyStateLabel(
-            snapshot.view,
-            snapshot.periodDate,
-          );
+        : snapshot.emptyLabel;
     final titleStyle = TextStyle(
       color: AppColors.textPrimary(context),
       fontSize: 20,
@@ -7650,7 +8394,12 @@ class _AnalyticsSpendingByDayCard extends StatelessWidget {
                     runSpacing: 8,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Text('Spending by Day', style: titleStyle),
+                      Text(
+                        snapshot.showIncome
+                            ? 'Income by Day'
+                            : 'Spending by Day',
+                        style: titleStyle,
+                      ),
                       buildAnimatedInlineTransition(
                         Container(
                           key: ValueKey<String>('spending-period-$periodKey'),
@@ -7723,10 +8472,7 @@ class _AnalyticsSpendingByDayCard extends StatelessWidget {
                       height: 84,
                       child: Center(
                         child: Text(
-                          _formatAnalyticsSpendingEmptyStateLabel(
-                            snapshot.view,
-                            snapshot.periodDate,
-                          ),
+                          snapshot.emptyLabel,
                           style: TextStyle(
                             color: AppColors.textSecondary(context),
                             fontSize: 13,
@@ -7829,14 +8575,12 @@ class _AnalyticsTopRecipientsCard extends StatelessWidget {
     final maxAmount = snapshot.topRecipients.isEmpty
         ? 0.0
         : snapshot.topRecipients.first.amount;
-    final periodLabel = _formatAnalyticsSpendingPeriodLabel(
-      snapshot.view,
-      snapshot.periodDate,
-    );
-    final periodKey =
-        '${snapshot.view.name}-${snapshot.periodDate.year}-${snapshot.periodDate.month}';
+    final periodLabel = snapshot.periodLabel;
+    final periodKey = snapshot.periodKey;
     final infoText = snapshot.topRecipients.isEmpty
-        ? 'No expense recipients in $periodLabel.'
+        ? snapshot.showIncome
+            ? 'No income senders in $periodLabel.'
+            : 'No expense recipients in $periodLabel.'
         : '${snapshot.recipientExpenseCount} total';
     final titleStyle = TextStyle(
       color: AppColors.textPrimary(context),
@@ -7891,7 +8635,7 @@ class _AnalyticsTopRecipientsCard extends StatelessWidget {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      'Top Recipients',
+                      snapshot.showIncome ? 'Top Senders' : 'Top Recipients',
                       style: titleStyle,
                     ),
                     buildAnimatedInlineTransition(
@@ -7966,7 +8710,9 @@ class _AnalyticsTopRecipientsCard extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     child: Center(
                       child: Text(
-                        'No expense recipients in $periodLabel.',
+                        snapshot.showIncome
+                            ? 'No income senders in $periodLabel.'
+                            : 'No expense recipients in $periodLabel.',
                         style: TextStyle(
                           color: AppColors.textSecondary(context),
                           fontSize: 13,
@@ -8039,7 +8785,9 @@ class _AnalyticsTopRecipientsCard extends StatelessWidget {
                                           widthFactor: ratio,
                                           child: Container(
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFF6D7EE8),
+                                              color: snapshot.showIncome
+                                                  ? AppColors.incomeSuccess
+                                                  : const Color(0xFF6D7EE8),
                                               borderRadius:
                                                   BorderRadius.circular(99),
                                             ),
@@ -8054,9 +8802,11 @@ class _AnalyticsTopRecipientsCard extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
                                     Text(
-                                      '-ETB ${_formatEtbAbbrev(stat.amount)}',
-                                      style: const TextStyle(
-                                        color: AppColors.red,
+                                      '${snapshot.showIncome ? '+' : '-'}ETB ${_formatEtbAbbrev(stat.amount)}',
+                                      style: TextStyle(
+                                        color: snapshot.showIncome
+                                            ? AppColors.incomeSuccess
+                                            : AppColors.red,
                                         fontSize: 14,
                                         fontWeight: FontWeight.w800,
                                       ),
@@ -8105,12 +8855,8 @@ class _AnalyticsMoneyFlowCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final flowColor =
         snapshot.netCashFlow >= 0 ? AppColors.incomeSuccess : AppColors.red;
-    final periodLabel = _formatAnalyticsSpendingPeriodLabel(
-      snapshot.view,
-      snapshot.periodDate,
-    );
-    final periodKey =
-        '${snapshot.view.name}-${snapshot.periodDate.year}-${snapshot.periodDate.month}';
+    final periodLabel = snapshot.periodLabel;
+    final periodKey = snapshot.periodKey;
     final infoText = snapshot.totalTransactions == 0
         ? 'No transactions in $periodLabel.'
         : '${snapshot.totalTransactions} total';
