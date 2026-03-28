@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:cross_file/cross_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +18,7 @@ import 'package:totals/services/data_export_import_service.dart';
 import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/sms_config_service.dart';
 import 'package:totals/_redesign/theme/app_icons.dart';
+import 'package:totals/theme/app_font_option.dart';
 
 // ── Support links ───────────────────────────────────────────────────────────
 Future<void> _openSupportLink() async {
@@ -515,6 +515,135 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
     }
   }
 
+  Future<void> _showFontSheet(ThemeProvider themeProvider) async {
+    final options = themeProvider.availableAppFonts;
+    AppFontOption selectedFont = themeProvider.appFont;
+
+    final pickedFont = await showModalBottomSheet<AppFontOption>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (sheetCtx, setSheetState) {
+          return Container(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              0,
+              20,
+              20 +
+                  MediaQuery.of(sheetCtx).viewInsets.bottom +
+                  MediaQuery.of(sheetCtx).padding.bottom,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.cardColor(sheetCtx),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 16),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.slate400,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'Font',
+                    style: Theme.of(sheetCtx).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary(sheetCtx),
+                        ),
+                  ),
+                  const SizedBox(height: 16),
+                  for (final option in options) ...[
+                    RadioListTile<AppFontOption>(
+                      value: option,
+                      groupValue: selectedFont,
+                      activeColor: AppColors.primaryLight,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        option.label,
+                        style: AppFontTheme.previewTextStyle(
+                          Theme.of(sheetCtx).textTheme.titleMedium?.copyWith(
+                                color: AppColors.textPrimary(sheetCtx),
+                                fontWeight: FontWeight.w700,
+                              ),
+                          option,
+                          redesign: true,
+                        ),
+                      ),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setSheetState(() => selectedFont = value);
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(sheetCtx).pop(),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(
+                              color: AppColors.borderColor(sheetCtx),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: Text(
+                            'Cancel',
+                            style: TextStyle(
+                              color: AppColors.textSecondary(sheetCtx),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () =>
+                              Navigator.of(sheetCtx).pop(selectedFont),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryDark,
+                            foregroundColor: AppColors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: const Text(
+                            'Apply',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (!mounted || pickedFont == null) return;
+    await themeProvider.setAppFont(pickedFont);
+  }
+
   // ── Export / Import ─────────────────────────────────────────────────────
 
   Future<void> _exportData() async {
@@ -875,6 +1004,32 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
                   ],
                 ),
                 onTap: () => _showFontSizeSheet(themeProvider),
+              ),
+
+              _SettingTile(
+                icon: Icons.text_fields_rounded,
+                iconColor: AppColors.blue,
+                title: 'Font',
+                subtitle: 'Switch between the default font and Inter',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      themeProvider.appFontLabel,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary(context),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      AppIcons.chevron_right,
+                      color: AppColors.textTertiary(context),
+                      size: 20,
+                    ),
+                  ],
+                ),
+                onTap: () => _showFontSheet(themeProvider),
               ),
 
               // if (!_isLoadingRedesign)

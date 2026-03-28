@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:cross_file/cross_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:totals/providers/theme_provider.dart';
@@ -19,6 +18,7 @@ import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/sms_config_service.dart';
 import 'package:totals/services/widget_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:totals/theme/app_font_option.dart';
 
 Future<void> _openSupportLink() async {
   final uri = Uri.parse('https://www.gurshaplus.com/detached');
@@ -953,6 +953,105 @@ class _SettingsPageState extends State<SettingsPage>
     }
   }
 
+  Future<void> _showFontSheet(ThemeProvider themeProvider) async {
+    final theme = Theme.of(context);
+    final options = themeProvider.availableAppFonts;
+    AppFontOption selectedFont = themeProvider.appFont;
+
+    final pickedFont = await showModalBottomSheet<AppFontOption>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          return Container(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              0,
+              20,
+              20 + MediaQuery.of(sheetContext).viewInsets.bottom,
+            ),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 16),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.onSurface.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'Font',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  for (final option in options) ...[
+                    RadioListTile<AppFontOption>(
+                      value: option,
+                      groupValue: selectedFont,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        option.label,
+                        style: AppFontTheme.previewTextStyle(
+                          theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                          option,
+                          redesign: false,
+                        ),
+                      ),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setSheetState(() => selectedFont = value);
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(sheetContext).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () =>
+                              Navigator.of(sheetContext).pop(selectedFont),
+                          child: const Text('Apply'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (!mounted || pickedFont == null) return;
+    await themeProvider.setAppFont(pickedFont);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1052,6 +1151,37 @@ class _SettingsPageState extends State<SettingsPage>
                                   ),
                                   onTap: () =>
                                       _showFontSizeSheet(themeProvider),
+                                );
+                              },
+                            ),
+                            _buildDivider(context),
+                            Consumer<ThemeProvider>(
+                              builder: (context, themeProvider, child) {
+                                return _buildSettingTile(
+                                  icon: Icons.text_fields_rounded,
+                                  title: 'Font',
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        themeProvider.appFontLabel,
+                                        style:
+                                            theme.textTheme.bodySmall?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: theme.colorScheme.onSurface
+                                              .withOpacity(0.65),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        Icons.chevron_right,
+                                        size: 18,
+                                        color: theme.colorScheme.onSurface
+                                            .withOpacity(0.3),
+                                      ),
+                                    ],
+                                  ),
+                                  onTap: () => _showFontSheet(themeProvider),
                                 );
                               },
                             ),

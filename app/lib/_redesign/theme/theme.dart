@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
+import 'package:totals/theme/app_font_option.dart';
 
 class RedesignTheme {
   RedesignTheme._();
 
-  static ThemeData light() {
+  static ThemeData light(
+      {AppFontOption fontOption = AppFontOption.appDefault}) {
     final colorScheme = ColorScheme.light(
       primary: AppColors.primaryLight,
       secondary: AppColors.blue,
@@ -62,10 +63,10 @@ class RedesignTheme {
         ),
       ),
     );
-    return _applyClashGrotesk(base);
+    return AppFontTheme.applyRedesign(base, fontOption);
   }
 
-  static ThemeData dark() {
+  static ThemeData dark({AppFontOption fontOption = AppFontOption.appDefault}) {
     const darkBg = AppColors.darkBg;
     const darkCard = AppColors.darkCard;
     const darkBorder = AppColors.darkBorder;
@@ -124,15 +125,7 @@ class RedesignTheme {
         ),
       ),
     );
-    return _applyClashGrotesk(base);
-  }
-
-  static ThemeData _applyClashGrotesk(ThemeData base) {
-    return base.copyWith(
-      textTheme: GoogleFonts.spaceGroteskTextTheme(base.textTheme),
-      primaryTextTheme:
-          GoogleFonts.spaceGroteskTextTheme(base.primaryTextTheme),
-    );
+    return AppFontTheme.applyRedesign(base, fontOption);
   }
 
   static SnackBarThemeData _snackBarTheme() {

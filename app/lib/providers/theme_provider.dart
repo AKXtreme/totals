@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:totals/theme/app_font_option.dart';
 
 class ThemeProvider extends ChangeNotifier {
   static const String _themeKey = 'theme_mode';
   static const String _uiScaleKey = 'ui_scale';
   static const String _appTopPaddingKey = 'app_top_padding';
+  static const String _appFontKey = 'app_font';
   static const double _defaultUiScale = 0.9;
   static const double _defaultAppTopPadding = 20.0;
   static const List<ThemeMode> _themeCycleOrder = <ThemeMode>[
@@ -39,16 +41,21 @@ class ThemeProvider extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.system;
   double _uiScale = _defaultUiScale;
   double _appTopPadding = _defaultAppTopPadding;
+  AppFontOption _appFont = AppFontOption.appDefault;
 
   ThemeMode get themeMode => _themeMode;
   double get uiScale => _uiScale;
   double get appTopPadding => _appTopPadding;
+  AppFontOption get appFont => _appFont;
   List<double> get availableUiScales =>
       List<double>.unmodifiable(_uiScaleOptions);
   List<double> get availableAppTopPaddings =>
       List<double>.unmodifiable(_appTopPaddingOptions);
+  List<AppFontOption> get availableAppFonts =>
+      List<AppFontOption>.unmodifiable(AppFontOption.values);
   String get uiScaleLabel => _formatUiScale(_uiScale);
   String get appTopPaddingLabel => _formatPixels(_appTopPadding);
+  String get appFontLabel => _appFont.label;
   bool get isZoomedOut => (_uiScale - 0.75).abs() < 0.001;
   String get themeModeLabel {
     switch (_themeMode) {
@@ -65,6 +72,7 @@ class ThemeProvider extends ChangeNotifier {
     _loadThemeMode();
     _loadUiScale();
     _loadAppTopPadding();
+    _loadAppFont();
   }
 
   Future<void> _loadThemeMode() async {
@@ -123,6 +131,23 @@ class ThemeProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_appTopPaddingKey, normalized);
+  }
+
+  Future<void> _loadAppFont() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedFont = prefs.getString(_appFontKey);
+    final resolvedFont = AppFontOption.fromStorage(savedFont);
+    if (_appFont == resolvedFont) return;
+    _appFont = resolvedFont;
+    notifyListeners();
+  }
+
+  Future<void> setAppFont(AppFontOption font) async {
+    if (_appFont == font) return;
+    _appFont = font;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_appFontKey, font.storageValue);
   }
 
   Future<void> setZoomedOut(bool value) async {

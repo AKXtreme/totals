@@ -19,6 +19,7 @@ import 'package:totals/_redesign/screens/onboarding_page.dart';
 import 'package:totals/_redesign/screens/redesign_shell.dart';
 import 'package:totals/_redesign/theme/theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:totals/theme/app_font_option.dart';
 
 SnackBarThemeData _globalSnackBarTheme() {
   return SnackBarThemeData(
@@ -172,36 +173,42 @@ class MyApp extends StatelessWidget {
           return MaterialApp(
             title: 'Totals',
             theme: useRedesign
-                ? RedesignTheme.light()
-                : ThemeData(
-                    colorScheme: ColorScheme.fromSeed(
-                      seedColor: Colors.blue,
-                      brightness: Brightness.light,
+                ? RedesignTheme.light(fontOption: themeProvider.appFont)
+                : AppFontTheme.applyLegacy(
+                    ThemeData(
+                      colorScheme: ColorScheme.fromSeed(
+                        seedColor: Colors.blue,
+                        brightness: Brightness.light,
+                      ),
+                      snackBarTheme: _globalSnackBarTheme(),
+                      useMaterial3: true,
                     ),
-                    snackBarTheme: _globalSnackBarTheme(),
-                    useMaterial3: true,
+                    themeProvider.appFont,
                   ),
             darkTheme: useRedesign
-                ? RedesignTheme.dark()
-                : ThemeData(
-                    colorScheme: const ColorScheme.dark(
-                      primary: Color(0xFF3F3F46),
-                      secondary: Color(0xFF52525B),
-                      surface: Color(0xFF1E2230),
-                      background: Color(0xFF161A26),
-                      surfaceVariant: Color(0xFF161A26),
-                      onPrimary: Colors.white,
-                      onSecondary: Colors.white,
-                      onSurface: Colors.white,
-                      onBackground: Colors.white,
-                      onSurfaceVariant: Colors.white70,
-                      brightness: Brightness.dark,
+                ? RedesignTheme.dark(fontOption: themeProvider.appFont)
+                : AppFontTheme.applyLegacy(
+                    ThemeData(
+                      colorScheme: const ColorScheme.dark(
+                        primary: Color(0xFF3F3F46),
+                        secondary: Color(0xFF52525B),
+                        surface: Color(0xFF1E2230),
+                        background: Color(0xFF161A26),
+                        surfaceVariant: Color(0xFF161A26),
+                        onPrimary: Colors.white,
+                        onSecondary: Colors.white,
+                        onSurface: Colors.white,
+                        onBackground: Colors.white,
+                        onSurfaceVariant: Colors.white70,
+                        brightness: Brightness.dark,
+                      ),
+                      scaffoldBackgroundColor: const Color(0xFF161A26),
+                      cardColor: const Color(0xFF1E2230),
+                      dividerColor: const Color(0xFF34384A),
+                      snackBarTheme: _globalSnackBarTheme(),
+                      useMaterial3: true,
                     ),
-                    scaffoldBackgroundColor: const Color(0xFF161A26),
-                    cardColor: const Color(0xFF1E2230),
-                    dividerColor: const Color(0xFF34384A),
-                    snackBarTheme: _globalSnackBarTheme(),
-                    useMaterial3: true,
+                    themeProvider.appFont,
                   ),
             themeMode: themeProvider.themeMode,
             builder: (context, child) {

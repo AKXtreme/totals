@@ -99,16 +99,6 @@ class _CategoriesPageState extends State<CategoriesPage>
 
     return Scaffold(
       backgroundColor: AppColors.background(context),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openEditor(),
-        backgroundColor: AppColors.primaryDark,
-        foregroundColor: AppColors.white,
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: const Icon(Icons.add_rounded),
-      ),
       appBar: AppBar(
         backgroundColor: AppColors.background(context),
         elevation: 0,
@@ -187,13 +177,21 @@ class _CategoriesPageState extends State<CategoriesPage>
               _CategoryList(
                 categories: expenseCategories,
                 emptyLabel: 'No expense categories yet',
-                sections: _buildExpenseSections(expenseCategories),
+                sections: _buildSections(
+                  expenseCategories,
+                  flow: 'expense',
+                ),
+                onCreate: () => _openEditor(initialFlow: 'expense'),
                 onEdit: (c) => _openEditor(existing: c, initialFlow: c.flow),
               ),
               _CategoryList(
                 categories: incomeCategories,
                 emptyLabel: 'No income categories yet',
-                sections: _buildIncomeSections(incomeCategories),
+                sections: _buildSections(
+                  incomeCategories,
+                  flow: 'income',
+                ),
+                onCreate: () => _openEditor(initialFlow: 'income'),
                 onEdit: (c) => _openEditor(existing: c, initialFlow: c.flow),
               ),
             ],
@@ -203,43 +201,76 @@ class _CategoriesPageState extends State<CategoriesPage>
     );
   }
 
-  List<_CategorySection> _buildExpenseSections(List<Category> cats) {
-    final essential =
-        cats.where((c) => c.type == CategoryType.essential).toList();
-    final nonEssential =
-        cats.where((c) => c.type == CategoryType.nonEssential).toList();
-    final uncategorized =
-        cats.where((c) => c.type == CategoryType.uncategorized).toList();
+  List<_CategorySection> _buildSections(
+    List<Category> categories, {
+    required String flow,
+  }) {
+    final builtIn = _sortCategories(
+      categories.where((c) => c.builtIn).toList(),
+    );
+    final custom = _sortCategories(
+      categories.where((c) => !c.builtIn).toList(),
+    );
+    final flowLabel = flow == 'income' ? 'income' : 'expense';
+
     return [
-      if (essential.isNotEmpty)
-        _CategorySection(title: 'Essential', items: essential),
-      if (nonEssential.isNotEmpty)
-        _CategorySection(title: 'Non-essential', items: nonEssential),
-      if (uncategorized.isNotEmpty)
-        _CategorySection(title: 'Uncategorized', items: uncategorized),
+      _CategorySection(
+        title: 'Built-in',
+        subtitle: 'Included by default',
+        emptyLabel: 'No built-in $flowLabel categories available.',
+        items: builtIn,
+      ),
+      _CategorySection(
+        title: 'Custom',
+        subtitle: 'Created by you',
+        emptyLabel: 'No custom $flowLabel categories yet.',
+        showsCreateAction: true,
+        items: custom,
+      ),
     ];
   }
 
-  List<_CategorySection> _buildIncomeSections(List<Category> cats) {
-    final main = cats.where((c) => c.type == CategoryType.essential).toList();
-    final side =
-        cats.where((c) => c.type == CategoryType.nonEssential).toList();
-    final uncategorized =
-        cats.where((c) => c.type == CategoryType.uncategorized).toList();
-    return [
-      if (main.isNotEmpty) _CategorySection(title: 'Main income', items: main),
-      if (side.isNotEmpty) _CategorySection(title: 'Side income', items: side),
-      if (uncategorized.isNotEmpty)
-        _CategorySection(title: 'Uncategorized', items: uncategorized),
-    ];
+  List<Category> _sortCategories(List<Category> categories) {
+    categories.sort((a, b) {
+      final typeCompare =
+          _categoryTypeSortOrder(a).compareTo(_categoryTypeSortOrder(b));
+      if (typeCompare != 0) return typeCompare;
+
+      final recurringCompare =
+          (b.recurring ? 1 : 0).compareTo(a.recurring ? 1 : 0);
+      if (recurringCompare != 0) return recurringCompare;
+
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+    return categories;
+  }
+
+  int _categoryTypeSortOrder(Category category) {
+    switch (category.type) {
+      case CategoryType.essential:
+        return 0;
+      case CategoryType.nonEssential:
+        return 1;
+      case CategoryType.uncategorized:
+        return 2;
+    }
   }
 }
 
 // ── Section data ────────────────────────────────────────────────────────────
 class _CategorySection {
   final String title;
+  final String subtitle;
+  final String emptyLabel;
+  final bool showsCreateAction;
   final List<Category> items;
-  const _CategorySection({required this.title, required this.items});
+  const _CategorySection({
+    required this.title,
+    required this.subtitle,
+    required this.emptyLabel,
+    this.showsCreateAction = false,
+    required this.items,
+  });
 }
 
 // ── Category List ───────────────────────────────────────────────────────────
@@ -247,12 +278,14 @@ class _CategoryList extends StatelessWidget {
   final List<Category> categories;
   final String emptyLabel;
   final List<_CategorySection> sections;
+  final VoidCallback onCreate;
   final ValueChanged<Category> onEdit;
 
   const _CategoryList({
     required this.categories,
     required this.emptyLabel,
     required this.sections,
+    required this.onCreate,
     required this.onEdit,
   });
 
@@ -282,19 +315,49 @@ class _CategoryList extends StatelessWidget {
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
       children: [
         for (int s = 0; s < sections.length; s++) ...[
           if (s > 0) const SizedBox(height: 20),
-          _SectionHeader(
-            title: sections[s].title,
-            count: sections[s].items.length,
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.cardColor(context),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.borderColor(context)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: AppColors.isDark(context) ? 0.12 : 0.03,
+                  ),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionHeader(
+                  title: sections[s].title,
+                  subtitle: sections[s].subtitle,
+                  count: sections[s].items.length,
+                ),
+                const SizedBox(height: 14),
+                if (sections[s].items.isEmpty)
+                  _EmptySectionCard(
+                    label: sections[s].emptyLabel,
+                    onCreate: sections[s].showsCreateAction ? onCreate : null,
+                  )
+                else
+                  _CategoryWrap(
+                    categories: sections[s].items,
+                    onCreate: sections[s].showsCreateAction ? onCreate : null,
+                    onEdit: onEdit,
+                  ),
+              ],
+            ),
           ),
-          const SizedBox(height: 10),
-          for (final c in sections[s].items) ...[
-            _CategoryTile(category: c, onTap: () => onEdit(c)),
-            const SizedBox(height: 8),
-          ],
         ],
       ],
     );
@@ -304,37 +367,55 @@ class _CategoryList extends StatelessWidget {
 // ── Section Header ──────────────────────────────────────────────────────────
 class _SectionHeader extends StatelessWidget {
   final String title;
+  final String subtitle;
   final int count;
 
-  const _SectionHeader({required this.title, required this.count});
+  const _SectionHeader({
+    required this.title,
+    required this.subtitle,
+    required this.count,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title.toUpperCase(),
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.0,
-            color: AppColors.textTertiary(context),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: AppColors.mutedFill(context),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            '$count',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textSecondary(context),
+        Row(
+          children: [
+            Text(
+              title.toUpperCase(),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.0,
+                color: AppColors.textTertiary(context),
+              ),
             ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.mutedFill(context),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textSecondary(context),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          subtitle,
+          style: TextStyle(
+            fontSize: 13,
+            color: AppColors.textSecondary(context),
           ),
         ),
       ],
@@ -342,92 +423,167 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ── Category Tile ───────────────────────────────────────────────────────────
-class _CategoryTile extends StatelessWidget {
-  final Category category;
-  final VoidCallback onTap;
+// ── Section Empty State ─────────────────────────────────────────────────────
+class _EmptySectionCard extends StatelessWidget {
+  final String label;
+  final VoidCallback? onCreate;
 
-  const _CategoryTile({required this.category, required this.onTap});
+  const _EmptySectionCard({
+    required this.label,
+    this.onCreate,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = categoryPaletteColor(category);
-    final description = (category.description ?? '').trim();
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceColor(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderColor(context)),
+      ),
+      child: Row(
+        children: [
+          if (onCreate != null)
+            _CreateCategoryButton(onTap: onCreate!)
+          else
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: AppColors.mutedFill(context),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.add_circle_outline_rounded,
+                size: 18,
+                color: AppColors.textSecondary(context),
+              ),
+            ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: AppColors.textSecondary(context),
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
+// ── Category Wrap ───────────────────────────────────────────────────────────
+class _CategoryWrap extends StatelessWidget {
+  final List<Category> categories;
+  final VoidCallback? onCreate;
+  final ValueChanged<Category> onEdit;
+
+  const _CategoryWrap({
+    required this.categories,
+    this.onCreate,
+    required this.onEdit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final category in categories)
+          _CategoryRowChip(
+            category: category,
+            onTap: () => onEdit(category),
+          ),
+        if (onCreate != null) _CreateCategoryButton(onTap: onCreate!),
+      ],
+    );
+  }
+}
+
+class _CreateCategoryButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _CreateCategoryButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
     return Material(
-      color: AppColors.cardColor(context),
-      borderRadius: BorderRadius.circular(12),
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          width: 32,
+          height: 32,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            color: AppColors.primaryDark,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.add_rounded,
+            size: 18,
+            color: AppColors.white,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Category Row Chip ───────────────────────────────────────────────────────
+class _CategoryRowChip extends StatelessWidget {
+  final Category category;
+  final VoidCallback onTap;
+
+  const _CategoryRowChip({required this.category, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = categoryPaletteColor(category);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(color: AppColors.borderColor(context)),
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 8,
+                height: 8,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  iconForCategoryKey(category.iconKey),
                   color: color,
-                  size: 20,
+                  shape: BoxShape.circle,
                 ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            category.name,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary(context),
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (category.recurring) ...[
-                          const SizedBox(width: 6),
-                          Icon(
-                            Icons.refresh_rounded,
-                            size: 14,
-                            color: AppColors.textTertiary(context),
-                          ),
-                        ],
-                      ],
-                    ),
-                    if (description.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        description,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppColors.textSecondary(context),
-                          fontSize: 12,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
+              const SizedBox(width: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 120),
+                child: Text(
+                  category.name,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary(context),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
                 ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.textTertiary(context),
-                size: 20,
               ),
             ],
           ),
@@ -562,7 +718,7 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
+            child: const Text(
               'Delete',
               style: TextStyle(color: AppColors.red),
             ),
