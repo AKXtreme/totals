@@ -60,9 +60,8 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
       setState(() {
         _items = results[0] as List<FailedParse>;
         _banks = results[1] as List<Bank>;
-        _registeredBankIds = accounts
-            .map((account) => account.bank as int)
-            .toSet();
+        _registeredBankIds =
+            accounts.map((account) => account.bank as int).toSet();
         _loading = false;
         _bankByAddress.clear();
       });
@@ -168,22 +167,133 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
     return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
   }
 
-  Future<void> _clearItems(List<FailedParse> items) async {
-    final ids = items.map((item) => item.id).whereType<int>().toList();
-    if (ids.isEmpty) return;
+  String _normalizeFailedParseBodyForSimilarity(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'\d+'), '#')
+        .replaceAll(RegExp(r'[^a-z#]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
 
-    await _repo.deleteByIds(ids);
+  String _failedParseSimilarityKey(FailedParse item) {
+    return '${_normalizeToken(item.address)}|${_normalizeFailedParseBodyForSimilarity(item.body)}';
+  }
+
+  List<FailedParse> _findSimilarFailedParses(List<FailedParse> items) {
+    final selectedIds = items.map((item) => item.id).whereType<int>().toSet();
+    final similarityKeys = items.map(_failedParseSimilarityKey).toSet();
+    if (selectedIds.isEmpty || similarityKeys.isEmpty) {
+      return const <FailedParse>[];
+    }
+
+    return _items.where((candidate) {
+      final candidateId = candidate.id;
+      if (candidateId == null || selectedIds.contains(candidateId)) {
+        return false;
+      }
+      return similarityKeys.contains(_failedParseSimilarityKey(candidate));
+    }).toList(growable: false);
+  }
+
+  Future<List<FailedParse>?> _resolveDeleteTargets(
+      List<FailedParse> items) async {
+    final selectedIds = items.map((item) => item.id).whereType<int>().toSet();
+    if (selectedIds.isEmpty) return null;
+
+    final similarItems = _findSimilarFailedParses(items);
+    final similarIds =
+        similarItems.map((item) => item.id).whereType<int>().toSet();
+    if (similarIds.isEmpty || !mounted) {
+      return items;
+    }
+
+    final choice = await showDialog<_FailedParseDeleteChoice>(
+      context: context,
+      builder: (dialogContext) {
+        final similarCount = similarIds.length;
+        return AlertDialog(
+          title: const Text('Delete similar failed texts too?'),
+          content: Text(
+            similarCount == 1
+                ? 'We found 1 other failed parsing text from the same sender with a very similar message body. Delete it too?'
+                : 'We found $similarCount other failed parsing texts from the same sender with very similar message bodies. Delete them too?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(
+                dialogContext,
+                _FailedParseDeleteChoice.selectedOnly,
+              ),
+              child: Text(
+                selectedIds.length == 1
+                    ? 'Delete this only'
+                    : 'Delete selected only',
+              ),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                dialogContext,
+                _FailedParseDeleteChoice.selectedAndSimilar,
+              ),
+              child: Text(
+                similarCount == 1
+                    ? 'Delete both'
+                    : 'Delete all ${selectedIds.length + similarCount}',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    switch (choice) {
+      case _FailedParseDeleteChoice.selectedOnly:
+        return items;
+      case _FailedParseDeleteChoice.selectedAndSimilar:
+        return <FailedParse>[...items, ...similarItems];
+      case null:
+        return null;
+    }
+  }
+
+  Future<void> _deleteItems(
+    List<FailedParse> items, {
+    bool clearSelection = false,
+  }) async {
+    final selectedIds = items.map((item) => item.id).whereType<int>().toSet();
+    if (selectedIds.isEmpty) return;
+
+    final targets = await _resolveDeleteTargets(items);
+    if (targets == null) return;
+
+    final targetIds = targets.map((item) => item.id).whereType<int>().toSet();
+    if (targetIds.isEmpty) return;
+
+    await _repo.deleteByIds(targetIds.toList(growable: false));
+    if (clearSelection) {
+      setState(() => _selectedCardIds.clear());
+    }
     await _load();
     if (!mounted) return;
+
+    final similarCount = max(0, targetIds.length - selectedIds.length);
+    final message = similarCount == 0
+        ? (targetIds.length == 1
+            ? 'Cleared 1 item'
+            : 'Cleared ${targetIds.length} items')
+        : 'Cleared ${targetIds.length} items, including $similarCount similar text${similarCount == 1 ? '' : 's'}';
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          ids.length == 1
-              ? 'Cleared 1 transaction without a pattern'
-              : 'Cleared ${ids.length} transactions without patterns',
-        ),
-      ),
+      SnackBar(content: Text(message)),
     );
+  }
+
+  Future<void> _clearItems(List<FailedParse> items) async {
+    await _deleteItems(items);
   }
 
   Future<void> _copy(FailedParse item) async {
@@ -570,17 +680,10 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
   Future<void> _clearSelectedCards() async {
     final ids = _selectedCardIds.toList();
     if (ids.isEmpty) return;
-    await _repo.deleteByIds(ids);
-    setState(() => _selectedCardIds.clear());
-    await _load();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          ids.length == 1 ? 'Cleared 1 item' : 'Cleared ${ids.length} items',
-        ),
-      ),
-    );
+    final items = _visibleItems
+        .where((item) => item.id != null && _selectedCardIds.contains(item.id))
+        .toList(growable: false);
+    await _deleteItems(items, clearSelection: true);
   }
 
   Future<void> _copySelectedCards() async {
@@ -627,8 +730,7 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
   }
 
   Widget _buildParseCard(FailedParse item) {
-    final selected =
-        item.id != null && _selectedCardIds.contains(item.id);
+    final selected = item.id != null && _selectedCardIds.contains(item.id);
     return _FailedParseCard(
       item: item,
       retrying: _retrying,
@@ -669,9 +771,7 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
                   ? () => Navigator.pop(context)
                   : _closeGroup,
           icon: Icon(
-            _isSelecting
-                ? AppIcons.close_rounded
-                : AppIcons.arrow_back_rounded,
+            _isSelecting ? AppIcons.close_rounded : AppIcons.arrow_back_rounded,
           ),
         ),
         title: Text(
@@ -693,10 +793,8 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
             ? [
                 TextButton(
                   onPressed: () {
-                    final allIds = visibleItems
-                        .map((i) => i.id)
-                        .whereType<int>()
-                        .toSet();
+                    final allIds =
+                        visibleItems.map((i) => i.id).whereType<int>().toSet();
                     setState(() {
                       if (_selectedCardIds.length == allIds.length &&
                           _selectedCardIds.containsAll(allIds)) {
@@ -771,10 +869,8 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
                 count: _selectedCardIds.length,
                 onCopy: _copySelectedCards,
                 onInvert: () {
-                  final allIds = visibleItems
-                      .map((i) => i.id)
-                      .whereType<int>()
-                      .toSet();
+                  final allIds =
+                      visibleItems.map((i) => i.id).whereType<int>().toSet();
                   setState(() {
                     final inverted = allIds.difference(_selectedCardIds);
                     _selectedCardIds
@@ -1032,9 +1128,8 @@ class _FailedParseCardState extends State<_FailedParseCard> {
                                 }
                               });
                             },
-                      onLongPress: widget.selecting
-                          ? null
-                          : () => _longPressChip(i),
+                      onLongPress:
+                          widget.selecting ? null : () => _longPressChip(i),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         curve: Curves.easeOut,
@@ -1055,9 +1150,7 @@ class _FailedParseCardState extends State<_FailedParseCard> {
                               : null,
                         ),
                         child: Text(
-                          _hidden.contains(i)
-                              ? _getScrambled(i)
-                              : _tokens[i],
+                          _hidden.contains(i) ? _getScrambled(i) : _tokens[i],
                           style: TextStyle(
                             fontSize: 13,
                             height: 1.3,
@@ -1280,6 +1373,11 @@ class _BottomBarAction extends StatelessWidget {
 }
 
 // ── Quick Action Chip ─────────────────────────────────────────────────────────
+
+enum _FailedParseDeleteChoice {
+  selectedOnly,
+  selectedAndSimilar,
+}
 
 class _QuickAction extends StatelessWidget {
   final String label;
