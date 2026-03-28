@@ -1479,142 +1479,223 @@ class _RedesignAboutPage extends StatelessWidget {
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Hero card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(28),
-              decoration: BoxDecoration(
-                color: AppColors.cardColor(context),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.borderColor(context)),
-              ),
+            // ── Logo + App Info ──
+            Center(
               child: Column(
                 children: [
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.asset(
+                      'assets/icon/totals_icon.png',
+                      width: 64,
+                      height: 64,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   Text(
-                    'Totals',
+                    'TOTALS',
                     style: theme.textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w800,
+                      letterSpacing: 2.0,
                       color: AppColors.textPrimary(context),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 6,
+                  const SizedBox(height: 6),
+                  Text(
+                    'Personal finance tracker for Ethiopian banks',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary(context),
                     ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Text(
-                      'Version 1.3.0',
-                      style: TextStyle(
-                        color: AppColors.primaryLight,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
+                  ),
+                  const SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      'Totals is a personal finance app for Ethiopian banks. '
+                      'It automatically reads your bank SMS notifications, '
+                      'tracks your transactions, and gives you a clear picture '
+                      'of your money, balances, spending, budgets, and more, '
+                      'all in one place.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary(context),
+                        height: 1.6,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  Image.asset(
-                    'assets/images/detached_logo.png',
-                    width: 100,
-                    height: 100,
-                    fit: BoxFit.contain,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'by detached',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      letterSpacing: 1.0,
-                      color: AppColors.textSecondary(context),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'A personal finance tracker that keeps your bank '
-                    'activity organized, searchable, and easy to understand.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textSecondary(context),
-                      height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      _FeatureChip(
-                          icon: AppIcons.lock_outline_rounded,
-                          label: 'Private'),
-                      _FeatureChip(icon: AppIcons.bolt_rounded, label: 'Fast'),
-                      _FeatureChip(
-                          icon: AppIcons.auto_graph_rounded,
-                          label: 'Insightful'),
-                    ],
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
 
-            // Support card
-            Material(
-              color: AppColors.cardColor(context),
-              borderRadius: BorderRadius.circular(16),
-              child: InkWell(
-                onTap: _openSupportLink,
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.borderColor(context)),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryLight.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          AppIcons.favorite_rounded,
-                          color: AppColors.primaryLight,
-                          size: 22,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'support the project',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textPrimary(context),
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Help us keep improving Totals.',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: AppColors.textSecondary(context),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+            const SizedBox(height: 32),
+
+            // ── PRIVACY section ──
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 14),
+              child: Text(
+                'PRIVACY',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                  color: AppColors.textSecondary(context),
                 ),
+              ),
+            ),
+
+            _AboutFeatureCard(
+              icon: AppIcons.wifi_off,
+              title: '100% Offline',
+              description:
+                  'Totals never connects to any server. Your financial data '
+                  'stays on your device, nowhere else.',
+            ),
+            _AboutFeatureCard(
+              icon: AppIcons.person_outline,
+              title: 'No Accounts, No Sign-up',
+              description:
+                  'No registration, no email, no phone number. There is no '
+                  'user account because there is no server. You are anonymous.',
+            ),
+            _AboutFeatureCard(
+              icon: AppIcons.visibility_off_outlined,
+              title: 'No Tracking or Analytics',
+              description:
+                  'Zero analytics, zero telemetry, zero third-party SDKs. No '
+                  'one, including us, can see how you use the app or what '
+                  'your data looks like.',
+            ),
+            _AboutFeatureCard(
+              icon: AppIcons.code_rounded,
+              title: 'Fully Open Source',
+              description:
+                  'Every line of code is public. You can audit exactly what '
+                  'the app does. No hidden behavior, no obfuscation.',
+            ),
+            _AboutFeatureCard(
+              icon: AppIcons.shield_check,
+              title: 'Your Data, Your Control',
+              description:
+                  'You can export, back up, or delete your data at any time, '
+                  'for free.',
+            ),
+
+            const SizedBox(height: 28),
+
+            // ── HOW IT WORKS section ──
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 14),
+              child: Text(
+                'HOW IT WORKS',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                  color: AppColors.textSecondary(context),
+                ),
+              ),
+            ),
+
+            _AboutStepCard(
+              step: 1,
+              description:
+                  'Totals reads your bank SMS notifications directly on '
+                  'your phone.',
+            ),
+            _AboutStepCard(
+              step: 2,
+              description:
+                  'Transactions are parsed locally and saved to your device.',
+            ),
+            _AboutStepCard(
+              step: 3,
+              description:
+                  'Totals organizes everything into your dashboard, all '
+                  'on-device.',
+            ),
+
+            const SizedBox(height: 32),
+
+            // ── Footer ──
+            Center(
+              child: Text(
+                'Made by Detached',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.textSecondary(context).withValues(alpha: 0.6),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AboutFeatureCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+
+  const _AboutFeatureCard({
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.borderColor(context)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                icon,
+                color: AppColors.primaryLight,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary(context),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary(context),
+                      height: 1.5,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1624,36 +1705,64 @@ class _RedesignAboutPage extends StatelessWidget {
   }
 }
 
-class _FeatureChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  const _FeatureChip({required this.icon, required this.label});
+class _AboutStepCard extends StatelessWidget {
+  final int step;
+  final String description;
+
+  const _AboutStepCard({
+    required this.step,
+    required this.description,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: AppColors.primaryLight.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: AppColors.primaryLight.withValues(alpha: 0.2),
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.cardColor(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.borderColor(context)),
         ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: AppColors.primaryLight),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: AppColors.primaryLight,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  '$step',
+                  style: const TextStyle(
+                    color: AppColors.primaryLight,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 5),
+                child: Text(
+                  description,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary(context),
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

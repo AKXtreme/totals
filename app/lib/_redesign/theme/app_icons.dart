@@ -78,4 +78,8 @@ class AppIcons {
   static const IconData zoom_out_map_rounded = PhosphorIconsRegular.cornersOut;
   static const IconData copy = PhosphorIconsRegular.copy;
   static const IconData swap = PhosphorIconsRegular.arrowsLeftRight;
+  static const IconData wifi_off = PhosphorIconsRegular.wifiSlash;
+  static const IconData shield_check = PhosphorIconsRegular.shieldCheck;
+  static const IconData code_rounded = PhosphorIconsRegular.code;
+  static const IconData cloud_download = PhosphorIconsRegular.cloudArrowDown;
 }
