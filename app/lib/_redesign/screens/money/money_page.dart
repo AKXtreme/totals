@@ -11365,7 +11365,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final navBarInset = MediaQuery.of(context).padding.bottom;
+    final navBarInset = MediaQuery.of(context).viewPadding.bottom;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),

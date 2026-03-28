@@ -283,7 +283,7 @@ class _AddUserAccountFormState extends State<AddUserAccountForm> {
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom +
-              MediaQuery.of(context).padding.bottom +
+              MediaQuery.of(context).viewPadding.bottom +
               20,
         ),
         child: Column(
