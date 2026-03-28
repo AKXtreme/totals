@@ -182,6 +182,47 @@ Color _progressColorForUsage({
   return AppColors.incomeSuccess;
 }
 
+String? _extractLegacyBudgetColorKey(String? iconKey) {
+  if (iconKey == null || iconKey.isEmpty) return null;
+  const prefix = 'color:';
+  if (!iconKey.startsWith(prefix)) return null;
+  final value = iconKey.substring(prefix.length).trim();
+  if (value.isEmpty) return null;
+  return value;
+}
+
+String? _normalizeBudgetWidgetColorKey(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  for (final option in _kBudgetWidgetColorOptions) {
+    if (option.key == trimmed) return trimmed;
+  }
+  return null;
+}
+
+Color _budgetWidgetColorFromKey(String colorKey) {
+  for (final option in _kBudgetWidgetColorOptions) {
+    if (option.key == colorKey) return option.color;
+  }
+  return _kBudgetWidgetColorOptions.first.color;
+}
+
+String? _normalizeBudgetWidgetIconKey(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  if (trimmed.startsWith('color:')) return null;
+  if (!_kBudgetWidgetSupportedIconKeys.contains(trimmed)) return null;
+  return trimmed;
+}
+
+int _hashBudgetColorSeed(String value) {
+  var hash = 0;
+  for (final codeUnit in value.trim().toLowerCase().codeUnits) {
+    hash = ((hash * 31) + codeUnit) & 0x7fffffff;
+  }
+  return hash;
+}
+
 // ── Bank label helper ───────────────────────────────────────────────────────
 
 final List<bank_model.Bank> _assetBanks = _buildAssetBanks();
@@ -240,6 +281,8 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
   bool _needsExpanded = true;
   bool _wantsExpanded = true;
   Set<int> _selectedBudgetWidgetIds = <int>{};
+  Map<int, BudgetWidgetStylePreference> _budgetWidgetStylesById =
+      <int, BudgetWidgetStylePreference>{};
 
   bool handleSystemBack() {
     if (_detailBudget == null) return false;
@@ -261,15 +304,112 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
 
   Future<void> _loadBudgetWidgetState() async {
     final selectedIds = await WidgetService.getBudgetWidgetSelectedIds();
+    final stylesById = await WidgetService.getBudgetWidgetStylePreferences();
     if (!mounted) return;
     setState(() {
       _selectedBudgetWidgetIds = selectedIds.toSet();
+      _budgetWidgetStylesById = stylesById;
     });
   }
 
   bool _isBudgetOnHomescreenWidget(Budget budget) {
     final budgetId = budget.id;
     return budgetId != null && _selectedBudgetWidgetIds.contains(budgetId);
+  }
+
+  String _widgetIconKeyForBudget(Budget budget, TransactionProvider tp) {
+    final budgetId = budget.id;
+    final savedIconKey = budgetId == null
+        ? null
+        : _normalizeBudgetWidgetIconKey(
+            _budgetWidgetStylesById[budgetId]?.iconKey,
+          );
+    if (savedIconKey != null) {
+      return savedIconKey;
+    }
+
+    final categories = budget.selectedCategoryIds
+        .map(tp.getCategoryById)
+        .whereType<Category>()
+        .toList(growable: false);
+    for (final category in categories) {
+      final iconKey = _normalizeBudgetWidgetIconKey(category.iconKey);
+      if (iconKey != null) {
+        return iconKey;
+      }
+    }
+
+    return 'more_horiz';
+  }
+
+  String _widgetColorKeyForBudget(Budget budget, TransactionProvider tp) {
+    final budgetId = budget.id;
+    final savedColorKey = budgetId == null
+        ? null
+        : _normalizeBudgetWidgetColorKey(
+            _budgetWidgetStylesById[budgetId]?.colorKey,
+          );
+    if (savedColorKey != null) {
+      return savedColorKey;
+    }
+
+    final categories = budget.selectedCategoryIds
+        .map(tp.getCategoryById)
+        .whereType<Category>()
+        .toList(growable: false);
+    for (final category in categories) {
+      final categoryColorKey =
+          _normalizeBudgetWidgetColorKey(category.colorKey) ??
+              _normalizeBudgetWidgetColorKey(
+                _extractLegacyBudgetColorKey(category.iconKey),
+              );
+      if (categoryColorKey != null) {
+        return categoryColorKey;
+      }
+    }
+
+    final seed = categories.isNotEmpty
+        ? categories.map((category) => category.name).join('|')
+        : budget.name;
+    return _kBudgetWidgetFallbackColorKeys[
+        _hashBudgetColorSeed(seed) % _kBudgetWidgetFallbackColorKeys.length];
+  }
+
+  Color _widgetBadgeColorForBudget(Budget budget, TransactionProvider tp) {
+    return _budgetWidgetColorFromKey(_widgetColorKeyForBudget(budget, tp));
+  }
+
+  Future<void> _openBudgetWidgetStyleSheet(
+    Budget budget,
+    TransactionProvider tp,
+  ) async {
+    final budgetId = budget.id;
+    if (budgetId == null) return;
+
+    final preference = await showModalBottomSheet<BudgetWidgetStylePreference>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _BudgetWidgetStyleSheet(
+        budgetName: budget.name,
+        initialIconKey: _widgetIconKeyForBudget(budget, tp),
+        initialColorKey: _widgetColorKeyForBudget(budget, tp),
+      ),
+    );
+    if (preference == null) return;
+
+    try {
+      await WidgetService.addBudgetToWidget(
+        budgetId,
+        stylePreference: preference,
+      );
+      await _loadBudgetWidgetState();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update widget style: $error')),
+      );
+    }
   }
 
   // ── Month helpers ───────────────────────────────────────────────────────
@@ -461,6 +601,9 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
                         spent: _spentForBudget(b, debits),
                         categoryLabel: _categorySummaryForBudget(b, tp),
                         isOnHomescreenWidget: _isBudgetOnHomescreenWidget(b),
+                        widgetBadgeColor: _widgetBadgeColorForBudget(b, tp),
+                        onWidgetBadgeTap: () =>
+                            _openBudgetWidgetStyleSheet(b, tp),
                         isRecurring: _isRecurringBudgetInSelectedMonth(b),
                         onTap: () => setState(() => _detailBudget = b),
                       ))
@@ -480,6 +623,9 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
                         spent: _spentForBudget(b, debits),
                         categoryLabel: _categorySummaryForBudget(b, tp),
                         isOnHomescreenWidget: _isBudgetOnHomescreenWidget(b),
+                        widgetBadgeColor: _widgetBadgeColorForBudget(b, tp),
+                        onWidgetBadgeTap: () =>
+                            _openBudgetWidgetStyleSheet(b, tp),
                         isRecurring: _isRecurringBudgetInSelectedMonth(b),
                         onTap: () => setState(() => _detailBudget = b),
                       ))
@@ -948,6 +1094,8 @@ class _BudgetItemRow extends StatelessWidget {
   final double spent;
   final String? categoryLabel;
   final bool isOnHomescreenWidget;
+  final Color widgetBadgeColor;
+  final VoidCallback onWidgetBadgeTap;
   final bool isRecurring;
   final VoidCallback onTap;
 
@@ -956,6 +1104,8 @@ class _BudgetItemRow extends StatelessWidget {
     required this.spent,
     required this.categoryLabel,
     required this.isOnHomescreenWidget,
+    required this.widgetBadgeColor,
+    required this.onWidgetBadgeTap,
     required this.isRecurring,
     required this.onTap,
   });
@@ -1009,7 +1159,10 @@ class _BudgetItemRow extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                             if (isOnHomescreenWidget) ...[
-                              const _BudgetWidgetBadge(),
+                              _BudgetWidgetBadge(
+                                color: widgetBadgeColor,
+                                onTap: onWidgetBadgeTap,
+                              ),
                               const SizedBox(width: 6),
                             ],
                             _BudgetRecurrenceBadge(isRecurring: isRecurring),
@@ -3274,26 +3427,358 @@ class _BudgetRecurrenceBadge extends StatelessWidget {
 }
 
 class _BudgetWidgetBadge extends StatelessWidget {
-  const _BudgetWidgetBadge();
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _BudgetWidgetBadge({
+    required this.color,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppColors.primaryLight.withValues(alpha: 0.12),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: AppColors.primaryLight.withValues(alpha: 0.25),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: color.withValues(alpha: 0.25),
+            ),
+          ),
+          child: Text(
+            'Widget',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
         ),
       ),
-      child: const Text(
-        'Widget',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: AppColors.primaryLight,
+    );
+  }
+}
+
+class _BudgetWidgetStyleSheet extends StatefulWidget {
+  final String budgetName;
+  final String initialIconKey;
+  final String initialColorKey;
+
+  const _BudgetWidgetStyleSheet({
+    required this.budgetName,
+    required this.initialIconKey,
+    required this.initialColorKey,
+  });
+
+  @override
+  State<_BudgetWidgetStyleSheet> createState() =>
+      _BudgetWidgetStyleSheetState();
+}
+
+class _BudgetWidgetStyleSheetState extends State<_BudgetWidgetStyleSheet> {
+  late String _selectedIconKey;
+  late String _selectedColorKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIconKey = widget.initialIconKey;
+    _selectedColorKey = widget.initialColorKey;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final selectedColor = _budgetWidgetColorFromKey(_selectedColorKey);
+    final selectedIcon = _kBudgetWidgetIconOptions.firstWhere(
+      (option) => option.key == _selectedIconKey,
+      orElse: () => _kBudgetWidgetIconOptions.first,
+    );
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.82,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.background(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textTertiary(context),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Widget Style',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary(context),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(AppIcons.close),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: selectedColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: selectedColor.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      selectedIcon.icon,
+                      size: 18,
+                      color: selectedColor,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      widget.budgetName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textPrimary(context),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _BudgetWidgetBadge(color: selectedColor),
+                ],
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
+                child: _BudgetWidgetStylePicker(
+                  selectedIconKey: _selectedIconKey,
+                  selectedColorKey: _selectedColorKey,
+                  onIconChanged: (value) {
+                    setState(() => _selectedIconKey = value);
+                  },
+                  onColorChanged: (value) {
+                    setState(() => _selectedColorKey = value);
+                  },
+                  showTopDivider: true,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(
+                      BudgetWidgetStylePreference(
+                        iconKey: _selectedIconKey,
+                        colorKey: _selectedColorKey,
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryDark,
+                    foregroundColor: AppColors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Save Style',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _BudgetWidgetStylePicker extends StatelessWidget {
+  final String selectedIconKey;
+  final String selectedColorKey;
+  final ValueChanged<String> onIconChanged;
+  final ValueChanged<String> onColorChanged;
+  final bool showTopDivider;
+
+  const _BudgetWidgetStylePicker({
+    required this.selectedIconKey,
+    required this.selectedColorKey,
+    required this.onIconChanged,
+    required this.onColorChanged,
+    this.showTopDivider = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final selectedColor = _budgetWidgetColorFromKey(selectedColorKey);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (showTopDivider)
+            Divider(
+              height: 1,
+              color: AppColors.borderColor(context),
+            ),
+          const SizedBox(height: 14),
+          Text(
+            'Icon',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.textSecondary(context),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 92,
+            child: GridView.builder(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: _kBudgetWidgetIconOptions.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                mainAxisExtent: 42,
+              ),
+              itemBuilder: (context, index) {
+                final option = _kBudgetWidgetIconOptions[index];
+                final selected = option.key == selectedIconKey;
+                return Tooltip(
+                  message: option.label,
+                  child: Material(
+                    color: selected
+                        ? selectedColor.withValues(alpha: 0.15)
+                        : AppColors.surfaceColor(context),
+                    borderRadius: BorderRadius.circular(10),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => onIconChanged(option.key),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: selected
+                                ? selectedColor
+                                : AppColors.borderColor(context),
+                            width: selected ? 2 : 1,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          option.icon,
+                          size: 20,
+                          color: selected
+                              ? selectedColor
+                              : AppColors.textSecondary(context),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Swipe sideways to see more icons.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.textSecondary(context),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Color',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.textSecondary(context),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 34,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _kBudgetWidgetColorOptions.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final option = _kBudgetWidgetColorOptions[index];
+                final selected = option.key == selectedColorKey;
+                return GestureDetector(
+                  onTap: () => onColorChanged(option.key),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: option.color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: selected
+                            ? AppColors.textPrimary(context)
+                            : Colors.transparent,
+                        width: 2,
+                      ),
+                      boxShadow: selected
+                          ? [
+                              BoxShadow(
+                                color: option.color.withValues(alpha: 0.28),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ]
+                          : null,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

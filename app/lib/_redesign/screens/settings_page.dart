@@ -166,7 +166,8 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
 
   Future<void> _fetchSmsPatterns() async {
     if (_isFetchingSmsPatterns) {
-      print("debug: Redesign settings SMS pattern fetch ignored - already in progress");
+      print(
+          "debug: Redesign settings SMS pattern fetch ignored - already in progress");
       return;
     }
 
@@ -174,7 +175,8 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
     setState(() => _isFetchingSmsPatterns = true);
     try {
       final count = await _smsConfigService.refreshPatternsFromInternet();
-      print("debug: Redesign settings SMS pattern fetch succeeded with $count patterns");
+      print(
+          "debug: Redesign settings SMS pattern fetch succeeded with $count patterns");
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -233,7 +235,15 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
     return '${formatted}x';
   }
 
-  int _closestScaleIndex(double value, List<double> options) {
+  String _paddingLabel(double value) {
+    final formatted = value
+        .toStringAsFixed(1)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+    return '${formatted}px';
+  }
+
+  int _closestOptionIndex(double value, List<double> options) {
     int bestIndex = 0;
     double bestDelta = (value - options.first).abs();
     for (int i = 1; i < options.length; i++) {
@@ -248,8 +258,12 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
 
   Future<void> _showFontSizeSheet(ThemeProvider themeProvider) async {
     final initialScale = themeProvider.uiScale;
-    final options = themeProvider.availableUiScales;
-    int selectedIndex = _closestScaleIndex(initialScale, options);
+    final scaleOptions = themeProvider.availableUiScales;
+    final initialTopPadding = themeProvider.appTopPadding;
+    final paddingOptions = themeProvider.availableAppTopPaddings;
+    int selectedScaleIndex = _closestOptionIndex(initialScale, scaleOptions);
+    int selectedPaddingIndex =
+        _closestOptionIndex(initialTopPadding, paddingOptions);
 
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
@@ -257,11 +271,19 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
       backgroundColor: Colors.transparent,
       builder: (sheetCtx) => StatefulBuilder(
         builder: (sheetCtx, setSheetState) {
-          final selectedScale = options[selectedIndex];
+          final selectedScale = scaleOptions[selectedScaleIndex];
+          final selectedTopPadding = paddingOptions[selectedPaddingIndex];
+
           Future<void> updateScale(int index) async {
-            if (index == selectedIndex) return;
-            setSheetState(() => selectedIndex = index);
-            await themeProvider.setUiScale(options[index]);
+            if (index == selectedScaleIndex) return;
+            setSheetState(() => selectedScaleIndex = index);
+            await themeProvider.setUiScale(scaleOptions[index]);
+          }
+
+          Future<void> updateTopPadding(int index) async {
+            if (index == selectedPaddingIndex) return;
+            setSheetState(() => selectedPaddingIndex = index);
+            await themeProvider.setAppTopPadding(paddingOptions[index]);
           }
 
           return Container(
@@ -278,156 +300,209 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(20)),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 12, bottom: 16),
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.slate400,
-                      borderRadius: BorderRadius.circular(2),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 16),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.slate400,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-                Text(
-                  'Display Size',
-                  style: Theme.of(sheetCtx).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary(sheetCtx),
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Preview and choose your preferred interface size.',
-                  style: Theme.of(sheetCtx).textTheme.bodySmall?.copyWith(
-                        color: AppColors.textSecondary(sheetCtx),
-                      ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceColor(sheetCtx),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.borderColor(sheetCtx)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Preview',
-                        style: TextStyle(
-                          fontSize: 16 * selectedScale,
+                  Text(
+                    'Display Size',
+                    style: Theme.of(sheetCtx).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w700,
                           color: AppColors.textPrimary(sheetCtx),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Transaction categorized successfully.',
-                        style: TextStyle(
-                          fontSize: 13 * selectedScale,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Preview and adjust interface scale and top padding.',
+                    style: Theme.of(sheetCtx).textTheme.bodySmall?.copyWith(
                           color: AppColors.textSecondary(sheetCtx),
                         ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceColor(sheetCtx),
+                      borderRadius: BorderRadius.circular(12),
+                      border:
+                          Border.all(color: AppColors.borderColor(sheetCtx)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Preview',
+                          style: TextStyle(
+                            fontSize: 16 * selectedScale,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary(sheetCtx),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Transaction categorized successfully.',
+                          style: TextStyle(
+                            fontSize: 13 * selectedScale,
+                            color: AppColors.textSecondary(sheetCtx),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Current size: ${_scaleLabel(selectedScale)}',
+                          style: TextStyle(
+                            fontSize: 12 * selectedScale,
+                            color: AppColors.primaryLight,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Top padding: ${_paddingLabel(selectedTopPadding)}',
+                          style: TextStyle(
+                            fontSize: 12 * selectedScale,
+                            color: AppColors.textSecondary(sheetCtx),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Slider(
+                    value: selectedScaleIndex.toDouble(),
+                    min: 0,
+                    max: (scaleOptions.length - 1).toDouble(),
+                    divisions: scaleOptions.length - 1,
+                    label: _scaleLabel(selectedScale),
+                    activeColor: AppColors.primaryLight,
+                    inactiveColor: AppColors.borderColor(sheetCtx),
+                    onChanged: (v) => updateScale(v.round()),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (int i = 0; i < scaleOptions.length; i++)
+                        ChoiceChip(
+                          label: Text(_scaleLabel(scaleOptions[i])),
+                          selected: i == selectedScaleIndex,
+                          selectedColor:
+                              AppColors.primaryLight.withValues(alpha: 0.2),
+                          side: BorderSide(
+                            color: i == selectedScaleIndex
+                                ? AppColors.primaryLight
+                                : AppColors.borderColor(sheetCtx),
+                          ),
+                          labelStyle: TextStyle(
+                            color: i == selectedScaleIndex
+                                ? AppColors.primaryLight
+                                : AppColors.textPrimary(sheetCtx),
+                            fontWeight: FontWeight.w600,
+                          ),
+                          onSelected: (_) => updateScale(i),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Top Padding',
+                    style: Theme.of(sheetCtx).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary(sheetCtx),
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Add extra space above the app content.',
+                    style: Theme.of(sheetCtx).textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary(sheetCtx),
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (int i = 0; i < paddingOptions.length; i++)
+                        ChoiceChip(
+                          label: Text(_paddingLabel(paddingOptions[i])),
+                          selected: i == selectedPaddingIndex,
+                          selectedColor:
+                              AppColors.primaryLight.withValues(alpha: 0.2),
+                          side: BorderSide(
+                            color: i == selectedPaddingIndex
+                                ? AppColors.primaryLight
+                                : AppColors.borderColor(sheetCtx),
+                          ),
+                          labelStyle: TextStyle(
+                            color: i == selectedPaddingIndex
+                                ? AppColors.primaryLight
+                                : AppColors.textPrimary(sheetCtx),
+                            fontWeight: FontWeight.w600,
+                          ),
+                          onSelected: (_) => updateTopPadding(i),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(sheetCtx).pop(false),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(
+                                color: AppColors.borderColor(sheetCtx)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: Text(
+                            'Cancel',
+                            style: TextStyle(
+                                color: AppColors.textSecondary(sheetCtx)),
+                          ),
+                        ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Current size: ${_scaleLabel(selectedScale)}',
-                        style: TextStyle(
-                          fontSize: 12 * selectedScale,
-                          color: AppColors.primaryLight,
-                          fontWeight: FontWeight.w600,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(sheetCtx).pop(true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryDark,
+                            foregroundColor: AppColors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: const Text(
+                            'Apply',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 14),
-                Slider(
-                  value: selectedIndex.toDouble(),
-                  min: 0,
-                  max: (options.length - 1).toDouble(),
-                  divisions: options.length - 1,
-                  label: _scaleLabel(selectedScale),
-                  activeColor: AppColors.primaryLight,
-                  inactiveColor: AppColors.borderColor(sheetCtx),
-                  onChanged: (v) => updateScale(v.round()),
-                ),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (int i = 0; i < options.length; i++)
-                      ChoiceChip(
-                        label: Text(_scaleLabel(options[i])),
-                        selected: i == selectedIndex,
-                        selectedColor:
-                            AppColors.primaryLight.withValues(alpha: 0.2),
-                        side: BorderSide(
-                          color: i == selectedIndex
-                              ? AppColors.primaryLight
-                              : AppColors.borderColor(sheetCtx),
-                        ),
-                        labelStyle: TextStyle(
-                          color: i == selectedIndex
-                              ? AppColors.primaryLight
-                              : AppColors.textPrimary(sheetCtx),
-                          fontWeight: FontWeight.w600,
-                        ),
-                        onSelected: (_) => updateScale(i),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(sheetCtx).pop(false),
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(
-                              color: AppColors.borderColor(sheetCtx)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: Text(
-                          'Cancel',
-                          style: TextStyle(
-                              color: AppColors.textSecondary(sheetCtx)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.of(sheetCtx).pop(true),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primaryDark,
-                          foregroundColor: AppColors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: const Text(
-                          'Apply',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-              ],
+                  const SizedBox(height: 4),
+                ],
+              ),
             ),
           );
         },
@@ -436,6 +511,7 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
 
     if (confirmed != true && mounted) {
       await themeProvider.setUiScale(initialScale);
+      await themeProvider.setAppTopPadding(initialTopPadding);
     }
   }
 
@@ -779,12 +855,12 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
                 icon: AppIcons.zoom_out_map_rounded,
                 iconColor: AppColors.incomeSuccess,
                 title: 'Display Size',
-                subtitle: 'Preview and adjust interface scale',
+                subtitle: 'Preview and adjust interface scale and top padding',
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      themeProvider.uiScaleLabel,
+                      '${themeProvider.uiScaleLabel} • ${themeProvider.appTopPaddingLabel}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: AppColors.textSecondary(context),
                         fontWeight: FontWeight.w600,

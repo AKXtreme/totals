@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:totals/data/all_banks_from_assets.dart';
 import 'package:totals/data/consts.dart';
 import 'package:totals/models/category.dart' as models;
 import 'package:totals/models/transaction.dart';
@@ -32,6 +33,7 @@ class NotificationService {
   static const String _accountSyncChannelId = 'account_sync';
   static const String _budgetChannelId = 'budgets';
   static const String _historyPrefsKey = 'notification_history_v1';
+  static const String _counterpartyActionPrefix = 'txname:';
   static const int _maxHistoryEntries = 200;
   static const int dailySpendingNotificationId = 9001;
   static const int dailySpendingTestNotificationId = 9002;
@@ -42,6 +44,7 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
+  static final Set<String> _knownBankTokens = _buildKnownBankTokens();
 
   bool _initialized = false;
 
@@ -114,8 +117,17 @@ class NotificationService {
     try {
       if (response.notificationResponseType ==
           NotificationResponseType.selectedNotificationAction) {
-        // Action button was tapped - handle quick categorization directly
+        // Action button was tapped - handle quick actions directly
         final actionId = response.actionId;
+        if (actionId != null &&
+            actionId.startsWith(_counterpartyActionPrefix)) {
+          await _handleCounterpartyInputAction(
+            actionId,
+            response.input,
+            response.id,
+          );
+          return;
+        }
         if (actionId != null && actionId.contains('|cat:')) {
           await _handleQuickCategorizeAction(actionId, response.id);
           return;
@@ -215,6 +227,63 @@ class NotificationService {
     } catch (e) {
       if (kDebugMode) {
         print('debug: Quick categorize failed: $e');
+      }
+    }
+  }
+
+  Future<void> _handleCounterpartyInputAction(
+    String actionId,
+    String? input,
+    int? notificationId,
+  ) async {
+    try {
+      await ensureInitialized();
+
+      if (!actionId.startsWith(_counterpartyActionPrefix)) return;
+
+      final submittedName = input?.trim();
+      if (submittedName == null || submittedName.isEmpty) {
+        if (kDebugMode) {
+          print('debug: Counterparty input skipped: empty input');
+        }
+        return;
+      }
+
+      final reference = Uri.decodeComponent(
+        actionId.substring(_counterpartyActionPrefix.length),
+      );
+      if (reference.trim().isEmpty) return;
+
+      final txRepo = TransactionRepository();
+      final transaction = await txRepo.getTransactionByReference(reference);
+
+      if (transaction == null) {
+        if (kDebugMode) {
+          print('debug: Counterparty input: transaction not found');
+        }
+        return;
+      }
+
+      final updated = transaction.type == 'CREDIT'
+          ? transaction.copyWith(creditor: submittedName)
+          : transaction.copyWith(receiver: submittedName);
+
+      await txRepo.saveTransaction(
+        updated,
+        skipAutoCategorization: true,
+      );
+
+      await WidgetService.refreshWidget();
+      BackgroundRefreshSignalService.notifyDataChanged();
+      await showTransactionNotification(
+        transaction: updated,
+        bankId: updated.bankId,
+        ignoreEnabledCheck: true,
+        recordHistory: false,
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        print('debug: Counterparty input failed: $e');
       }
     }
   }
@@ -333,18 +402,22 @@ class NotificationService {
   Future<void> showTransactionNotification({
     required Transaction transaction,
     required int? bankId,
+    bool ignoreEnabledCheck = false,
+    bool recordHistory = true,
   }) async {
     try {
       await ensureInitialized();
 
-      final enabled = await NotificationSettingsService.instance
-          .isTransactionNotificationsEnabled();
-      if (!enabled) {
-        if (kDebugMode) {
-          print(
-              'debug: Transaction notification skipped — disabled in settings');
+      if (!ignoreEnabledCheck) {
+        final enabled = await NotificationSettingsService.instance
+            .isTransactionNotificationsEnabled();
+        if (!enabled) {
+          if (kDebugMode) {
+            print(
+                'debug: Transaction notification skipped — disabled in settings');
+          }
+          return;
         }
-        return;
       }
 
       final bank = _findBank(bankId);
@@ -354,7 +427,7 @@ class NotificationService {
       final id = _notificationId(transaction);
       final payload = 'tx:${Uri.encodeComponent(transaction.reference)}';
 
-      final actions = await _buildQuickCategoryActions(transaction);
+      final actions = await _buildTransactionActions(transaction);
       if (kDebugMode) {
         print('debug: Transaction notification actions: ${actions.length}');
         for (final a in actions) {
@@ -380,15 +453,50 @@ class NotificationService {
         ),
         payload: payload,
       );
-      await _recordHistory(
-        channel: _transactionChannelId,
-        title: title,
-        body: body,
-      );
+      if (recordHistory) {
+        await _recordHistory(
+          channel: _transactionChannelId,
+          title: title,
+          body: body,
+        );
+      }
     } catch (e) {
       if (kDebugMode) {
         print('debug: Failed to show transaction notification: $e');
       }
+    }
+  }
+
+  Future<bool> showTestTransactionNotification() async {
+    try {
+      final transaction = Transaction(
+        amount: 123.0,
+        reference: 'test_transaction_notification_cash',
+        note: 'Test transaction notification',
+        time: DateTime.now().toIso8601String(),
+        status: 'TEST',
+        bankId: CashConstants.bankId,
+        type: 'DEBIT',
+        accountNumber: CashConstants.defaultAccountNumber,
+      );
+
+      await TransactionRepository().saveTransaction(
+        transaction,
+        skipAutoCategorization: true,
+      );
+      await WidgetService.refreshWidget();
+      BackgroundRefreshSignalService.notifyDataChanged();
+
+      await showTransactionNotification(
+        transaction: transaction,
+        bankId: transaction.bankId,
+      );
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        print('debug: Failed to show test transaction notification: $e');
+      }
+      return false;
     }
   }
 
@@ -441,8 +549,9 @@ class NotificationService {
   }
 
   Future<List<AndroidNotificationAction>> _buildQuickCategoryActions(
-    Transaction transaction,
-  ) async {
+    Transaction transaction, {
+    int maxCount = 3,
+  }) async {
     try {
       final settings = NotificationSettingsService.instance;
       final isIncome = transaction.type == 'CREDIT';
@@ -464,6 +573,7 @@ class NotificationService {
 
       final List<AndroidNotificationAction> actions = [];
       for (final cat in categories) {
+        if (actions.length >= maxCount) break;
         final actionPayload =
             'tx:${Uri.encodeComponent(transaction.reference)}|cat:${cat.id}';
         actions.add(AndroidNotificationAction(
@@ -479,6 +589,107 @@ class NotificationService {
       }
       return [];
     }
+  }
+
+  Future<List<AndroidNotificationAction>> _buildTransactionActions(
+    Transaction transaction,
+  ) async {
+    if (!_needsCounterpartyInput(transaction)) {
+      return _buildQuickCategoryActions(transaction);
+    }
+
+    final quickActions = await _buildQuickCategoryActions(
+      transaction,
+      maxCount: 2,
+    );
+
+    return <AndroidNotificationAction>[
+      _buildCounterpartyInputAction(transaction),
+      ...quickActions,
+    ];
+  }
+
+  AndroidNotificationAction _buildCounterpartyInputAction(
+    Transaction transaction,
+  ) {
+    final role = transaction.type == 'CREDIT' ? 'sender' : 'receiver';
+    return AndroidNotificationAction(
+      '$_counterpartyActionPrefix${Uri.encodeComponent(transaction.reference)}',
+      'add $role',
+      allowGeneratedReplies: true,
+      showsUserInterface: false,
+      cancelNotification: false,
+      inputs: <AndroidNotificationActionInput>[
+        AndroidNotificationActionInput(
+          label: 'Enter $role name',
+        ),
+      ],
+    );
+  }
+
+  bool _needsCounterpartyInput(Transaction transaction) {
+    return _isMissingOrBankPlaceholder(
+      _notificationCounterpartyValue(transaction),
+    );
+  }
+
+  String? _notificationCounterpartyValue(Transaction transaction) {
+    final primary = transaction.type == 'CREDIT'
+        ? transaction.creditor?.trim()
+        : transaction.receiver?.trim();
+    if (primary != null && primary.isNotEmpty) return primary;
+
+    final fallback = transaction.type == 'CREDIT'
+        ? transaction.receiver?.trim()
+        : transaction.creditor?.trim();
+    if (fallback != null && fallback.isNotEmpty) return fallback;
+
+    return null;
+  }
+
+  static bool _isMissingOrBankPlaceholder(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return true;
+
+    final normalized = _normalizeBankToken(trimmed);
+    if (normalized.isEmpty) return true;
+    return _knownBankTokens.contains(normalized);
+  }
+
+  static Set<String> _buildKnownBankTokens() {
+    final tokens = <String>{};
+
+    void addToken(String? raw) {
+      final normalized = _normalizeBankToken(raw ?? '');
+      if (normalized.isNotEmpty) {
+        tokens.add(normalized);
+      }
+    }
+
+    for (final bank in AppConstants.banks) {
+      addToken(bank.name);
+      addToken(bank.shortName);
+      for (final code in bank.codes) {
+        addToken(code);
+      }
+    }
+
+    for (final bank in AllBanksFromAssets.getAllBanks()) {
+      addToken(bank.name);
+      addToken(bank.shortName);
+      for (final code in bank.codes) {
+        addToken(code);
+      }
+    }
+
+    addToken(CashConstants.bankName);
+    addToken(CashConstants.bankShortName);
+
+    return tokens;
+  }
+
+  static String _normalizeBankToken(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
   }
 
   Future<bool> _showSpendingSummaryNotification({
@@ -788,19 +999,20 @@ class NotificationService {
     return '$bankLabel • $kind';
   }
 
-  static String _buildBody(Transaction transaction) {
+  String _buildBody(Transaction transaction) {
     final sign = switch (transaction.type) {
       'CREDIT' => '+',
       'DEBIT' => '-',
       _ => '',
     };
 
-    final counterparty = _firstNonEmpty([
-      transaction.creditor,
-      transaction.receiver,
-    ]);
-
     final amount = '${sign}ETB ${formatNumberWithComma(transaction.amount)}';
+    if (_needsCounterpartyInput(transaction)) {
+      final role = transaction.type == 'CREDIT' ? 'sender' : 'receiver';
+      return '$amount • Expand notification to add $role';
+    }
+
+    final counterparty = _notificationCounterpartyValue(transaction);
     if (counterparty == null) return '$amount • Tap to categorize';
     return '$amount • $counterparty • Tap to categorize';
   }
@@ -946,6 +1158,17 @@ void notificationTapBackground(NotificationResponse response) {
   final actionId = response.actionId;
   if (actionId == null) return;
 
+  if (actionId.startsWith(NotificationService._counterpartyActionPrefix)) {
+    unawaited(
+      _handleCounterpartyInputFromBackground(
+        actionId,
+        response.input,
+        response.id,
+      ),
+    );
+    return;
+  }
+
   if (actionId.contains('|cat:')) {
     unawaited(_handleQuickCategorizeFromBackground(actionId, response.id));
     return;
@@ -963,6 +1186,19 @@ Future<void> _handleQuickCategorizeFromBackground(
   await WidgetService.initialize();
   await NotificationService.instance._handleQuickCategorizeAction(
     actionId,
+    notificationId,
+  );
+}
+
+Future<void> _handleCounterpartyInputFromBackground(
+  String actionId,
+  String? input,
+  int? notificationId,
+) async {
+  await WidgetService.initialize();
+  await NotificationService.instance._handleCounterpartyInputAction(
+    actionId,
+    input,
     notificationId,
   );
 }

@@ -37,6 +37,30 @@ SnackBarThemeData _globalSnackBarTheme() {
   );
 }
 
+Widget _buildAppTopPadding({
+  required BuildContext context,
+  required Widget child,
+  required Color backgroundColor,
+  required double topPadding,
+}) {
+  final mediaQuery = MediaQuery.of(context);
+
+  return ColoredBox(
+    color: backgroundColor,
+    child: MediaQuery(
+      data: mediaQuery.copyWith(
+        padding: mediaQuery.padding.copyWith(
+          top: mediaQuery.padding.top + topPadding,
+        ),
+        viewPadding: mediaQuery.viewPadding.copyWith(
+          top: mediaQuery.viewPadding.top + topPadding,
+        ),
+      ),
+      child: child,
+    ),
+  );
+}
+
 Widget _buildUiScaledApp({
   required BuildContext context,
   required Widget child,
@@ -199,7 +223,12 @@ class MyApp extends StatelessWidget {
                 scale: themeProvider.uiScale,
                 child: AnnotatedRegion<SystemUiOverlayStyle>(
                   value: overlayStyle,
-                  child: child,
+                  child: _buildAppTopPadding(
+                    context: context,
+                    backgroundColor: theme.scaffoldBackgroundColor,
+                    topPadding: themeProvider.appTopPadding,
+                    child: child,
+                  ),
                 ),
               );
             },

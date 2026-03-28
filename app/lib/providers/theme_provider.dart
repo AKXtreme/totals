@@ -5,7 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ThemeProvider extends ChangeNotifier {
   static const String _themeKey = 'theme_mode';
   static const String _uiScaleKey = 'ui_scale';
+  static const String _appTopPaddingKey = 'app_top_padding';
   static const double _defaultUiScale = 0.9;
+  static const double _defaultAppTopPadding = 20.0;
   static const List<ThemeMode> _themeCycleOrder = <ThemeMode>[
     ThemeMode.system,
     ThemeMode.light,
@@ -25,14 +27,28 @@ class ThemeProvider extends ChangeNotifier {
     1.25,
     1.5,
   ];
+  static const List<double> _appTopPaddingOptions = <double>[
+    0,
+    8,
+    12,
+    16,
+    20,
+    24,
+    32,
+  ];
   ThemeMode _themeMode = ThemeMode.system;
   double _uiScale = _defaultUiScale;
+  double _appTopPadding = _defaultAppTopPadding;
 
   ThemeMode get themeMode => _themeMode;
   double get uiScale => _uiScale;
+  double get appTopPadding => _appTopPadding;
   List<double> get availableUiScales =>
       List<double>.unmodifiable(_uiScaleOptions);
+  List<double> get availableAppTopPaddings =>
+      List<double>.unmodifiable(_appTopPaddingOptions);
   String get uiScaleLabel => _formatUiScale(_uiScale);
+  String get appTopPaddingLabel => _formatPixels(_appTopPadding);
   bool get isZoomedOut => (_uiScale - 0.75).abs() < 0.001;
   String get themeModeLabel {
     switch (_themeMode) {
@@ -48,6 +64,7 @@ class ThemeProvider extends ChangeNotifier {
   ThemeProvider() {
     _loadThemeMode();
     _loadUiScale();
+    _loadAppTopPadding();
   }
 
   Future<void> _loadThemeMode() async {
@@ -91,15 +108,52 @@ class ThemeProvider extends ChangeNotifier {
     await prefs.setDouble(_uiScaleKey, normalized);
   }
 
+  Future<void> _loadAppTopPadding() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedPadding = prefs.getDouble(_appTopPaddingKey);
+    if (savedPadding != null) {
+      _appTopPadding = _normalizeAppTopPadding(savedPadding);
+      notifyListeners();
+    }
+  }
+
+  Future<void> setAppTopPadding(double padding) async {
+    final normalized = _normalizeAppTopPadding(padding);
+    _appTopPadding = normalized;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_appTopPaddingKey, normalized);
+  }
+
   Future<void> setZoomedOut(bool value) async {
     await setUiScale(value ? 0.75 : _defaultUiScale);
   }
 
   double _normalizeUiScale(double value) {
-    if (value <= 0) return _defaultUiScale;
-    double nearest = _uiScaleOptions.first;
+    return _normalizeNearestValue(
+      value: value,
+      options: _uiScaleOptions,
+      fallback: _defaultUiScale,
+    );
+  }
+
+  double _normalizeAppTopPadding(double value) {
+    return _normalizeNearestValue(
+      value: value,
+      options: _appTopPaddingOptions,
+      fallback: _defaultAppTopPadding,
+    );
+  }
+
+  double _normalizeNearestValue({
+    required double value,
+    required List<double> options,
+    required double fallback,
+  }) {
+    if (value < 0) return fallback;
+    double nearest = options.first;
     double nearestDelta = (value - nearest).abs();
-    for (final option in _uiScaleOptions.skip(1)) {
+    for (final option in options.skip(1)) {
       final delta = (value - option).abs();
       if (delta < nearestDelta) {
         nearest = option;
@@ -115,6 +169,14 @@ class ThemeProvider extends ChangeNotifier {
         .replaceFirst(RegExp(r'0+$'), '')
         .replaceFirst(RegExp(r'\.$'), '');
     return '${formatted}x';
+  }
+
+  String _formatPixels(double value) {
+    final formatted = value
+        .toStringAsFixed(1)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+    return '${formatted}px';
   }
 
   void toggleTheme() {

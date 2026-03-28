@@ -410,11 +410,25 @@ class _ActivityTransactionsViewData {
   final int totalPages;
   final int safePage;
   final List<Object> flatItems;
+  final _ActivityTransactionsSummary summary;
 
   const _ActivityTransactionsViewData({
     required this.totalPages,
     required this.safePage,
     required this.flatItems,
+    required this.summary,
+  });
+}
+
+class _ActivityTransactionsSummary {
+  final int totalTransactions;
+  final double totalIncome;
+  final double totalExpense;
+
+  const _ActivityTransactionsSummary({
+    required this.totalTransactions,
+    required this.totalIncome,
+    required this.totalExpense,
   });
 }
 
@@ -1037,7 +1051,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           ),
           periodKey:
               'heatmap-${_analyticsHeatmapView.name}-${periodStart.year}-${periodStart.month}',
-          showIncome: _analyticsHeatmapFilter.mode == _AnalyticsHeatmapMode.income,
+          showIncome:
+              _analyticsHeatmapFilter.mode == _AnalyticsHeatmapMode.income,
         );
       case _AnalyticsChartSection.expenseBubble:
         final filter = _analyticsBubbleFilter;
@@ -1478,6 +1493,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     final transactionsViewData = _subTab == _SubTab.transactions
         ? _resolveActivityTransactionsViewData(provider)
         : null;
+    final activityTransactionsSummary = transactionsViewData?.summary;
     final ledgerViewSummary =
         _subTab == _SubTab.ledger ? _resolveLedgerViewSummary(provider) : null;
     final totalPages = transactionsViewData?.totalPages ?? 1;
@@ -1548,6 +1564,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
         _buildActivityPinnedHeader(
           provider: provider,
           financialHealth: healthSnapshot,
+          activityTransactionsSummary: activityTransactionsSummary,
           ledgerViewSummary: ledgerViewSummary,
         ),
         Expanded(
@@ -1600,6 +1617,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
   Widget _buildActivityPinnedHeader({
     required TransactionProvider provider,
     required FinancialHealthSnapshot financialHealth,
+    required _ActivityTransactionsSummary? activityTransactionsSummary,
     required _LedgerViewSummary? ledgerViewSummary,
   }) {
     return DecoratedBox(
@@ -1633,6 +1651,14 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
                     onFilterTap: () => _openFilterSheet(provider),
                     activeFilterCount: _filter.activeCount,
                   ),
+                  if (!(provider.isLoading &&
+                          provider.allTransactions.isEmpty) &&
+                      activityTransactionsSummary != null) ...[
+                    const SizedBox(height: 12),
+                    _ActivityTransactionsSummaryRow(
+                      summary: activityTransactionsSummary,
+                    ),
+                  ],
                 ] else if (_subTab == _SubTab.ledger) ...[
                   const SizedBox(height: 12),
                   Row(
@@ -1827,8 +1853,8 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       provider,
       sourceTransactions: activeSupportContext.transactions,
       anchorTransactions: activeSupportContext.transactions,
-      categoryMode: _analyticsFilterForSection(_analyticsSelectedChartSection)
-          .mode,
+      categoryMode:
+          _analyticsFilterForSection(_analyticsSelectedChartSection).mode,
       constrainSeriesToAnchorMonth: false,
     );
     return [
@@ -2678,6 +2704,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     }
 
     final filtered = _filterTransactions(provider.allTransactions);
+    final summary = _summarizeActivityTransactions(filtered);
     final sorted = List<Transaction>.from(filtered)
       ..sort((a, b) {
         final aTime = _parseTransactionTime(a.time);
@@ -2710,10 +2737,32 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
       totalPages: totalPages,
       safePage: safePage,
       flatItems: flatItems,
+      summary: summary,
     );
     _activityTransactionsViewCacheKey = cacheKey;
     _activityTransactionsViewCache = data;
     return data;
+  }
+
+  _ActivityTransactionsSummary _summarizeActivityTransactions(
+    List<Transaction> transactions,
+  ) {
+    var totalIncome = 0.0;
+    var totalExpense = 0.0;
+
+    for (final transaction in transactions) {
+      if (transaction.type == 'CREDIT') {
+        totalIncome += transaction.amount;
+      } else if (transaction.type == 'DEBIT') {
+        totalExpense += transaction.amount;
+      }
+    }
+
+    return _ActivityTransactionsSummary(
+      totalTransactions: transactions.length,
+      totalIncome: totalIncome,
+      totalExpense: totalExpense,
+    );
   }
 
   Widget _buildAccountsContent(
@@ -4345,6 +4394,63 @@ class _AnalyticsSnapshot {
     required this.largestExpense,
     required this.largestDeposit,
   });
+}
+
+class _ActivityTransactionsSummaryRow extends StatelessWidget {
+  final _ActivityTransactionsSummary summary;
+
+  const _ActivityTransactionsSummaryRow({
+    required this.summary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final baseStyle = TextStyle(
+      color: AppColors.textSecondary(context),
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+    );
+    final accentStyle = baseStyle.copyWith(fontWeight: FontWeight.w600);
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text.rich(
+            TextSpan(
+              style: baseStyle,
+              children: [
+                const TextSpan(text: 'Outgoing '),
+                TextSpan(
+                  text: '-ETB ${_formatEtbAbbrev(summary.totalExpense)}',
+                  style: accentStyle.copyWith(color: AppColors.red),
+                ),
+              ],
+            ),
+          ),
+          Text.rich(
+            TextSpan(
+              style: baseStyle,
+              children: [
+                const TextSpan(text: 'Incoming '),
+                TextSpan(
+                  text: '+ETB ${_formatEtbAbbrev(summary.totalIncome)}',
+                  style: accentStyle.copyWith(color: AppColors.incomeSuccess),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '${_formatCount(summary.totalTransactions)} transaction${summary.totalTransactions == 1 ? '' : 's'}',
+            style: baseStyle,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _AnalyticsCategoryChartPage {
@@ -8338,9 +8444,7 @@ class _AnalyticsSpendingByDayCard extends StatelessWidget {
     final peakDay = _analyticsWeekdayLabel(snapshot.peakWeekdayIndex);
     final periodLabel = snapshot.periodLabel;
     final periodKey = snapshot.periodKey;
-    final infoText = maxValue > 0
-        ? 'Peak: $peakDay'
-        : snapshot.emptyLabel;
+    final infoText = maxValue > 0 ? 'Peak: $peakDay' : snapshot.emptyLabel;
     final titleStyle = TextStyle(
       color: AppColors.textPrimary(context),
       fontSize: 20,
@@ -9346,6 +9450,13 @@ class _DateHeader extends StatelessWidget {
   }
 }
 
+const int _paginationVisiblePageButtonCount = 7;
+const double _paginationPageButtonSize = 34;
+const double _paginationPageButtonHorizontalMargin = 3;
+const double _paginationPageButtonStripWidth =
+    _paginationVisiblePageButtonCount *
+    (_paginationPageButtonSize + (_paginationPageButtonHorizontalMargin * 2));
+
 class _PaginationBar extends StatelessWidget {
   final int currentPage;
   final int totalPages;
@@ -9384,7 +9495,13 @@ class _PaginationBar extends StatelessWidget {
             onTap: () => onPageChanged(currentPage - 1),
           ),
           const SizedBox(width: 8),
-          ..._buildPageButtons(context),
+          SizedBox(
+            width: _paginationPageButtonStripWidth,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: _buildPageButtons(),
+            ),
+          ),
           const SizedBox(width: 8),
           _ArrowButton(
             icon: AppIcons.chevron_right_rounded,
@@ -9396,55 +9513,56 @@ class _PaginationBar extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildPageButtons(BuildContext context) {
+  List<Widget> _buildPageButtons() {
     final pages = <Widget>[];
 
-    // For small page counts, show all pages
-    if (totalPages <= 7) {
+    if (totalPages <= _paginationVisiblePageButtonCount) {
       for (int i = 0; i < totalPages; i++) {
-        pages.add(_PageButton(
-          page: i,
-          isCurrent: i == currentPage,
-          onTap: () => onPageChanged(i),
-        ));
+        pages.add(
+          _PageButton(
+            page: i,
+            isCurrent: i == currentPage,
+            onTap: () => onPageChanged(i),
+          ),
+        );
       }
+
       return pages;
     }
 
-    // For larger counts: 1 ... [current-1] [current] [current+1] ... last
-    // Always show first page
-    pages.add(_PageButton(
-      page: 0,
-      isCurrent: 0 == currentPage,
-      onTap: () => onPageChanged(0),
-    ));
+    const middleVisiblePageButtonCount =
+        _paginationVisiblePageButtonCount - 2;
+    final middleStartPage = math.min(
+      math.max(1, currentPage - (middleVisiblePageButtonCount ~/ 2)),
+      totalPages - middleVisiblePageButtonCount - 1,
+    );
+    final middleEndPage = middleStartPage + middleVisiblePageButtonCount;
 
-    // Left ellipsis
-    if (currentPage > 2) {
-      pages.add(const _Ellipsis());
+    pages.add(
+      _PageButton(
+        page: 0,
+        isCurrent: currentPage == 0,
+        onTap: () => onPageChanged(0),
+      ),
+    );
+
+    for (int i = middleStartPage; i < middleEndPage; i++) {
+      pages.add(
+        _PageButton(
+          page: i,
+          isCurrent: i == currentPage,
+          onTap: () => onPageChanged(i),
+        ),
+      );
     }
 
-    // Pages around current
-    for (int i = currentPage - 1; i <= currentPage + 1; i++) {
-      if (i <= 0 || i >= totalPages - 1) continue;
-      pages.add(_PageButton(
-        page: i,
-        isCurrent: i == currentPage,
-        onTap: () => onPageChanged(i),
-      ));
-    }
-
-    // Right ellipsis
-    if (currentPage < totalPages - 3) {
-      pages.add(const _Ellipsis());
-    }
-
-    // Always show last page
-    pages.add(_PageButton(
-      page: totalPages - 1,
-      isCurrent: (totalPages - 1) == currentPage,
-      onTap: () => onPageChanged(totalPages - 1),
-    ));
+    pages.add(
+      _PageButton(
+        page: totalPages - 1,
+        isCurrent: currentPage == totalPages - 1,
+        onTap: () => onPageChanged(totalPages - 1),
+      ),
+    );
 
     return pages;
   }
@@ -9466,8 +9584,8 @@ class _ArrowButton extends StatelessWidget {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
-        width: 34,
-        height: 34,
+        width: _paginationPageButtonSize,
+        height: _paginationPageButtonSize,
         decoration: BoxDecoration(
           color: enabled
               ? AppColors.primaryLight.withValues(alpha: 0.1)
@@ -9502,9 +9620,11 @@ class _PageButton extends StatelessWidget {
     return GestureDetector(
       onTap: isCurrent ? null : onTap,
       child: Container(
-        width: 34,
-        height: 34,
-        margin: const EdgeInsets.symmetric(horizontal: 3),
+        width: _paginationPageButtonSize,
+        height: _paginationPageButtonSize,
+        margin: const EdgeInsets.symmetric(
+          horizontal: _paginationPageButtonHorizontalMargin,
+        ),
         decoration: BoxDecoration(
           color: isCurrent ? AppColors.primaryLight : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
@@ -9519,28 +9639,6 @@ class _PageButton extends StatelessWidget {
               fontSize: 13,
               fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500,
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Ellipsis extends StatelessWidget {
-  const _Ellipsis();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 28,
-      height: 34,
-      child: Center(
-        child: Text(
-          '...',
-          style: TextStyle(
-            color: AppColors.textTertiary(context),
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
           ),
         ),
       ),

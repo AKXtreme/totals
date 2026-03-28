@@ -201,6 +201,23 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     }
   }
 
+  // Future<void> _sendTestTransactionNotification() async {
+  //   try {
+  //     final shown =
+  //         await NotificationService.instance.showTestTransactionNotification();
+  //
+  //     if (!mounted) return;
+  //     _showSnack(
+  //       shown
+  //           ? 'Test transaction notification sent'
+  //           : 'Unable to send notification',
+  //     );
+  //   } catch (_) {
+  //     if (!mounted) return;
+  //     _showSnack('Failed to send test notification');
+  //   }
+  // }
+
   // ── Helpers ─────────────────────────────────────────────────────────────
 
   List<Category> _categoriesForFlow(String flow) => _allCategories
@@ -610,6 +627,19 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                       activeColor: AppColors.primaryLight,
                     ),
                   ),
+
+                  // _SettingTile(
+                  //   icon: Icons.notification_add_rounded,
+                  //   iconColor: AppColors.primaryLight,
+                  //   title: 'Send test transaction notification',
+                  //   subtitle:
+                  //       'Create a test cash transaction with no sender/receiver and notify now',
+                  //   enabled: _transactionEnabled,
+                  //   showChevron: false,
+                  //   onTap: _transactionEnabled
+                  //       ? _sendTestTransactionNotification
+                  //       : null,
+                  // ),
 
                   _SettingTile(
                     icon: Icons.sms_failed_rounded,

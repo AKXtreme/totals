@@ -214,7 +214,7 @@ class BudgetWidgetProvider : HomeWidgetProvider() {
         val valueColor = ContextCompat.getColor(context, R.color.budget_widget_value)
         val subtleColor = ContextCompat.getColor(context, R.color.budget_widget_subtle)
 
-        val valueTextSize = 16f
+        val valueTextSize = if (mode.fractionVisible) 14f else 13f
 
         for (index in 0 until MAX_BUDGETS) {
             val rowId = rowIds[index]

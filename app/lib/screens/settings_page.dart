@@ -204,7 +204,8 @@ class _SettingsPageState extends State<SettingsPage>
 
   Future<void> _fetchSmsPatterns() async {
     if (_isFetchingSmsPatterns) {
-      print("debug: Legacy settings SMS pattern fetch ignored - already in progress");
+      print(
+          "debug: Legacy settings SMS pattern fetch ignored - already in progress");
       return;
     }
 
@@ -212,7 +213,8 @@ class _SettingsPageState extends State<SettingsPage>
     setState(() => _isFetchingSmsPatterns = true);
     try {
       final count = await _smsConfigService.refreshPatternsFromInternet();
-      print("debug: Legacy settings SMS pattern fetch succeeded with $count patterns");
+      print(
+          "debug: Legacy settings SMS pattern fetch succeeded with $count patterns");
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -723,7 +725,15 @@ class _SettingsPageState extends State<SettingsPage>
     return '${formatted}x';
   }
 
-  int _closestScaleIndex(double value, List<double> options) {
+  String _paddingLabel(double value) {
+    final formatted = value
+        .toStringAsFixed(1)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+    return '${formatted}px';
+  }
+
+  int _closestOptionIndex(double value, List<double> options) {
     int bestIndex = 0;
     double bestDelta = (value - options.first).abs();
     for (int i = 1; i < options.length; i++) {
@@ -739,8 +749,12 @@ class _SettingsPageState extends State<SettingsPage>
   Future<void> _showFontSizeSheet(ThemeProvider themeProvider) async {
     final theme = Theme.of(context);
     final initialScale = themeProvider.uiScale;
-    final options = themeProvider.availableUiScales;
-    int selectedIndex = _closestScaleIndex(initialScale, options);
+    final scaleOptions = themeProvider.availableUiScales;
+    final initialTopPadding = themeProvider.appTopPadding;
+    final paddingOptions = themeProvider.availableAppTopPaddings;
+    int selectedScaleIndex = _closestOptionIndex(initialScale, scaleOptions);
+    int selectedPaddingIndex =
+        _closestOptionIndex(initialTopPadding, paddingOptions);
 
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
@@ -748,12 +762,19 @@ class _SettingsPageState extends State<SettingsPage>
       backgroundColor: Colors.transparent,
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, setSheetState) {
-          final selectedScale = options[selectedIndex];
+          final selectedScale = scaleOptions[selectedScaleIndex];
+          final selectedTopPadding = paddingOptions[selectedPaddingIndex];
 
           Future<void> updateScale(int index) async {
-            if (index == selectedIndex) return;
-            setSheetState(() => selectedIndex = index);
-            await themeProvider.setUiScale(options[index]);
+            if (index == selectedScaleIndex) return;
+            setSheetState(() => selectedScaleIndex = index);
+            await themeProvider.setUiScale(scaleOptions[index]);
+          }
+
+          Future<void> updateTopPadding(int index) async {
+            if (index == selectedPaddingIndex) return;
+            setSheetState(() => selectedPaddingIndex = index);
+            await themeProvider.setAppTopPadding(paddingOptions[index]);
           }
 
           return Container(
@@ -768,118 +789,158 @@ class _SettingsPageState extends State<SettingsPage>
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(20)),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 12, bottom: 16),
-                    width: 40,
-                    height: 4,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 16),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.onSurface.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'Display Size',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Preview and adjust interface scale and top padding.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withOpacity(0.65),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurface.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(2),
+                      color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: theme.colorScheme.outline.withOpacity(0.18),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Preview',
+                          style: TextStyle(
+                            fontSize: 16 * selectedScale,
+                            fontWeight: FontWeight.w700,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Your settings and transaction labels adapt here.',
+                          style: TextStyle(
+                            fontSize: 13 * selectedScale,
+                            color: theme.colorScheme.onSurface.withOpacity(0.8),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Current size: ${_scaleLabel(selectedScale)}',
+                          style: TextStyle(
+                            fontSize: 12 * selectedScale,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Top padding: ${_paddingLabel(selectedTopPadding)}',
+                          style: TextStyle(
+                            fontSize: 12 * selectedScale,
+                            fontWeight: FontWeight.w600,
+                            color:
+                                theme.colorScheme.onSurface.withOpacity(0.72),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                Text(
-                  'Display Size',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
+                  const SizedBox(height: 14),
+                  Slider(
+                    value: selectedScaleIndex.toDouble(),
+                    min: 0,
+                    max: (scaleOptions.length - 1).toDouble(),
+                    divisions: scaleOptions.length - 1,
+                    label: _scaleLabel(selectedScale),
+                    onChanged: (value) => updateScale(value.round()),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Preview and adjust interface scale.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.65),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: theme.colorScheme.outline.withOpacity(0.18),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      Text(
-                        'Preview',
-                        style: TextStyle(
-                          fontSize: 16 * selectedScale,
-                          fontWeight: FontWeight.w700,
-                          color: theme.colorScheme.onSurface,
+                      for (int i = 0; i < scaleOptions.length; i++)
+                        ChoiceChip(
+                          label: Text(_scaleLabel(scaleOptions[i])),
+                          selected: i == selectedScaleIndex,
+                          onSelected: (_) => updateScale(i),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Top Padding',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Add extra space above the app content.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withOpacity(0.65),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (int i = 0; i < paddingOptions.length; i++)
+                        ChoiceChip(
+                          label: Text(_paddingLabel(paddingOptions[i])),
+                          selected: i == selectedPaddingIndex,
+                          onSelected: (_) => updateTopPadding(i),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () =>
+                              Navigator.of(sheetContext).pop(false),
+                          child: const Text('Cancel'),
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Your settings and transaction labels adapt here.',
-                        style: TextStyle(
-                          fontSize: 13 * selectedScale,
-                          color: theme.colorScheme.onSurface.withOpacity(0.8),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Current size: ${_scaleLabel(selectedScale)}',
-                        style: TextStyle(
-                          fontSize: 12 * selectedScale,
-                          fontWeight: FontWeight.w600,
-                          color: theme.colorScheme.primary,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => Navigator.of(sheetContext).pop(true),
+                          child: const Text('Apply'),
                         ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 14),
-                Slider(
-                  value: selectedIndex.toDouble(),
-                  min: 0,
-                  max: (options.length - 1).toDouble(),
-                  divisions: options.length - 1,
-                  label: _scaleLabel(selectedScale),
-                  onChanged: (value) => updateScale(value.round()),
-                ),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (int i = 0; i < options.length; i++)
-                      ChoiceChip(
-                        label: Text(_scaleLabel(options[i])),
-                        selected: i == selectedIndex,
-                        onSelected: (_) => updateScale(i),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(sheetContext).pop(false),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () => Navigator.of(sheetContext).pop(true),
-                        child: const Text('Apply'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-              ],
+                  const SizedBox(height: 4),
+                ],
+              ),
             ),
           );
         },
@@ -888,6 +949,7 @@ class _SettingsPageState extends State<SettingsPage>
 
     if (confirmed != true && mounted) {
       await themeProvider.setUiScale(initialScale);
+      await themeProvider.setAppTopPadding(initialTopPadding);
     }
   }
 
@@ -971,7 +1033,7 @@ class _SettingsPageState extends State<SettingsPage>
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
-                                        themeProvider.uiScaleLabel,
+                                        '${themeProvider.uiScaleLabel} • ${themeProvider.appTopPaddingLabel}',
                                         style:
                                             theme.textTheme.bodySmall?.copyWith(
                                           fontWeight: FontWeight.w600,
