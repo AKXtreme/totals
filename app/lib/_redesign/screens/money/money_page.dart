@@ -9450,7 +9450,7 @@ class _DateHeader extends StatelessWidget {
   }
 }
 
-const int _paginationVisiblePageButtonCount = 7;
+const int _paginationVisiblePageButtonCount = 5;
 const double _paginationPageButtonSize = 34;
 const double _paginationPageButtonHorizontalMargin = 3;
 const double _paginationPageButtonStripWidth =

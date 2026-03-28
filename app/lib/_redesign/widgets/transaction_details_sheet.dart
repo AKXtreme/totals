@@ -763,7 +763,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                         ),
                       ),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 0),
                     ],
                   ),
                 ),
