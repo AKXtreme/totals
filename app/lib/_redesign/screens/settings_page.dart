@@ -1782,33 +1782,117 @@ class _RedesignFAQPage extends StatefulWidget {
 class _RedesignFAQPageState extends State<_RedesignFAQPage> {
   final Map<int, bool> _expanded = {};
 
-  static const List<Map<String, String>> _faqs = [
+  static const _gettingStarted = [
     {
-      'question': 'How do I export my data?',
+      'icon': 'sms',
+      'question': 'How does Totals read my transactions?',
       'answer':
-          'Go to Settings > Export Data. You can choose to save the file directly or share it with other apps.',
+          'Totals reads SMS messages from your bank and automatically '
+          'extracts transaction details like amount, date, and balance.',
     },
     {
+      'icon': 'category',
       'question': 'How do I categorize transactions?',
       'answer':
-          'Tap on any transaction in your transaction list and select a category from the list that appears.',
+          'Tap any transaction to open its details, then choose a category. '
+          'Totals will remember and auto-categorize future transactions '
+          'to the same recipient.',
     },
     {
-      'question': 'Can I import data from another device?',
+      'icon': 'account',
+      'question': 'Can I track multiple bank accounts?',
       'answer':
-          'Yes! Use the Export Data feature to create a backup file, then use Import Data on your other device to restore it.',
-    },
-    {
-      'question': 'My SMS is not parsed. How can I parse it?',
-      'answer':
-          'Open the Failed Parses page and retry parsing the message from there. It is the button next to the lock button on the home page.',
-    },
-    {
-      'question': 'Skipped a transaction today?',
-      'answer':
-          "In Today's transactions, tap the refresh button to rescan today's bank SMS to add anything that was missed.",
+          'Yes. Totals automatically detects accounts from your SMS and '
+          'tracks each one separately. You can view balances and '
+          'transactions per account.',
     },
   ];
+
+  static const _dataManagement = [
+    {
+      'icon': 'export',
+      'question': 'How do I export my data?',
+      'answer':
+          'Go to Settings > Export Data. You can save the file directly '
+          'or share it with other apps.',
+    },
+    {
+      'icon': 'import',
+      'question': 'Can I import data from another device?',
+      'answer':
+          'Yes. Use Export Data to create a backup, then use Import Data '
+          'on your other device to restore it.',
+    },
+    {
+      'icon': 'failed',
+      'question': 'My SMS was not parsed. What can I do?',
+      'answer':
+          'Open the Failed Parses page from the home screen. You can '
+          'retry parsing from there. If it still fails, the bank format '
+          'may not be supported yet.',
+    },
+  ];
+
+  static const _tips = [
+    {
+      'icon': 'refresh',
+      'question': 'Missed a transaction today?',
+      'answer':
+          "In Today's transactions, tap the refresh button to rescan "
+          "today's bank SMS and pick up anything that was missed.",
+    },
+    {
+      'icon': 'budget',
+      'question': 'How do budgets work?',
+      'answer':
+          'Create a budget in the Budget tab with a spending limit and '
+          'time period. Totals tracks your spending against it and '
+          'notifies you when you are close to your limit.',
+    },
+    {
+      'icon': 'lock',
+      'question': 'How do I lock the app?',
+      'answer':
+          'Double-tap the lock icon on the home screen to instantly '
+          'lock the app. You will need to authenticate to get back in.',
+    },
+    {
+      'icon': 'gesture',
+      'question': 'Are there any shortcuts?',
+      'answer':
+          'Long-press the bottom navigation bar items for quick actions. '
+          'Long-press Money to add a cash transaction, long-press Tools '
+          'to open your quick-access accounts, and long-press You to '
+          'switch between profiles.',
+    },
+  ];
+
+  IconData _iconForKey(String key) {
+    switch (key) {
+      case 'sms':
+        return AppIcons.sms_outlined;
+      case 'category':
+        return AppIcons.category;
+      case 'account':
+        return AppIcons.account_balance_outlined;
+      case 'lock':
+        return AppIcons.lock_outline_rounded;
+      case 'gesture':
+        return AppIcons.bolt_rounded;
+      case 'export':
+        return AppIcons.upload_rounded;
+      case 'import':
+        return AppIcons.download_rounded;
+      case 'failed':
+        return AppIcons.info_outline_rounded;
+      case 'refresh':
+        return AppIcons.refresh;
+      case 'budget':
+        return AppIcons.savings_outlined;
+      default:
+        return AppIcons.help_outline_rounded;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1839,164 +1923,52 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Intro card
+            // ── GETTING STARTED ──
+            _sectionHeader(theme, 'GETTING STARTED'),
+            ..._buildFaqItems(_gettingStarted, 0),
+
+            const SizedBox(height: 28),
+
+            // ── DATA & BACKUPS ──
+            _sectionHeader(theme, 'DATA & BACKUPS'),
+            ..._buildFaqItems(_dataManagement, _gettingStarted.length),
+
+            const SizedBox(height: 28),
+
+            // ── TIPS ──
+            _sectionHeader(theme, 'TIPS'),
+            ..._buildFaqItems(
+                _tips, _gettingStarted.length + _dataManagement.length),
+
+            const SizedBox(height: 28),
+
+            // ── Contact ──
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: AppColors.cardColor(context),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.borderColor(context)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      AppIcons.help_outline_rounded,
-                      color: AppColors.primaryLight,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Quick answers',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary(context),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Tap a question to reveal the details.',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary(context),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // FAQ items
-            ...List.generate(_faqs.length, (i) {
-              final isExpanded = _expanded[i] ?? false;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Material(
-                  color: AppColors.cardColor(context),
-                  borderRadius: BorderRadius.circular(14),
-                  child: InkWell(
-                    onTap: () => setState(() => _expanded[i] = !isExpanded),
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border:
-                            Border.all(color: AppColors.borderColor(context)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                width: 28,
-                                height: 28,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primaryLight
-                                      .withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  '${i + 1}',
-                                  style: const TextStyle(
-                                    color: AppColors.primaryLight,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  _faqs[i]['question']!,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary(context),
-                                    height: 1.3,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              AnimatedRotation(
-                                turns: isExpanded ? 0.5 : 0,
-                                duration: const Duration(milliseconds: 200),
-                                child: Icon(
-                                  AppIcons.keyboard_arrow_down,
-                                  color: AppColors.primaryLight,
-                                  size: 22,
-                                ),
-                              ),
-                            ],
-                          ),
-                          AnimatedCrossFade(
-                            firstChild: const SizedBox.shrink(),
-                            secondChild: Padding(
-                              padding: const EdgeInsets.only(
-                                  left: 40, top: 10, right: 4),
-                              child: Text(
-                                _faqs[i]['answer']!,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: AppColors.textSecondary(context),
-                                  height: 1.5,
-                                ),
-                              ),
-                            ),
-                            crossFadeState: isExpanded
-                                ? CrossFadeState.showSecond
-                                : CrossFadeState.showFirst,
-                            duration: const Duration(milliseconds: 200),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
-
-            const SizedBox(height: 16),
-
-            // Contact card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: AppColors.cardColor(context),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: AppColors.borderColor(context)),
               ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      AppIcons.sms_outlined,
+                      color: AppColors.primaryLight,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   Text(
                     'Still need help?',
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -2004,10 +1976,10 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
                       color: AppColors.textPrimary(context),
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                   Text(
-                    'Reach out to detached and we will point you in the '
-                    'right direction.',
+                    'Reach out and we will point you in the right direction.',
+                    textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: AppColors.textSecondary(context),
                       height: 1.4,
@@ -2035,9 +2007,116 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
                 ],
               ),
             ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
+  }
+
+  Widget _sectionHeader(ThemeData theme, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 14),
+      child: Text(
+        title,
+        style: theme.textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
+          color: AppColors.textSecondary(context),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildFaqItems(
+      List<Map<String, String>> items, int indexOffset) {
+    final theme = Theme.of(context);
+    return List.generate(items.length, (i) {
+      final globalIndex = indexOffset + i;
+      final isExpanded = _expanded[globalIndex] ?? false;
+      final item = items[i];
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Material(
+          color: AppColors.cardColor(context),
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            onTap: () =>
+                setState(() => _expanded[globalIndex] = !isExpanded),
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.borderColor(context)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryLight
+                              .withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          _iconForKey(item['icon']!),
+                          color: AppColors.primaryLight,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          item['question']!,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary(context),
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      AnimatedRotation(
+                        turns: isExpanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 200),
+                        child: Icon(
+                          AppIcons.keyboard_arrow_down,
+                          color: AppColors.textSecondary(context),
+                          size: 20,
+                        ),
+                      ),
+                    ],
+                  ),
+                  AnimatedCrossFade(
+                    firstChild: const SizedBox.shrink(),
+                    secondChild: Padding(
+                      padding:
+                          const EdgeInsets.only(left: 48, top: 8, right: 4),
+                      child: Text(
+                        item['answer']!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary(context),
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                    crossFadeState: isExpanded
+                        ? CrossFadeState.showSecond
+                        : CrossFadeState.showFirst,
+                    duration: const Duration(milliseconds: 200),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    });
   }
 }
