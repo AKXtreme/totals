@@ -331,30 +331,6 @@ class WidgetService {
     return true;
   }
 
-  static Future<int> getInstalledBudgetWidgetCount() async {
-    try {
-      final widgets = await HomeWidget.getInstalledWidgets();
-      return widgets.where(_isInstalledBudgetWidget).length;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  static Future<bool> isBudgetWidgetPinSupported() async {
-    return await HomeWidget.isRequestPinWidgetSupported() ?? false;
-  }
-
-  static Future<bool> requestBudgetWidgetPinIfNeeded() async {
-    final installedCount = await getInstalledBudgetWidgetCount();
-    if (installedCount > 0) return false;
-
-    final supported = await isBudgetWidgetPinSupported();
-    if (!supported) return false;
-
-    await HomeWidget.requestPinWidget(androidName: budgetAndroidWidgetName);
-    return true;
-  }
-
   static bool _isInstalledBudgetWidget(HomeWidgetInfo widget) {
     final className = widget.androidClassName?.trim();
     return className == budgetAndroidWidgetQualifiedName ||

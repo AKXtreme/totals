@@ -360,14 +360,21 @@ class RedesignBudgetPageState extends State<RedesignBudgetPage> {
           }
         }
 
-        return Scaffold(
-          backgroundColor: AppColors.background(context),
-          body: SafeArea(
-            child: _detailBudget != null
-                ? _buildDetailView(context, _detailBudget!, debits,
-                    budgetProvider, transactionProvider)
-                : _buildListView(context, budgets, debits, budgetProvider,
-                    transactionProvider),
+        return PopScope<void>(
+          canPop: _detailBudget == null,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop || _detailBudget == null || !mounted) return;
+            setState(() => _detailBudget = null);
+          },
+          child: Scaffold(
+            backgroundColor: AppColors.background(context),
+            body: SafeArea(
+              child: _detailBudget != null
+                  ? _buildDetailView(context, _detailBudget!, debits,
+                      budgetProvider, transactionProvider)
+                  : _buildListView(context, budgets, debits, budgetProvider,
+                      transactionProvider),
+            ),
           ),
         );
       },
@@ -1837,11 +1844,7 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     );
     switch (addResult) {
       case BudgetWidgetSelectionResult.added:
-        final pinRequested =
-            await WidgetService.requestBudgetWidgetPinIfNeeded();
-        return pinRequested
-            ? 'Budget saved. Add the widget to your homescreen if prompted.'
-            : null;
+        return null;
       case BudgetWidgetSelectionResult.alreadySelected:
         return null;
       case BudgetWidgetSelectionResult.limitReached:
@@ -1891,6 +1894,24 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
         curve: Curves.easeOut,
       );
     });
+  }
+
+  void _dismissKeyboardOnOutsideTap(PointerDownEvent event) {
+    final focusedNode = FocusManager.instance.primaryFocus;
+    final focusedContext = focusedNode?.context;
+    if (focusedNode == null || focusedContext == null) return;
+
+    final renderObject = focusedContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      focusedNode.unfocus();
+      return;
+    }
+
+    final focusedBounds =
+        renderObject.localToGlobal(Offset.zero) & renderObject.size;
+    if (!focusedBounds.contains(event.position)) {
+      focusedNode.unfocus();
+    }
   }
 
   Future<void> _createCategoryInline() async {
@@ -2102,439 +2123,238 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
     }
     _lastKeyboardInset = bottomInset;
 
-    return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.9,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.background(context),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.textTertiary(context),
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(
-                children: [
-                  Text(
-                    _isEdit ? 'Edit Budget' : 'Create Budget',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary(context),
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(AppIcons.close),
-                  ),
-                ],
-              ),
-            ),
-            Divider(height: 1, color: AppColors.borderColor(context)),
-            Flexible(
-              child: SingleChildScrollView(
-                controller: _formScrollController,
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  16,
-                  16,
-                  24 + bottomInset + keyboardScrollBuffer,
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _dismissKeyboardOnOutsideTap,
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.9,
+        ),
+        decoration: BoxDecoration(
+          color: AppColors.background(context),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.textTertiary(context),
+                  borderRadius: BorderRadius.circular(999),
                 ),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Name
-                      Text(
-                        'Name',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: AppColors.textSecondary(context),
-                          fontWeight: FontWeight.w600,
-                        ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Row(
+                  children: [
+                    Text(
+                      _isEdit ? 'Edit Budget' : 'Create Budget',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary(context),
                       ),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _nameController,
-                        decoration:
-                            _inputDecoration(context, 'e.g. Monthly groceries'),
-                        validator: (v) =>
-                            (v == null || v.trim().isEmpty) ? 'Required' : null,
-                      ),
-                      const SizedBox(height: 16),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(AppIcons.close),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: AppColors.borderColor(context)),
+              Flexible(
+                child: SingleChildScrollView(
+                  controller: _formScrollController,
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    16,
+                    16,
+                    24 + bottomInset + keyboardScrollBuffer,
+                  ),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Name
+                        Text(
+                          'Name',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: AppColors.textSecondary(context),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _nameController,
+                          decoration: _inputDecoration(
+                              context, 'e.g. Monthly groceries'),
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? 'Required'
+                              : null,
+                        ),
+                        const SizedBox(height: 16),
 
-                      // Amount
-                      Text(
-                        'Amount',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: AppColors.textSecondary(context),
-                          fontWeight: FontWeight.w600,
+                        // Amount
+                        Text(
+                          'Amount',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: AppColors.textSecondary(context),
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _amountController,
-                        keyboardType: TextInputType.number,
-                        decoration: _inputDecoration(context, '0').copyWith(
-                          prefixText: 'ETB  ',
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _amountController,
+                          keyboardType: TextInputType.number,
+                          decoration: _inputDecoration(context, '0').copyWith(
+                            prefixText: 'ETB  ',
+                          ),
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty)
+                              return 'Required';
+                            final n = double.tryParse(v.trim());
+                            if (n == null || n <= 0) {
+                              return 'Enter a valid amount';
+                            }
+                            return null;
+                          },
                         ),
-                        validator: (v) {
-                          if (v == null || v.trim().isEmpty) return 'Required';
-                          final n = double.tryParse(v.trim());
-                          if (n == null || n <= 0) {
-                            return 'Enter a valid amount';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 16),
 
-                      // Group (Needs / Wants)
-                      Text(
-                        'Group',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: AppColors.textSecondary(context),
-                          fontWeight: FontWeight.w600,
+                        // Group (Needs / Wants)
+                        Text(
+                          'Group',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: AppColors.textSecondary(context),
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      _GroupToggle(
-                        selected: _selectedGroup,
-                        onChanged: (v) {
-                          _newCategoryFocus.unfocus();
-                          setState(() {
-                            _selectedGroup = v;
-                            _showNewCategoryComposer = false;
-                            _showCategoryColorChoices = false;
-                            _newCategoryController.clear();
-                            // Keep only categories valid for the new group.
-                            final allowedIds = _filteredCategories
-                                .map((c) => c.id)
-                                .whereType<int>()
-                                .toSet();
-                            _selectedCategoryIds
-                                .removeWhere((id) => !allowedIds.contains(id));
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 6),
+                        _GroupToggle(
+                          selected: _selectedGroup,
+                          onChanged: (v) {
+                            _newCategoryFocus.unfocus();
+                            setState(() {
+                              _selectedGroup = v;
+                              _showNewCategoryComposer = false;
+                              _showCategoryColorChoices = false;
+                              _newCategoryController.clear();
+                              // Keep only categories valid for the new group.
+                              final allowedIds = _filteredCategories
+                                  .map((c) => c.id)
+                                  .whereType<int>()
+                                  .toSet();
+                              _selectedCategoryIds.removeWhere(
+                                  (id) => !allowedIds.contains(id));
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
 
-                      // // Period
-                      // Text(
-                      //   'Period',
-                      //   style: theme.textTheme.labelMedium?.copyWith(
-                      //     color: AppColors.textSecondary(context),
-                      //     fontWeight: FontWeight.w600,
-                      //   ),
-                      // ),
-                      // const SizedBox(height: 6),
-                      // _PeriodToggle(
-                      //   selected: _selectedPeriod,
-                      //   onChanged: (v) =>
-                      //       setState(() => _selectedPeriod = v),
-                      // ),
-                      // const SizedBox(height: 16),
+                        // // Period
+                        // Text(
+                        //   'Period',
+                        //   style: theme.textTheme.labelMedium?.copyWith(
+                        //     color: AppColors.textSecondary(context),
+                        //     fontWeight: FontWeight.w600,
+                        //   ),
+                        // ),
+                        // const SizedBox(height: 6),
+                        // _PeriodToggle(
+                        //   selected: _selectedPeriod,
+                        //   onChanged: (v) =>
+                        //       setState(() => _selectedPeriod = v),
+                        // ),
+                        // const SizedBox(height: 16),
 
-                      // Category
-                      Text(
-                        'Categories (optional)',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: AppColors.textSecondary(context),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _CategoryChipButton(
-                            label: 'None',
-                            color: AppColors.textTertiary(context),
-                            selected: _selectedCategoryIds.isEmpty,
-                            showColorDot: false,
-                            onTap: () =>
-                                setState(() => _selectedCategoryIds.clear()),
-                          ),
-                          ...expenseCategories.map((cat) {
-                            final catId = cat.id;
-                            final isSelected = catId != null &&
-                                _selectedCategoryIds.contains(catId);
-                            return _CategoryChipButton(
-                              label: cat.name,
-                              color: _categoryChipColor(cat),
-                              selected: isSelected,
-                              onTap: () {
-                                if (catId == null) return;
-                                setState(() {
-                                  if (isSelected) {
-                                    _selectedCategoryIds.remove(catId);
-                                  } else {
-                                    _selectedCategoryIds.add(catId);
-                                  }
-                                });
-                              },
-                            );
-                          }),
-                          _CategoryChipButton(
-                            label:
-                                _showNewCategoryComposer ? 'Cancel' : '+ New',
-                            color: _showNewCategoryComposer
-                                ? AppColors.red
-                                : AppColors.textSecondary(context),
-                            selected: false,
-                            showColorDot: false,
-                            isAction: true,
-                            onTap: _toggleNewCategoryComposer,
-                          ),
-                        ],
-                      ),
-                      if (_showNewCategoryComposer) _buildNewCategoryComposer(),
-                      const SizedBox(height: 16),
-
-                      if (!_isEdit) ...[
-                        Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceColor(context),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: SwitchListTile(
-                            title: Text(
-                              'Only for $selectedMonthLabel',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: AppColors.textPrimary(context),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            subtitle: Text(
-                              'Keep this budget unique to this month only',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: AppColors.textSecondary(context),
-                              ),
-                            ),
-                            value: _uniqueToSelectedMonth,
-                            onChanged: (v) =>
-                                setState(() => _uniqueToSelectedMonth = v),
-                            activeColor: AppColors.primaryLight,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 12),
+                        // Category
+                        Text(
+                          'Categories (optional)',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: AppColors.textSecondary(context),
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 12),
-                      ],
-
-                      if (_isEdit && _hasFutureBudgetsToUpdate) ...[
-                        Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceColor(context),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: SwitchListTile(
-                            title: Text(
-                              'Make $selectedMonthLabel the last month',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: AppColors.textPrimary(context),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            subtitle: Text(
-                              'Stop this recurring budget after this month',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: AppColors.textSecondary(context),
-                              ),
-                            ),
-                            value: _endRecurringAtSelectedMonth,
-                            onChanged: (v) => setState(
-                                () => _endRecurringAtSelectedMonth = v),
-                            activeColor: AppColors.primaryLight,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 12),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-
-                      if (_isEdit && _isSingleMonthBudgetInSelectedMonth) ...[
-                        Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceColor(context),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: SwitchListTile(
-                            title: Text(
-                              'Create for future months too',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: AppColors.textPrimary(context),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            subtitle: Text(
-                              'Turn this into a recurring budget',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: AppColors.textSecondary(context),
-                              ),
-                            ),
-                            value: _createFutureBudgets,
-                            onChanged: (v) =>
-                                setState(() => _createFutureBudgets = v),
-                            activeColor: AppColors.primaryLight,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 12),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-
-                      if (_isEdit && _hasFutureBudgetsToUpdate) ...[
-                        Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceColor(context),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: SwitchListTile(
-                            title: Text(
-                              'Apply to future budgets too',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: AppColors.textPrimary(context),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            subtitle: Text(
-                              'Turn off to change only $selectedMonthLabel',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: AppColors.textSecondary(context),
-                              ),
-                            ),
-                            value: _applyToFutureBudgets,
-                            onChanged: _endRecurringAtSelectedMonth
-                                ? null
-                                : (v) =>
-                                    setState(() => _applyToFutureBudgets = v),
-                            activeColor: AppColors.primaryLight,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 12),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-
-                      // Alert threshold
-                      Text(
-                        'Alert threshold',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: AppColors.textSecondary(context),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _alertController,
-                        keyboardType: TextInputType.number,
-                        decoration: _inputDecoration(context, '80').copyWith(
-                          suffixText: '%',
-                        ),
-                        validator: (v) {
-                          if (v == null || v.trim().isEmpty) return 'Required';
-                          final n = double.tryParse(v.trim());
-                          if (n == null || n < 1 || n > 100) return '1-100';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Rollover
-                      Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceColor(context),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: SwitchListTile(
-                          title: Text(
-                            'Rollover unused budget',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: AppColors.textPrimary(context),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          subtitle: Text(
-                            'Carry remaining budget to the next period',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary(context),
-                            ),
-                          ),
-                          value: _rollover,
-                          onChanged: (v) => setState(() => _rollover = v),
-                          activeColor: AppColors.primaryLight,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 12),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceColor(context),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
-                            SwitchListTile(
+                            _CategoryChipButton(
+                              label: 'None',
+                              color: AppColors.textTertiary(context),
+                              selected: _selectedCategoryIds.isEmpty,
+                              showColorDot: false,
+                              onTap: () =>
+                                  setState(() => _selectedCategoryIds.clear()),
+                            ),
+                            ...expenseCategories.map((cat) {
+                              final catId = cat.id;
+                              final isSelected = catId != null &&
+                                  _selectedCategoryIds.contains(catId);
+                              return _CategoryChipButton(
+                                label: cat.name,
+                                color: _categoryChipColor(cat),
+                                selected: isSelected,
+                                onTap: () {
+                                  if (catId == null) return;
+                                  setState(() {
+                                    if (isSelected) {
+                                      _selectedCategoryIds.remove(catId);
+                                    } else {
+                                      _selectedCategoryIds.add(catId);
+                                    }
+                                  });
+                                },
+                              );
+                            }),
+                            _CategoryChipButton(
+                              label:
+                                  _showNewCategoryComposer ? 'Cancel' : '+ New',
+                              color: _showNewCategoryComposer
+                                  ? AppColors.red
+                                  : AppColors.textSecondary(context),
+                              selected: false,
+                              showColorDot: false,
+                              isAction: true,
+                              onTap: _toggleNewCategoryComposer,
+                            ),
+                          ],
+                        ),
+                        if (_showNewCategoryComposer)
+                          _buildNewCategoryComposer(),
+                        const SizedBox(height: 16),
+
+                        if (!_isEdit) ...[
+                          Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceColor(context),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: SwitchListTile(
                               title: Text(
-                                'Show on homescreen widget',
+                                'Only for $selectedMonthLabel',
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   color: AppColors.textPrimary(context),
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
                               subtitle: Text(
-                                _isHomescreenWidgetStateLoading
-                                    ? 'Checking available widget spots...'
-                                    : '${_draftWidgetSpotsLeft.toInt()} ${_draftWidgetSpotsLeft == 1 ? 'spot' : 'spots'} left on the homescreen widget',
+                                'Keep this budget unique to this month only',
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: AppColors.textSecondary(context),
                                 ),
                               ),
-                              value: _showOnHomescreenWidget,
-                              onChanged: _isHomescreenWidgetStateLoading ||
-                                      _isSaving
-                                  ? null
-                                  : (value) {
-                                      if (value &&
-                                          !_canEnableHomescreenWidgetToggle) {
-                                        return;
-                                      }
-                                      setState(
-                                        () => _showOnHomescreenWidget = value,
-                                      );
-                                    },
+                              value: _uniqueToSelectedMonth,
+                              onChanged: (v) =>
+                                  setState(() => _uniqueToSelectedMonth = v),
                               activeColor: AppColors.primaryLight,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -2542,80 +2362,290 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
                               contentPadding:
                                   const EdgeInsets.symmetric(horizontal: 12),
                             ),
-                            AnimatedSize(
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeOut,
-                              child: _showOnHomescreenWidget
-                                  ? _buildHomescreenWidgetStyleSection(theme)
-                                  : const SizedBox.shrink(),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Save button
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _isSaving ? null : _save,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primaryDark,
-                            foregroundColor: AppColors.white,
-                            disabledBackgroundColor:
-                                AppColors.primaryDark.withValues(alpha: 0.5),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            elevation: 0,
                           ),
-                          child: _isSaving
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.white,
-                                  ),
-                                )
-                              : Text(
-                                  _isEdit ? 'Save Changes' : 'Create Budget',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600),
-                                ),
-                        ),
-                      ),
+                          const SizedBox(height: 12),
+                        ],
 
-                      if (_isEdit) ...[
-                        const SizedBox(height: 10),
+                        if (_isEdit && _hasFutureBudgetsToUpdate) ...[
+                          Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceColor(context),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: SwitchListTile(
+                              title: Text(
+                                'Make $selectedMonthLabel the last month',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: AppColors.textPrimary(context),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              subtitle: Text(
+                                'Stop this recurring budget after this month',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: AppColors.textSecondary(context),
+                                ),
+                              ),
+                              value: _endRecurringAtSelectedMonth,
+                              onChanged: (v) => setState(
+                                  () => _endRecurringAtSelectedMonth = v),
+                              activeColor: AppColors.primaryLight,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+
+                        if (_isEdit && _isSingleMonthBudgetInSelectedMonth) ...[
+                          Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceColor(context),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: SwitchListTile(
+                              title: Text(
+                                'Create for future months too',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: AppColors.textPrimary(context),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              subtitle: Text(
+                                'Turn this into a recurring budget',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: AppColors.textSecondary(context),
+                                ),
+                              ),
+                              value: _createFutureBudgets,
+                              onChanged: (v) =>
+                                  setState(() => _createFutureBudgets = v),
+                              activeColor: AppColors.primaryLight,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+
+                        if (_isEdit && _hasFutureBudgetsToUpdate) ...[
+                          Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceColor(context),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: SwitchListTile(
+                              title: Text(
+                                'Apply to future budgets too',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: AppColors.textPrimary(context),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              subtitle: Text(
+                                'Turn off to change only $selectedMonthLabel',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: AppColors.textSecondary(context),
+                                ),
+                              ),
+                              value: _applyToFutureBudgets,
+                              onChanged: _endRecurringAtSelectedMonth
+                                  ? null
+                                  : (v) =>
+                                      setState(() => _applyToFutureBudgets = v),
+                              activeColor: AppColors.primaryLight,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+
+                        // Alert threshold
+                        Text(
+                          'Alert threshold',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: AppColors.textSecondary(context),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _alertController,
+                          keyboardType: TextInputType.number,
+                          decoration: _inputDecoration(context, '80').copyWith(
+                            suffixText: '%',
+                          ),
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty)
+                              return 'Required';
+                            final n = double.tryParse(v.trim());
+                            if (n == null || n < 1 || n > 100) return '1-100';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Rollover
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceColor(context),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: SwitchListTile(
+                            title: Text(
+                              'Rollover unused budget',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.textPrimary(context),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Carry remaining budget to the next period',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppColors.textSecondary(context),
+                              ),
+                            ),
+                            value: _rollover,
+                            onChanged: (v) => setState(() => _rollover = v),
+                            activeColor: AppColors.primaryLight,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceColor(context),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            children: [
+                              SwitchListTile(
+                                title: Text(
+                                  'Show on homescreen widget',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: AppColors.textPrimary(context),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  _isHomescreenWidgetStateLoading
+                                      ? 'Checking available widget spots...'
+                                      : '${_draftWidgetSpotsLeft.toInt()} ${_draftWidgetSpotsLeft == 1 ? 'spot' : 'spots'} left on the homescreen widget',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: AppColors.textSecondary(context),
+                                  ),
+                                ),
+                                value: _showOnHomescreenWidget,
+                                onChanged: _isHomescreenWidgetStateLoading ||
+                                        _isSaving
+                                    ? null
+                                    : (value) {
+                                        if (value &&
+                                            !_canEnableHomescreenWidgetToggle) {
+                                          return;
+                                        }
+                                        setState(
+                                          () => _showOnHomescreenWidget = value,
+                                        );
+                                      },
+                                activeColor: AppColors.primaryLight,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                contentPadding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
+                              ),
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOut,
+                                child: _showOnHomescreenWidget
+                                    ? _buildHomescreenWidgetStyleSection(theme)
+                                    : const SizedBox.shrink(),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Save button
                         SizedBox(
                           width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: _isSaving ? null : _delete,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.red,
-                              side: BorderSide(
-                                color: AppColors.red.withValues(alpha: 0.4),
-                              ),
+                          child: ElevatedButton(
+                            onPressed: _isSaving ? null : _save,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryDark,
+                              foregroundColor: AppColors.white,
+                              disabledBackgroundColor:
+                                  AppColors.primaryDark.withValues(alpha: 0.5),
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
+                              elevation: 0,
                             ),
-                            child: const Text(
-                              'Delete budget',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
+                            child: _isSaving
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppColors.white,
+                                    ),
+                                  )
+                                : Text(
+                                    _isEdit ? 'Save Changes' : 'Create Budget',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600),
+                                  ),
                           ),
                         ),
+
+                        if (_isEdit) ...[
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              onPressed: _isSaving ? null : _delete,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.red,
+                                side: BorderSide(
+                                  color: AppColors.red.withValues(alpha: 0.4),
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              child: const Text(
+                                'Delete budget',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -2870,15 +2900,34 @@ class _NewBudgetFormSheetState extends State<_NewBudgetFormSheet> {
         savedBudget = await widget.budgetProvider.createBudget(budget);
       }
 
-      final widgetFeedback = await _syncHomescreenWidgetSelection(savedBudget);
+      String? widgetFeedback;
+      try {
+        widgetFeedback = await _syncHomescreenWidgetSelection(savedBudget);
+      } catch (error, stackTrace) {
+        debugPrint(
+          'debug: Error syncing homescreen widget after saving budget: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+        widgetFeedback =
+            'Budget saved, but the homescreen widget could not be updated.';
+      }
+
       if (!mounted) return;
+      final navigator = Navigator.of(context);
+      final messenger = ScaffoldMessenger.of(context);
+      navigator.pop();
       if (widgetFeedback != null && widgetFeedback.trim().isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(content: Text(widgetFeedback)),
         );
       }
-      Navigator.of(context).pop();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('debug: Error saving budget: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save budget')),
+      );
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
