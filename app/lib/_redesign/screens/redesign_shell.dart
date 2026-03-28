@@ -953,27 +953,56 @@ class _QuickAccessAccountsSheetState extends State<_QuickAccessAccountsSheet>
                     ],
                   ),
                   const SizedBox(height: 18),
-                  AnimatedBuilder(
-                    animation: _tabController.animation!,
-                    builder: (context, child) {
-                      final tabProgress = (_tabController.animation!.value)
-                          .clamp(0.0, 1.0)
-                          .toDouble();
-                      return _AccountHubTabBar(
-                        animationValue: tabProgress,
-                        onTabChanged: (index) {
-                          if (index != 0) {
-                            FocusScope.of(context).unfocus();
-                          }
-                          _tabController.animateTo(index);
-                        },
-                      );
-                    },
+                  Container(
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color:
+                          AppColors.mutedFill(context).withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.all(3),
+                    child: TabBar(
+                      controller: _tabController,
+                      indicator: BoxDecoration(
+                        color: AppColors.primaryDark,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primaryDark.withValues(alpha: 0.2),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      dividerColor: Colors.transparent,
+                      labelColor: Colors.white,
+                      unselectedLabelColor: AppColors.textSecondary(context),
+                      labelStyle: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                      unselectedLabelStyle: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                      padding: EdgeInsets.zero,
+                      labelPadding: EdgeInsets.zero,
+                      splashBorderRadius: BorderRadius.circular(8),
+                      onTap: (index) {
+                        if (index != 0) {
+                          FocusScope.of(context).unfocus();
+                        }
+                      },
+                      tabs: const [
+                        Tab(height: 34, text: 'Quick'),
+                        Tab(height: 34, text: 'Mine'),
+                      ],
+                    ),
                   ),
                   Expanded(
                     child: TabBarView(
                       controller: _tabController,
-                      physics: const PageScrollPhysics(),
                       children: [
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1279,110 +1308,6 @@ class _AccountsQrCard extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _AccountHubTabBar extends StatelessWidget {
-  final double animationValue;
-  final ValueChanged<int> onTabChanged;
-
-  const _AccountHubTabBar({
-    required this.animationValue,
-    required this.onTabChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.mutedFill(context).withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      padding: const EdgeInsets.all(3),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final segmentWidth = (constraints.maxWidth - 6) / 2;
-
-          return Stack(
-            children: [
-              Positioned(
-                left: segmentWidth * animationValue,
-                top: 0,
-                bottom: 0,
-                width: segmentWidth,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryDark,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primaryDark.withValues(alpha: 0.2),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: _AccountHubTabButton(
-                      label: 'Quick',
-                      selectionAmount: 1 - animationValue,
-                      onTap: () => onTabChanged(0),
-                    ),
-                  ),
-                  Expanded(
-                    child: _AccountHubTabButton(
-                      label: 'Mine',
-                      selectionAmount: animationValue,
-                      onTap: () => onTabChanged(1),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _AccountHubTabButton extends StatelessWidget {
-  final String label;
-  final double selectionAmount;
-  final VoidCallback onTap;
-
-  const _AccountHubTabButton({
-    required this.label,
-    required this.selectionAmount,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final clampedSelection = selectionAmount.clamp(0.0, 1.0).toDouble();
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            color: Color.lerp(
-              AppColors.textSecondary(context),
-              Colors.white,
-              clampedSelection,
-            ),
-            fontWeight: FontWeight.w600,
-          ),
-        ),
       ),
     );
   }

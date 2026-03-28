@@ -992,62 +992,62 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
             // Icon picker
             _buildLabel(context, 'Icon'),
             const SizedBox(height: 10),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                const itemSize = 42.0;
-                const gap = 8.0;
-                final rawCount =
-                    ((constraints.maxWidth + gap) / (itemSize + gap)).floor();
-                final crossAxisCount = rawCount.clamp(3, 8);
-
-                return GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: categoryIconOptions.length,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxisCount,
-                    mainAxisSpacing: gap,
-                    crossAxisSpacing: gap,
-                    mainAxisExtent: itemSize,
-                  ),
-                  itemBuilder: (context, index) {
-                    final option = categoryIconOptions[index];
-                    final selected = _iconKey == option.key;
-                    return Tooltip(
-                      message: option.label,
-                      child: Material(
-                        color: selected
-                            ? selectedCategoryColor.withValues(alpha: 0.16)
-                            : AppColors.surfaceColor(context),
+            SizedBox(
+              height: 92,
+              child: GridView.builder(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                itemCount: categoryIconOptions.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  mainAxisExtent: 42,
+                ),
+                itemBuilder: (context, index) {
+                  final option = categoryIconOptions[index];
+                  final selected = _iconKey == option.key;
+                  return Tooltip(
+                    message: option.label,
+                    child: Material(
+                      color: selected
+                          ? selectedCategoryColor.withValues(alpha: 0.15)
+                          : AppColors.surfaceColor(context),
+                      borderRadius: BorderRadius.circular(10),
+                      child: InkWell(
                         borderRadius: BorderRadius.circular(10),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(10),
-                          onTap: () => setState(() => _iconKey = option.key),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: selected
-                                    ? selectedCategoryColor
-                                    : AppColors.borderColor(context),
-                                width: selected ? 2 : 1,
-                              ),
-                            ),
-                            alignment: Alignment.center,
-                            child: Icon(
-                              option.icon,
-                              size: 20,
+                        onTap: () => setState(() => _iconKey = option.key),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
                               color: selected
                                   ? selectedCategoryColor
-                                  : AppColors.textSecondary(context),
+                                  : AppColors.borderColor(context),
+                              width: selected ? 2 : 1,
                             ),
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            option.icon,
+                            size: 20,
+                            color: selected
+                                ? selectedCategoryColor
+                                : AppColors.textSecondary(context),
                           ),
                         ),
                       ),
-                    );
-                  },
-                );
-              },
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Swipe sideways to see more icons.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppColors.textSecondary(context),
+              ),
             ),
 
             // Delete button

@@ -62,91 +62,9 @@ const List<_BudgetCategoryColorOption> _kBudgetWidgetColorOptions = [
   _BudgetCategoryColorOption(key: 'cyan', color: Color(0xFF46B8D9)),
 ];
 
-const List<CategoryIconOption> _kBudgetWidgetIconOptions = [
-  ...categoryIconOptions,
-  CategoryIconOption(
-    key: 'savings',
-    icon: Icons.savings_rounded,
-    label: 'Savings',
-  ),
-  CategoryIconOption(
-    key: 'flight',
-    icon: Icons.flight_rounded,
-    label: 'Travel',
-  ),
-  CategoryIconOption(
-    key: 'school',
-    icon: Icons.school_rounded,
-    label: 'Education',
-  ),
-  CategoryIconOption(
-    key: 'sports_esports',
-    icon: Icons.sports_esports_rounded,
-    label: 'Gaming',
-  ),
-  CategoryIconOption(
-    key: 'pets',
-    icon: Icons.pets_rounded,
-    label: 'Pets',
-  ),
-  CategoryIconOption(
-    key: 'movie',
-    icon: Icons.movie_rounded,
-    label: 'Entertainment',
-  ),
-  CategoryIconOption(
-    key: 'fitness_center',
-    icon: Icons.fitness_center_rounded,
-    label: 'Fitness',
-  ),
-  CategoryIconOption(
-    key: 'medical_services',
-    icon: Icons.medical_services_rounded,
-    label: 'Medical',
-  ),
-  CategoryIconOption(
-    key: 'local_gas_station',
-    icon: Icons.local_gas_station_rounded,
-    label: 'Fuel',
-  ),
-  CategoryIconOption(
-    key: 'celebration',
-    icon: Icons.celebration_rounded,
-    label: 'Celebration',
-  ),
-  CategoryIconOption(
-    key: 'subscriptions',
-    icon: Icons.subscriptions_rounded,
-    label: 'Subscriptions',
-  ),
-];
+const List<CategoryIconOption> _kBudgetWidgetIconOptions = categoryIconOptions;
 
-const Set<String> _kBudgetWidgetSupportedIconKeys = {
-  'payments',
-  'gift',
-  'home',
-  'bolt',
-  'shopping_cart',
-  'directions_car',
-  'restaurant',
-  'checkroom',
-  'health',
-  'phone',
-  'request_quote',
-  'spa',
-  'more_horiz',
-  'savings',
-  'flight',
-  'school',
-  'sports_esports',
-  'pets',
-  'movie',
-  'fitness_center',
-  'medical_services',
-  'local_gas_station',
-  'celebration',
-  'subscriptions',
-};
+final Set<String> _kBudgetWidgetSupportedIconKeys = categoryIconKeys;
 
 const List<String> _kBudgetWidgetFallbackColorKeys = [
   'mint',

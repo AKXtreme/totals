@@ -9455,7 +9455,8 @@ const double _paginationPageButtonSize = 34;
 const double _paginationPageButtonHorizontalMargin = 3;
 const double _paginationPageButtonStripWidth =
     _paginationVisiblePageButtonCount *
-    (_paginationPageButtonSize + (_paginationPageButtonHorizontalMargin * 2));
+        (_paginationPageButtonSize +
+            (_paginationPageButtonHorizontalMargin * 2));
 
 class _PaginationBar extends StatelessWidget {
   final int currentPage;
@@ -9530,8 +9531,7 @@ class _PaginationBar extends StatelessWidget {
       return pages;
     }
 
-    const middleVisiblePageButtonCount =
-        _paginationVisiblePageButtonCount - 2;
+    const middleVisiblePageButtonCount = _paginationVisiblePageButtonCount - 2;
     final middleStartPage = math.min(
       math.max(1, currentPage - (middleVisiblePageButtonCount ~/ 2)),
       totalPages - middleVisiblePageButtonCount - 1,
