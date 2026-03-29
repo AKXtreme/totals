@@ -1,5 +1,6 @@
-[
-	{
+{
+	"banks": [
+		  {
 		"id": 1,
 		"name": "Commercial Bank Of Ethiopia",
 		"shortName": "CBE",
@@ -9,8 +10,8 @@
 		"uniformMasking": true,
 		"simBased": false,
 		"colors": ["#1b0b2e", "#3a0f5c"]
-	},
-	{
+	  },
+	  {
 		"id": 2,
 		"name": "Awash Bank",
 		"shortName": "Awash",
@@ -20,8 +21,8 @@
 		"uniformMasking": false,
 		"simBased": false,
 		"colors": ["#d97706", "#1a3a5c"]
-	},
-	{
+	  },
+	  {
 		"id": 3,
 		"name": "Bank Of Abyssinia",
 		"shortName": "BOA",
@@ -31,8 +32,8 @@
 		"uniformMasking": true,
 		"simBased": false,
 		"colors": ["#d9b90b", "#382e0c"]
-	},
-	{
+	  },
+	  {
 		"id": 4,
 		"name": "Dashen Bank",
 		"shortName": "Dashen",
@@ -42,8 +43,8 @@
 		"uniformMasking": true,
 		"simBased": false,
 		"colors": ["#1a2d5c", "#344e7b"]
-	},
-	{
+	  },
+	  {
 		"id": 5,
 		"name": "Zemen Bank",
 		"shortName": "Zemen",
@@ -53,8 +54,8 @@
 		"uniformMasking": true,
 		"simBased": false,
 		"colors": ["#dc2626", "#ffffff"]
-	},
-	{
+	  },
+	  {
 		"id": 6,
 		"name": "Telebirr",
 		"shortName": "Telebirr",
@@ -64,8 +65,8 @@
 		"uniformMasking": false,
 		"simBased": true,
 		"colors": ["#1d38e5", "#90d5ee"]
-	},
-	{
+	  },
+	  {
 		"id": 7,
 		"name": "Nib Bank",
 		"shortName": "NIB",
@@ -75,8 +76,8 @@
 		"uniformMasking": true,
 		"simBased": true,
 		"colors": ["#8b4513", "#ffd700"]
-	},
-	{
+	  },
+	  {
 		"id": 8,
 		"name": "M Pesa",
 		"shortName": "MPESA",
@@ -86,5 +87,28 @@
 		"uniformMasking": false,
 		"simBased": true,
 		"colors": ["#00a859", "#ffffff"]
-	}
-]
+	  },
+	  {
+		"id": 9,
+		"name": "Amhara Bank",
+		"shortName": "Aba",
+		"codes": ["Amhara Bank", "Amhara", "AmharaBank"],
+		"image": "assets/images/amhara.png",
+		"maskPattern": 3,
+		"uniformMasking": true,
+		"simBased": false,
+		"colors": ["#1d38e5", "#90d5ee"]
+	  },
+	  {
+		"id": 11,
+		"name": "Addis International Bank",
+		"shortName": "Addis",
+		"codes": ["Addis"],
+		"image": "assets/images/addis.png",
+		"maskPattern": 4,
+		"uniformMasking": true,
+		"simBased": false,
+		"colors": ["#1d38e5", "#90d5ee"]
+	  }
+	]
+  }
