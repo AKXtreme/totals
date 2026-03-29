@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
@@ -89,68 +91,104 @@ class _TransactionCategorySheetState extends State<_TransactionCategorySheet> {
       }
       return;
     }
+    final sheetNavigator = Navigator.of(context);
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final shouldPrompt = _provider.isAutoCategorizationEnabled;
     _dismissComposerState(clearDraft: true);
     setState(() => _isApplyingCategory = true);
-    try {
-      await _provider.setCategoryForTransaction(_tx, category);
-      if (!mounted) return;
-      await _maybeHandleAutoCategorizationPrompt(category);
-      if (!mounted) return;
-      Navigator.of(context).pop();
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not update category. Changes were reverted.'),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isApplyingCategory = false);
-      }
-    }
+    final saveFuture = _provider.setCategoryForTransaction(_tx, category);
+    sheetNavigator.pop();
+    unawaited(
+      _completeCategorySelection(
+        saveFuture: saveFuture,
+        rootNavigator: rootNavigator,
+        messenger: messenger,
+        category: category,
+        shouldPrompt: shouldPrompt,
+      ),
+    );
   }
 
   Future<void> _clearCategory() async {
     if (_isApplyingCategory) return;
     _dismissComposerState(clearDraft: true);
     setState(() => _isApplyingCategory = true);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final clearFuture = _provider.clearCategoryForTransaction(_tx);
+    Navigator.of(context).pop();
+    unawaited(
+      _completeClearCategory(
+        clearFuture: clearFuture,
+        messenger: messenger,
+      ),
+    );
+  }
+
+  Future<void> _completeCategorySelection({
+    required Future<void> saveFuture,
+    required NavigatorState rootNavigator,
+    required ScaffoldMessengerState? messenger,
+    required Category category,
+    required bool shouldPrompt,
+  }) async {
     try {
-      await _provider.clearCategoryForTransaction(_tx);
-      if (!mounted) return;
-      Navigator.of(context).pop();
+      await saveFuture;
     } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text('Could not update category. Changes were reverted.'),
+        ),
+      );
+      return;
+    }
+
+    if (!shouldPrompt) return;
+    await _showAutoCategorizationPromptAfterDismiss(
+      rootNavigator: rootNavigator,
+      messenger: messenger,
+      category: category,
+    );
+  }
+
+  Future<void> _completeClearCategory({
+    required Future<void> clearFuture,
+    required ScaffoldMessengerState? messenger,
+  }) async {
+    try {
+      await clearFuture;
+    } catch (_) {
+      messenger?.showSnackBar(
         const SnackBar(
           content: Text('Could not clear category. Changes were reverted.'),
         ),
       );
-    } finally {
-      if (mounted) {
-        setState(() => _isApplyingCategory = false);
-      }
     }
   }
 
-  Future<void> _maybeHandleAutoCategorizationPrompt(Category category) async {
+  Future<void> _showAutoCategorizationPromptAfterDismiss({
+    required NavigatorState rootNavigator,
+    required ScaffoldMessengerState? messenger,
+    required Category category,
+  }) async {
     final decision = await _provider.buildAutoCategorizationPromptDecision(
       _tx,
       category,
     );
-    if (!mounted || decision == null) return;
+    if (decision == null || !rootNavigator.mounted) return;
+
+    await SchedulerBinding.instance.endOfFrame;
+    if (!rootNavigator.mounted) return;
 
     final shouldAutoCategorize = await showAutoCategorizationPromptDialog(
-      context: context,
+      context: rootNavigator.context,
       decision: decision,
       categoryName: category.name,
     );
-    if (!mounted) return;
 
     if (shouldAutoCategorize == true) {
       await _provider.saveAutoCategorizationRule(decision);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger?.showSnackBar(
         SnackBar(
           content: Text(
             'Future ${decision.flow} transactions from ${decision.counterparty} will use ${category.name}.',

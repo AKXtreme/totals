@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' hide Category;
@@ -1270,23 +1271,12 @@ class TransactionProvider with ChangeNotifier {
       rethrow;
     }
 
-    try {
-      await _recomputeAfterTransactionMutation();
-      await WidgetService.refreshWidget();
-    } catch (e) {
-      print("debug: Error recomputing state after categorizing: $e");
-    }
-
-    // Check budget alerts after categorizing transaction (only for DEBIT transactions)
-    // Only check budgets for the specific category that was selected
-    if (transaction.type == 'DEBIT' && category.id != null) {
-      try {
-        await _budgetAlertService
-            .checkAndNotifyBudgetAlertsForCategory(category.id!);
-      } catch (e) {
-        print("debug: Error checking budget alerts after categorizing: $e");
-      }
-    }
+    unawaited(
+      _finalizeCategoryMutationAfterSave(
+        transactionType: transaction.type,
+        categoryId: category.id,
+      ),
+    );
   }
 
   Future<void> updateNoteForTransaction(
@@ -1398,11 +1388,31 @@ class TransactionProvider with ChangeNotifier {
       rethrow;
     }
 
+    unawaited(
+      _finalizeCategoryMutationAfterSave(
+        transactionType: transaction.type,
+      ),
+    );
+  }
+
+  Future<void> _finalizeCategoryMutationAfterSave({
+    required String? transactionType,
+    int? categoryId,
+  }) async {
     try {
       await _recomputeAfterTransactionMutation();
       await WidgetService.refreshWidget();
     } catch (e) {
-      print("debug: Error recomputing state after clearing category: $e");
+      print("debug: Error recomputing state after categorizing: $e");
+    }
+
+    if (transactionType == 'DEBIT' && categoryId != null) {
+      try {
+        await _budgetAlertService
+            .checkAndNotifyBudgetAlertsForCategory(categoryId);
+      } catch (e) {
+        print("debug: Error checking budget alerts after categorizing: $e");
+      }
     }
   }
 
