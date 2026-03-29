@@ -7,23 +7,37 @@
 <table>
   <tr>
     <td align="center">
-      <img src="screenshots/1.jpg" width="100%" alt="Home"/>
+      <a href="screenshots/1.png">
+        <img src="screenshots/1.png" width="100%" alt="Screenshot 1"/>
+      </a>
     </td>
     <td align="center">
-      <img src="screenshots/2.jpg" width="100%" alt="Transactions"/>
+      <a href="screenshots/2.png">
+        <img src="screenshots/2.png" width="100%" alt="Screenshot 2"/>
+      </a>
     </td>
     <td align="center">
-      <img src="screenshots/3.jpg" width="100%" alt="Analytics"/>
+      <a href="screenshots/3.png">
+        <img src="screenshots/3.png" width="100%" alt="Screenshot 3"/>
+      </a>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="screenshots/4.jpg" width="100%" alt="Accounts"/>
+      <a href="screenshots/4.png">
+        <img src="screenshots/4.png" width="100%" alt="Screenshot 4"/>
+      </a>
     </td>
     <td align="center">
-      <img src="screenshots/5.jpg" width="100%" alt="Settings"/>
+      <a href="screenshots/5.png">
+        <img src="screenshots/5.png" width="100%" alt="Screenshot 5"/>
+      </a>
     </td>
-    <td></td>
+    <td align="center">
+      <a href="screenshots/6.png">
+        <img src="screenshots/6.png" width="100%" alt="Screenshot 6"/>
+      </a>
+    </td>
   </tr>
 </table>
 
