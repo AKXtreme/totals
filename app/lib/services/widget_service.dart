@@ -119,6 +119,10 @@ class WidgetService {
           .where(payload.budgetsById.containsKey)
           .take(maxBudgetWidgetBudgets)
           .toList(growable: false);
+      final displayIds = _orderBudgetWidgetDisplayIds(
+        selectedIds: sanitizedIds,
+        payload: payload,
+      );
 
       if (!_sameIds(selectedIds, sanitizedIds)) {
         await _saveBudgetWidgetSelectedIds(sanitizedIds);
@@ -141,8 +145,8 @@ class WidgetService {
 
       for (var index = 0; index < maxBudgetWidgetBudgets; index++) {
         final prefix = 'budget_item_$index';
-        if (index < sanitizedIds.length) {
-          final snapshot = payload.budgetsById[sanitizedIds[index]];
+        if (index < displayIds.length) {
+          final snapshot = payload.budgetsById[displayIds[index]];
           if (snapshot != null) {
             final stylePreference = stylesById[snapshot.budgetId];
             final resolvedIconKey =
@@ -336,6 +340,28 @@ class WidgetService {
     return className == budgetAndroidWidgetQualifiedName ||
         className == budgetAndroidWidgetName ||
         className?.endsWith('.$budgetAndroidWidgetName') == true;
+  }
+
+  static List<int> _orderBudgetWidgetDisplayIds({
+    required List<int> selectedIds,
+    required BudgetWidgetPayload payload,
+  }) {
+    if (selectedIds.length <= 1) {
+      return selectedIds;
+    }
+
+    final indexedIds = selectedIds.asMap().entries.toList(growable: false);
+    indexedIds.sort((left, right) {
+      final leftAmount = payload.budgetsById[left.value]?.amountRaw ?? 0;
+      final rightAmount = payload.budgetsById[right.value]?.amountRaw ?? 0;
+      final amountCompare = rightAmount.compareTo(leftAmount);
+      if (amountCompare != 0) {
+        return amountCompare;
+      }
+      return left.key.compareTo(right.key);
+    });
+
+    return indexedIds.map((entry) => entry.value).toList(growable: false);
   }
 
   static Future<void> _saveBudgetWidgetSelectedIds(List<int> ids) async {
