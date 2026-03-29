@@ -1788,23 +1788,23 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
       'question': 'How does Totals read my transactions?',
       'answer':
           'Totals reads SMS messages from your bank and automatically '
-          'extracts transaction details like amount, date, and balance.',
+              'extracts transaction details like amount, date, and balance.',
     },
     {
       'icon': 'category',
       'question': 'How do I categorize transactions?',
       'answer':
           'Tap any transaction to open its details, then choose a category. '
-          'Totals will remember and auto-categorize future transactions '
-          'to the same recipient.',
+              'Totals will remember and auto-categorize future transactions '
+              'to the same recipient.',
     },
     {
       'icon': 'account',
       'question': 'Can I track multiple bank accounts?',
       'answer':
           'Yes. Totals automatically detects accounts from your SMS and '
-          'tracks each one separately. You can view balances and '
-          'transactions per account.',
+              'tracks each one separately. You can view balances and '
+              'transactions per account.',
     },
   ];
 
@@ -1814,22 +1814,22 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
       'question': 'How do I export my data?',
       'answer':
           'Go to Settings > Export Data. You can save the file directly '
-          'or share it with other apps.',
+              'or share it with other apps.',
     },
     {
       'icon': 'import',
       'question': 'Can I import data from another device?',
       'answer':
           'Yes. Use Export Data to create a backup, then use Import Data '
-          'on your other device to restore it.',
+              'on your other device to restore it.',
     },
     {
       'icon': 'failed',
       'question': 'My SMS was not parsed. What can I do?',
       'answer':
           'Open the Failed Parses page from the home screen. You can '
-          'retry parsing from there. If it still fails, the bank format '
-          'may not be supported yet.',
+              'retry parsing from there. If it still fails, the bank format '
+              'may not be supported yet.',
     },
   ];
 
@@ -1839,31 +1839,31 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
       'question': 'Missed a transaction today?',
       'answer':
           "In Today's transactions, tap the refresh button to rescan "
-          "today's bank SMS and pick up anything that was missed.",
+              "today's bank SMS and pick up anything that was missed.",
     },
     {
       'icon': 'budget',
       'question': 'How do budgets work?',
       'answer':
           'Create a budget in the Budget tab with a spending limit and '
-          'time period. Totals tracks your spending against it and '
-          'notifies you when you are close to your limit.',
+              'time period. Totals tracks your spending against it and '
+              'notifies you when you are close to your limit.',
     },
     {
       'icon': 'lock',
       'question': 'How do I lock the app?',
       'answer':
           'Double-tap the lock icon on the home screen to instantly '
-          'lock the app. You will need to authenticate to get back in.',
+              'lock the app. You will need to authenticate to get back in.',
     },
     {
       'icon': 'gesture',
       'question': 'Are there any shortcuts?',
       'answer':
           'Long-press the bottom navigation bar items for quick actions. '
-          'Long-press Money to add a cash transaction, long-press Tools '
-          'to open your quick-access accounts, and long-press You to '
-          'switch between profiles.',
+              'Long-press Money to add a cash transaction, long-press Tools '
+              'to open your quick-access accounts, and long-press You to '
+              'switch between profiles.',
     },
   ];
 

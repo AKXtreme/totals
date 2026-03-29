@@ -974,8 +974,8 @@ class _InsightCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 if (showImportBackupPrompt) ...[
                   Text(
-                      'Used Totals before? Import your backup to restore your '
-                      'accounts, transactions, budgets, and categories.',
+                    'Used Totals before? Import your backup to restore your '
+                    'accounts, transactions, budgets, and categories.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: AppColors.isDark(context)
                           ? AppColors.slate400
@@ -983,15 +983,8 @@ class _InsightCard extends StatelessWidget {
                       height: 1.45,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Tap import backup, then choose your exported JSON file. '
-                    'No backup? Use the card above to add your accounts manually.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary(context),
-                      height: 1.45,
-                    ),
-                  ),
+
+
                   const SizedBox(height: 14),
                   FilledButton.icon(
                     onPressed: isImportingBackup ? null : onImportBackupTap,
