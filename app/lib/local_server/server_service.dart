@@ -13,6 +13,7 @@ import 'handlers/accounts_handler.dart';
 import 'handlers/transactions_handler.dart';
 import 'handlers/summary_handler.dart';
 import 'handlers/banks_handler.dart';
+import 'handlers/categories_handler.dart';
 
 /// Log entry for request logging
 class ServerLogEntry {
@@ -130,11 +131,13 @@ class ServerService {
     final transactionsHandler = TransactionsHandler();
     final summaryHandler = SummaryHandler();
     final banksHandler = BanksHandler();
+    final categoriesHandler = CategoriesHandler();
 
     router.mount('/api/accounts', accountsHandler.router.call);
     router.mount('/api/transactions', transactionsHandler.router.call);
     router.mount('/api/summary', summaryHandler.router.call);
     router.mount('/api/banks', banksHandler.router.call);
+    router.mount('/api/categories', categoriesHandler.router.call);
 
     // Health check endpoint
     router.get('/health', (Request request) {

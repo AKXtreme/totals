@@ -182,6 +182,7 @@ lib/
 - Provides endpoints for:
   - Accounts (`/api/accounts`)
   - Transactions (`/api/transactions`)
+  - Categories (`/api/categories`)
   - Banks (`/api/banks`)
   - Summary (`/api/summary`)
   - Analytics (`/api/analytics/*`)
@@ -201,6 +202,7 @@ The app includes a local HTTP server that exposes REST API endpoints. See:
 
 - `GET /api/accounts` - List all accounts
 - `GET /api/transactions` - List transactions with filtering
+- `GET /api/categories` - List categories and resolve transaction category IDs
 - `GET /api/summary` - Get aggregated summary
 - `GET /api/banks` - List supported banks
 
