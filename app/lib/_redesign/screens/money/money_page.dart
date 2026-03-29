@@ -9686,20 +9686,14 @@ class _EmptyTransactions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.cardColor(context),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.borderColor(context)),
-      ),
-      child: Center(
-        child: Text(
-          'No transactions found',
-          style: TextStyle(
-            color: AppColors.textSecondary(context),
-            fontSize: 14,
-          ),
+    return SizedBox(
+      width: double.infinity,
+      child: Text(
+        'No transactions found',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: AppColors.textSecondary(context),
+          fontSize: 14,
         ),
       ),
     );

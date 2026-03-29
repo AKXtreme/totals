@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/_redesign/theme/app_icons.dart';
 import 'package:totals/models/bank.dart';
@@ -13,6 +14,10 @@ import 'package:totals/services/bank_config_service.dart';
 import 'package:totals/services/failed_parse_review_service.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/sms_service.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+const String _telegramBotUsername = 'detached_totals_bot';
+const String _telegramBotUrl = 'https://t.me/$_telegramBotUsername';
 
 class FailedParsesPage extends StatefulWidget {
   const FailedParsesPage({super.key});
@@ -732,6 +737,8 @@ class _FailedParsesPageState extends State<FailedParsesPage> {
   Widget _buildParseCard(FailedParse item) {
     final selected = item.id != null && _selectedCardIds.contains(item.id);
     return _FailedParseCard(
+      key:
+          ValueKey(item.id ?? '${item.address}|${item.timestamp}|${item.body}'),
       item: item,
       retrying: _retrying,
       formattedTimestamp: _formatTimestamp(item.timestamp),
@@ -901,6 +908,7 @@ class _FailedParseCard extends StatefulWidget {
   final VoidCallback onSelect;
 
   const _FailedParseCard({
+    super.key,
     required this.item,
     required this.retrying,
     required this.formattedTimestamp,
@@ -927,11 +935,18 @@ class _FailedParseCardState extends State<_FailedParseCard> {
   @override
   void initState() {
     super.initState();
-    _tokens = _tokenize(widget.item.body);
-    _numberIndices = {
-      for (var i = 0; i < _tokens.length; i++)
-        if (_numRegex.hasMatch(_tokens[i])) i,
-    };
+    _syncTokensFromItem();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FailedParseCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.id != widget.item.id ||
+        oldWidget.item.body != widget.item.body ||
+        oldWidget.item.timestamp != widget.item.timestamp ||
+        oldWidget.item.address != widget.item.address) {
+      _syncTokensFromItem();
+    }
   }
 
   static List<String> _tokenize(String text) {
@@ -941,6 +956,16 @@ class _FailedParseCardState extends State<_FailedParseCard> {
       tokens.add(match.group(0)!);
     }
     return tokens;
+  }
+
+  void _syncTokensFromItem() {
+    _tokens = _tokenize(widget.item.body);
+    _numberIndices = {
+      for (var i = 0; i < _tokens.length; i++)
+        if (_numRegex.hasMatch(_tokens[i])) i,
+    };
+    _hidden.clear();
+    _scrambled.clear();
   }
 
   static String _scramble(String token) {
@@ -973,6 +998,47 @@ class _FailedParseCardState extends State<_FailedParseCard> {
       }
     }
     return buffer.toString();
+  }
+
+  String _buildTelegramShareText() {
+    final body = _buildCopyText().trim();
+    return [
+      body,
+      '',
+      'Sender: ${widget.item.address}',
+      'Time: ${widget.item.timestamp}',
+      'Reason: ${widget.item.reason}',
+      'Source: Totals failed parsing page',
+    ].join('\n');
+  }
+
+  Uri _buildTelegramAppDraftUri(String text) {
+    return Uri.parse(
+      'tg://resolve?domain=$_telegramBotUsername&text=${Uri.encodeQueryComponent(text)}',
+    );
+  }
+
+  Uri _buildTelegramWebDraftUri(String text) {
+    return Uri.https('t.me', '/$_telegramBotUsername', {'text': text});
+  }
+
+  Uri _buildTelegramShareUri(String text) {
+    return Uri.https('t.me', '/share/url', {
+      'url': _telegramBotUrl,
+      'text': text,
+    });
+  }
+
+  Future<bool> _launchTelegramUri(Uri uri) async {
+    try {
+      return await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      try {
+        return await launchUrl(uri);
+      } catch (_) {
+        return false;
+      }
+    }
   }
 
   void _scrambleNumbers() {
@@ -1019,9 +1085,54 @@ class _FailedParseCardState extends State<_FailedParseCard> {
       ..showSnackBar(const SnackBar(content: Text('Transaction copied')));
   }
 
+  Future<void> _shareToTelegram() async {
+    final text = _buildTelegramShareText();
+    await Clipboard.setData(ClipboardData(text: text));
+
+    var opened = await _launchTelegramUri(_buildTelegramAppDraftUri(text));
+    if (!opened) {
+      opened = await _launchTelegramUri(_buildTelegramWebDraftUri(text));
+    }
+    if (!opened) {
+      opened = await _launchTelegramUri(_buildTelegramShareUri(text));
+    }
+
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context)..clearSnackBars();
+    if (opened) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Telegram opened with the message loaded. The text was also copied to the clipboard.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    try {
+      await Share.share(text, subject: 'Failed parsing message');
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Telegram could not be opened directly. A share sheet was opened and the text was copied to the clipboard.',
+          ),
+        ),
+      );
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Telegram could not be opened. The text was copied to the clipboard.',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final hasHidden = _hidden.isNotEmpty;
 
     final scrambledBg = AppColors.amber.withValues(alpha: 0.12);
@@ -1174,6 +1285,12 @@ class _FailedParseCardState extends State<_FailedParseCard> {
                 spacing: 8,
                 runSpacing: 6,
                 children: [
+                  _QuickAction(
+                    label: 'Share to Telegram',
+                    icon: Icons.share_outlined,
+                    color: AppColors.primaryLight,
+                    onTap: _shareToTelegram,
+                  ),
                   if (_numberIndices.isNotEmpty &&
                       !_numberIndices.every(_hidden.contains))
                     _QuickAction(
