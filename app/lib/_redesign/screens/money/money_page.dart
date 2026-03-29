@@ -1499,7 +1499,7 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
     final totalPages = transactionsViewData?.totalPages ?? 1;
     final safePage = transactionsViewData?.safePage ?? 0;
     final flatItems = transactionsViewData?.flatItems ?? const <Object>[];
-    final showsStickyPagination = _subTab == _SubTab.transactions &&
+    final showsPagination = _subTab == _SubTab.transactions &&
         flatItems.isNotEmpty &&
         totalPages > 1;
     final transactionsListKey = ValueKey<_ActivityTransactionsViewCacheKey?>(
@@ -1551,6 +1551,21 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
               },
             ),
           ),
+          if (showsPagination)
+            SliverToBoxAdapter(
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: Align(
+                  alignment: Alignment.center,
+                  child: _PaginationBar(
+                    currentPage: safePage,
+                    totalPages: totalPages,
+                    onPageChanged: _setActivityTransactionsPage,
+                  ),
+                ),
+              ),
+            ),
         ],
       ] else if (_subTab == _SubTab.analytics) ...[
         ..._buildAnalyticsSlivers(provider),
@@ -1568,46 +1583,22 @@ class RedesignMoneyPageState extends State<RedesignMoneyPage>
           ledgerViewSummary: ledgerViewSummary,
         ),
         Expanded(
-          child: Stack(
-            children: [
-              RefreshIndicator(
-                color: AppColors.primaryLight,
-                onRefresh: provider.loadData,
-                child: CustomScrollView(
-                  controller: _activityScrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    SliverFadeTransition(
-                      opacity: _subTabFadeAnimation,
-                      sliver: SliverMainAxisGroup(slivers: dynamicSlivers),
-                    ),
-                    SliverPadding(
-                      padding: EdgeInsets.only(
-                        bottom: showsStickyPagination ? 104 : 24,
-                      ),
-                    ),
-                  ],
+          child: RefreshIndicator(
+            color: AppColors.primaryLight,
+            onRefresh: provider.loadData,
+            child: CustomScrollView(
+              controller: _activityScrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverFadeTransition(
+                  opacity: _subTabFadeAnimation,
+                  sliver: SliverMainAxisGroup(slivers: dynamicSlivers),
                 ),
-              ),
-              if (showsStickyPagination)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: SafeArea(
-                    top: false,
-                    minimum: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: _PaginationBar(
-                        currentPage: safePage,
-                        totalPages: totalPages,
-                        onPageChanged: _setActivityTransactionsPage,
-                      ),
-                    ),
-                  ),
+                const SliverPadding(
+                  padding: EdgeInsets.only(bottom: 24),
                 ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
@@ -9471,22 +9462,8 @@ class _PaginationBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.cardColor(context),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.borderColor(context)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(
-              alpha: AppColors.isDark(context) ? 0.24 : 0.08,
-            ),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
