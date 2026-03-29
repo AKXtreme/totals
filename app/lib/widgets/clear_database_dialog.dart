@@ -1,38 +1,60 @@
 import 'package:flutter/material.dart';
-import 'package:totals/repositories/transaction_repository.dart';
-import 'package:totals/repositories/account_repository.dart';
-import 'package:totals/repositories/failed_parse_repository.dart';
 import 'package:provider/provider.dart';
+import 'package:totals/providers/budget_provider.dart';
 import 'package:totals/providers/transaction_provider.dart';
+import 'package:totals/repositories/account_repository.dart';
+import 'package:totals/repositories/budget_repository.dart';
+import 'package:totals/repositories/failed_parse_repository.dart';
+import 'package:totals/repositories/transaction_repository.dart';
 
 Future<void> showClearDatabaseDialog(BuildContext context) async {
-  bool clearTransactions = false;
-  bool clearAccounts = false;
+  bool clearFinancialData = false;
+  bool clearBudgets = false;
   bool clearFailedParses = false;
+  final parentContext = context;
 
-  await showDialog(
+  await showModalBottomSheet<void>(
     context: context,
-    builder: (context) {
-      final theme = Theme.of(context);
-      
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) {
+      final theme = Theme.of(sheetContext);
+
       return StatefulBuilder(
         builder: (context, setState) {
-          final hasSelection = clearTransactions || clearAccounts || clearFailedParses;
-          
-          return Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
+          final hasSelection =
+              clearFinancialData || clearBudgets || clearFailedParses;
+
+          return Container(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              0,
+              20,
+              20 + MediaQuery.of(sheetContext).viewInsets.bottom,
             ),
-            child: Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                color: theme.colorScheme.surface,
+            decoration: BoxDecoration(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
               ),
+              color: theme.colorScheme.surface,
+            ),
+            child: SafeArea(
+              top: false,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 16),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.onSurface.withOpacity(0.25),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
                   Row(
                     children: [
                       Container(
@@ -52,14 +74,14 @@ Future<void> showClearDatabaseDialog(BuildContext context) async {
                       Expanded(
                         child: Text(
                           'Clear Data',
-                          style: theme.textTheme.headlineSmall?.copyWith(
+                          style: theme.textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: () => Navigator.pop(sheetContext),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
@@ -76,25 +98,25 @@ Future<void> showClearDatabaseDialog(BuildContext context) async {
                   _buildClearOption(
                     context: context,
                     icon: Icons.receipt_long,
-                    title: 'Transactions',
-                    subtitle: 'All transaction history',
-                    value: clearTransactions,
+                    title: 'Transactions & Accounts',
+                    subtitle: 'All transaction history and bank accounts',
+                    value: clearFinancialData,
                     onChanged: (value) {
                       setState(() {
-                        clearTransactions = value ?? false;
+                        clearFinancialData = value ?? false;
                       });
                     },
                   ),
                   const SizedBox(height: 12),
                   _buildClearOption(
                     context: context,
-                    icon: Icons.account_balance,
-                    title: 'Accounts',
-                    subtitle: 'All bank accounts',
-                    value: clearAccounts,
+                    icon: Icons.pie_chart_outline,
+                    title: 'Budgets',
+                    subtitle: 'All budget rules and limits',
+                    value: clearBudgets,
                     onChanged: (value) {
                       setState(() {
-                        clearAccounts = value ?? false;
+                        clearBudgets = value ?? false;
                       });
                     },
                   ),
@@ -136,8 +158,9 @@ Future<void> showClearDatabaseDialog(BuildContext context) async {
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: () => Navigator.pop(context),
+                          onPressed: () => Navigator.pop(sheetContext),
                           style: OutlinedButton.styleFrom(
+                            foregroundColor: theme.colorScheme.onSurfaceVariant,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -152,43 +175,57 @@ Future<void> showClearDatabaseDialog(BuildContext context) async {
                           onPressed: hasSelection
                               ? () async {
                                   try {
-                                    if (clearTransactions) {
+                                    if (clearFinancialData) {
                                       await TransactionRepository().clearAll();
-                                    }
-                                    if (clearAccounts) {
                                       await AccountRepository().clearAll();
+                                    }
+                                    if (clearBudgets) {
+                                      await BudgetRepository().clearAll();
                                     }
                                     if (clearFailedParses) {
                                       await FailedParseRepository().clear();
                                     }
 
-                                    // Reload data
-                                    if (context.mounted) {
-                                      Provider.of<TransactionProvider>(context,
-                                              listen: false)
-                                          .loadData();
-                                      Navigator.pop(context);
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                    if (parentContext.mounted) {
+                                      await Provider.of<TransactionProvider>(
+                                        parentContext,
+                                        listen: false,
+                                      ).loadData();
+                                      if (clearFinancialData || clearBudgets) {
+                                        try {
+                                          await Provider.of<BudgetProvider>(
+                                            parentContext,
+                                            listen: false,
+                                          ).loadBudgets();
+                                        } catch (_) {}
+                                      }
+                                      Navigator.pop(sheetContext);
+                                      ScaffoldMessenger.of(parentContext)
+                                          .showSnackBar(
                                         SnackBar(
-                                          content: const Text('Data cleared successfully'),
-                                          backgroundColor: Colors.green,
+                                          content: const Text(
+                                            'Data cleared successfully',
+                                          ),
                                           behavior: SnackBarBehavior.floating,
                                           shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(12),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
                                           ),
                                         ),
                                       );
                                     }
                                   } catch (e) {
-                                    if (context.mounted) {
-                                      Navigator.pop(context);
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                    if (parentContext.mounted) {
+                                      Navigator.pop(sheetContext);
+                                      ScaffoldMessenger.of(parentContext)
+                                          .showSnackBar(
                                         SnackBar(
-                                          content: Text('Error clearing data: $e'),
-                                          backgroundColor: Colors.red,
+                                          content:
+                                              Text('Error clearing data: $e'),
                                           behavior: SnackBarBehavior.floating,
                                           shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(12),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
                                           ),
                                         ),
                                       );
@@ -229,7 +266,7 @@ Widget _buildClearOption({
   required ValueChanged<bool?> onChanged,
 }) {
   final theme = Theme.of(context);
-  
+
   return Material(
     color: Colors.transparent,
     child: InkWell(
@@ -261,9 +298,8 @@ Widget _buildClearOption({
               ),
               child: Icon(
                 icon,
-                color: value
-                    ? theme.colorScheme.error
-                    : theme.colorScheme.primary,
+                color:
+                    value ? theme.colorScheme.error : theme.colorScheme.primary,
                 size: 20,
               ),
             ),

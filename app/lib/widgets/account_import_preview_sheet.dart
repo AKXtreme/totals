@@ -31,8 +31,7 @@ class AccountImportPreviewSheet extends StatefulWidget {
       _AccountImportPreviewSheetState();
 }
 
-class _AccountImportPreviewSheetState
-    extends State<AccountImportPreviewSheet> {
+class _AccountImportPreviewSheetState extends State<AccountImportPreviewSheet> {
   final UserAccountRepository _userAccountRepo = UserAccountRepository();
   List<_AccountPreviewItem> _items = [];
   bool _isLoading = true;
@@ -89,6 +88,7 @@ class _AccountImportPreviewSheetState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final bottomSafeArea = MediaQuery.of(context).viewPadding.bottom;
     final newCount = _items.where((item) => !item.exists).length;
     final existsCount = _items.where((item) => item.exists).length;
 
@@ -159,7 +159,13 @@ class _AccountImportPreviewSheetState
             const SizedBox(height: 16),
 
             // Actions
-            _buildActions(context, theme, colorScheme, newCount),
+            _buildActions(
+              context,
+              theme,
+              colorScheme,
+              newCount,
+              bottomSafeArea,
+            ),
           ],
         ],
       ),
@@ -325,9 +331,10 @@ class _AccountImportPreviewSheetState
     ThemeData theme,
     ColorScheme colorScheme,
     int newCount,
+    double bottomSafeArea,
   ) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      padding: EdgeInsets.fromLTRB(16, 0, 16, 24 + bottomSafeArea),
       child: Row(
         children: [
           Expanded(

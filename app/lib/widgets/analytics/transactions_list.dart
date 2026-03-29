@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:totals/models/bank.dart';
@@ -9,6 +11,12 @@ import 'package:totals/utils/category_style.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/widgets/transaction_day_header.dart';
+
+const int _paginationVisiblePageButtonCount = 4;
+const double _paginationPageButtonSize = 34;
+const double _paginationPageButtonHorizontalMargin = 2;
+const double _paginationControlSpacing = 6;
+const double _paginationNavButtonSize = 36;
 
 class TransactionsList extends StatefulWidget {
   final List<Transaction> transactions;
@@ -64,8 +72,7 @@ class _TransactionsListState extends State<TransactionsList> {
       if (!mounted) return;
       setState(() {
         _bankLabelsById = {
-          for (final bank in banks)
-            bank.id: _bankLabelFor(bank),
+          for (final bank in banks) bank.id: _bankLabelFor(bank),
         };
         _bankLabelsById[CashConstants.bankId] = CashConstants.bankShortName;
       });
@@ -273,8 +280,7 @@ class _TransactionsListState extends State<TransactionsList> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (showDayHeader)
-                  TransactionDayHeader(date: transactionDay),
+                if (showDayHeader) TransactionDayHeader(date: transactionDay),
                 TransactionListItem(
                   transaction: transaction,
                   bankLabel: _getBankLabel(transaction),
@@ -324,12 +330,12 @@ class _TransactionsListState extends State<TransactionsList> {
             isEnabled: _currentPage > 0,
           ),
 
-          const SizedBox(width: 8),
+          const SizedBox(width: _paginationControlSpacing),
 
           // Page numbers
           ..._buildPageNumbers(totalPages),
 
-          const SizedBox(width: 8),
+          const SizedBox(width: _paginationControlSpacing),
 
           // Next button
           _PaginationButton(
@@ -345,34 +351,35 @@ class _TransactionsListState extends State<TransactionsList> {
   }
 
   List<Widget> _buildPageNumbers(int totalPages) {
-    List<Widget> pageWidgets = [];
+    final pageWidgets = <Widget>[];
 
-    // Determine which page numbers to show
-    List<int> pagesToShow = [];
+    final pagesToShow = <int>[];
 
-    if (totalPages <= 5) {
-      // Show all pages if 5 or fewer
-      pagesToShow = List.generate(totalPages, (i) => i);
+    if (totalPages <= _paginationVisiblePageButtonCount) {
+      pagesToShow.addAll(List.generate(totalPages, (i) => i));
     } else {
-      // Always show first page
+      const middleVisiblePageButtonCount =
+          _paginationVisiblePageButtonCount - 2;
+      final middleStartPage = math.min(
+        math.max(1, _currentPage - (middleVisiblePageButtonCount ~/ 2)),
+        totalPages - middleVisiblePageButtonCount - 1,
+      );
+      final middleEndPage = middleStartPage + middleVisiblePageButtonCount - 1;
+
       pagesToShow.add(0);
 
-      // Show pages around current page
-      if (_currentPage > 2) {
-        pagesToShow.add(-1); // Ellipsis indicator
+      if (middleStartPage > 1) {
+        pagesToShow.add(-1);
       }
 
-      for (int i = _currentPage - 1; i <= _currentPage + 1; i++) {
-        if (i > 0 && i < totalPages - 1) {
-          pagesToShow.add(i);
-        }
+      for (int i = middleStartPage; i <= middleEndPage; i++) {
+        pagesToShow.add(i);
       }
 
-      if (_currentPage < totalPages - 3) {
-        pagesToShow.add(-1); // Ellipsis indicator
+      if (middleEndPage < totalPages - 2) {
+        pagesToShow.add(-1);
       }
 
-      // Always show last page
       pagesToShow.add(totalPages - 1);
     }
 
@@ -380,10 +387,9 @@ class _TransactionsListState extends State<TransactionsList> {
       final pageNum = pagesToShow[i];
 
       if (pageNum == -1) {
-        // Ellipsis
         pageWidgets.add(
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 2),
             child: Text(
               '...',
               style: TextStyle(
@@ -399,9 +405,11 @@ class _TransactionsListState extends State<TransactionsList> {
             onTap: () => setState(() => _currentPage = pageNum),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              width: 36,
-              height: 36,
+              margin: const EdgeInsets.symmetric(
+                horizontal: _paginationPageButtonHorizontalMargin,
+              ),
+              width: _paginationPageButtonSize,
+              height: _paginationPageButtonSize,
               decoration: BoxDecoration(
                 color: _currentPage == pageNum
                     ? Theme.of(context).colorScheme.primary
@@ -450,8 +458,8 @@ class _PaginationButton extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: 40,
-        height: 40,
+        width: _paginationNavButtonSize,
+        height: _paginationNavButtonSize,
         decoration: BoxDecoration(
           color: isEnabled
               ? Theme.of(context).colorScheme.surface
@@ -521,8 +529,7 @@ class TransactionListItem extends StatelessWidget {
       dateStr = dateTime != null
           ? DateFormat('MMM dd, yyyy').format(dateTime)
           : 'Unknown date';
-      timeStr =
-          dateTime != null ? DateFormat('hh:mm a').format(dateTime) : '';
+      timeStr = dateTime != null ? DateFormat('hh:mm a').format(dateTime) : '';
     }
 
     final sender = transaction.creditor?.trim();
@@ -543,9 +550,8 @@ class TransactionListItem extends StatelessWidget {
     if (isCredit && transaction.bankId == 6 && counterparty != null) {
       counterparty = formatTelebirrSenderName(counterparty);
     }
-    final counterpartyLabel = counterparty == null
-        ? null
-        : '$counterpartyPrefix $counterparty';
+    final counterpartyLabel =
+        counterparty == null ? null : '$counterpartyPrefix $counterparty';
 
     final category = provider?.getCategoryById(transaction.categoryId);
     final categoryColor = category == null
@@ -684,7 +690,9 @@ class TransactionListItem extends StatelessWidget {
                                     .onSurfaceVariant,
                               ),
                             ),
-                          if (showTime && timeStr != null && timeStr!.isNotEmpty)
+                          if (showTime &&
+                              timeStr != null &&
+                              timeStr!.isNotEmpty)
                             Text(
                               timeStr!,
                               style: TextStyle(

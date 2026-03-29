@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/models/account.dart';
+import 'package:totals/models/category.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/repositories/account_repository.dart';
+import 'package:totals/utils/category_icons.dart';
 
 Future<void> showAddCashTransactionSheet({
   required BuildContext context,
@@ -47,6 +49,7 @@ class _AddCashTransactionContentState
   late final TextEditingController _amountController;
   late final TextEditingController _noteController;
   late bool _isDebit;
+  int? _selectedCategoryId;
   bool _isLoading = false;
 
   @override
@@ -55,6 +58,13 @@ class _AddCashTransactionContentState
     _amountController = TextEditingController();
     _noteController = TextEditingController();
     _isDebit = widget.initialIsDebit;
+  }
+
+  List<Category> get _filteredCategories {
+    final flow = _isDebit ? 'expense' : 'income';
+    return widget.provider.categories
+        .where((c) => c.flow == flow && !c.uncategorized)
+        .toList();
   }
 
   @override
@@ -68,6 +78,17 @@ class _AddCashTransactionContentState
     final cleaned = raw.trim().replaceAll(',', '');
     if (cleaned.isEmpty) return null;
     return double.tryParse(cleaned);
+  }
+
+  double _currentCashWalletBalance() {
+    final walletSummaries = widget.provider.accountSummaries
+        .where((summary) => summary.bankId == CashConstants.bankId)
+        .toList();
+    if (walletSummaries.isEmpty) return 0.0;
+    return walletSummaries.fold<double>(
+      0.0,
+      (sum, summary) => sum + summary.balance,
+    );
   }
 
   Future<void> _ensureCashAccount() async {
@@ -105,6 +126,8 @@ class _AddCashTransactionContentState
 
       final now = DateTime.now();
       final note = _noteController.text.trim();
+      final nextCashBalance =
+          _currentCashWalletBalance() + (_isDebit ? -amount : amount);
       final reference = CashConstants.buildManualReference(
         now.microsecondsSinceEpoch,
       );
@@ -116,9 +139,11 @@ class _AddCashTransactionContentState
         time: now.toIso8601String(),
         bankId: CashConstants.bankId,
         type: _isDebit ? 'DEBIT' : 'CREDIT',
+        currentBalance: nextCashBalance.toStringAsFixed(2),
         accountNumber: widget.accountNumber.isNotEmpty
             ? widget.accountNumber
             : CashConstants.defaultAccountNumber,
+        categoryId: _selectedCategoryId,
       );
 
       await widget.provider.addTransaction(transaction);
@@ -142,203 +167,331 @@ class _AddCashTransactionContentState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final hintColor = colorScheme.onSurfaceVariant;
+    final mediaQuery = MediaQuery.of(context);
+    final keyboardInset = mediaQuery.viewInsets.bottom;
+    final bottomSafeArea = mediaQuery.viewPadding.bottom;
+    final keyboardLiftBuffer = keyboardInset > 0 ? 28.0 : 0.0;
+    final actionBottomGap = keyboardInset > 0
+        ? 4.0
+        : (mediaQuery.size.height * 0.014).clamp(8.0, 14.0);
+    final actionTopGap = keyboardInset > 0 ? 12.0 : 20.0;
+    final formBottomPadding = keyboardInset > 0 ? 16.0 : 8.0;
 
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-        top: 8,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Title
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: (_isDebit ? Colors.red : Colors.green)
-                      .withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  _isDebit ? Icons.remove : Icons.add,
-                  color: _isDebit ? Colors.red : Colors.green,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  _isDebit ? 'Add Cash Expense' : 'Add Cash Income',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: keyboardInset + keyboardLiftBuffer),
+      child: SafeArea(
+        top: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final maxHeight = constraints.hasBoundedHeight
+                ? constraints.maxHeight
+                : mediaQuery.size.height;
 
-          // Transaction Type Toggle
-          Container(
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            padding: const EdgeInsets.all(4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _TypeButton(
-                    label: 'Expense',
-                    icon: Icons.arrow_upward,
-                    isSelected: _isDebit,
-                    color: Colors.red,
-                    onTap: () => setState(() => _isDebit = true),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: _TypeButton(
-                    label: 'Income',
-                    icon: Icons.arrow_downward,
-                    isSelected: !_isDebit,
-                    color: Colors.green,
-                    onTap: () => setState(() => _isDebit = false),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Amount Field
-          TextField(
-            controller: _amountController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            autofocus: true,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-            decoration: InputDecoration(
-              labelText: 'Amount',
-              hintText: '0.00',
-              prefixText: 'ETB ',
-              prefixStyle: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: colorScheme.onSurfaceVariant,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: colorScheme.outline.withOpacity(0.5),
-                  width: 1.5,
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: _isDebit ? Colors.red : Colors.green,
-                  width: 2,
-                ),
-              ),
-              filled: true,
-              fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // From/To Field
-          TextField(
-            controller: _noteController,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: InputDecoration(
-              labelText: _isDebit ? 'To' : 'From',
-              hintText: _isDebit ? 'Where did you spend?' : 'Who paid you?',
-              prefixIcon: Icon(
-                _isDebit ? Icons.call_made : Icons.call_received,
-                size: 20,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: colorScheme.outline.withOpacity(0.5),
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: _isDebit ? Colors.red : Colors.green,
-                  width: 2,
-                ),
-              ),
-              filled: true,
-              fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Action Buttons
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _isLoading ? null : () => Navigator.pop(context),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text('Cancel'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: FilledButton(
-                  onPressed: _isLoading ? null : _saveTransaction,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _isDebit ? Colors.red : Colors.green,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(
-                          _isDebit ? 'Save Expense' : 'Save Income',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
+            return ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Flexible(
+                      child: SingleChildScrollView(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: EdgeInsets.only(
+                          top: 8,
+                          bottom: formBottomPadding,
                         ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Title
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        (_isDebit ? Colors.red : Colors.green)
+                                            .withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    _isDebit ? Icons.remove : Icons.add,
+                                    color: _isDebit ? Colors.red : Colors.green,
+                                    size: 24,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    _isDebit
+                                        ? 'Add Cash Expense'
+                                        : 'Add Cash Income',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: colorScheme.onSurface,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 24),
+
+                            // Transaction Type Toggle
+                            Container(
+                              decoration: BoxDecoration(
+                                color: colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.5),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              padding: const EdgeInsets.all(4),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: _TypeButton(
+                                      label: 'Expense',
+                                      icon: Icons.arrow_upward,
+                                      isSelected: _isDebit,
+                                      color: Colors.red,
+                                      onTap: () => setState(() {
+                                        _isDebit = true;
+                                        _selectedCategoryId = null;
+                                      }),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: _TypeButton(
+                                      label: 'Income',
+                                      icon: Icons.arrow_downward,
+                                      isSelected: !_isDebit,
+                                      color: Colors.green,
+                                      onTap: () => setState(() {
+                                        _isDebit = false;
+                                        _selectedCategoryId = null;
+                                      }),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+
+                            // Amount Field
+                            TextField(
+                              controller: _amountController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              autofocus: true,
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Amount',
+                                hintText: '0.00',
+                                hintStyle: TextStyle(color: hintColor),
+                                labelStyle: TextStyle(color: hintColor),
+                                floatingLabelStyle: TextStyle(
+                                  color: hintColor,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                prefixText: 'ETB ',
+                                prefixStyle:
+                                    theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: hintColor,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: colorScheme.outline.withValues(
+                                      alpha: 0.5,
+                                    ),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: _isDebit ? Colors.red : Colors.green,
+                                    width: 2,
+                                  ),
+                                ),
+                                filled: true,
+                                fillColor: colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.3),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+
+                            // From/To Field
+                            TextField(
+                              controller: _noteController,
+                              textCapitalization: TextCapitalization.sentences,
+                              decoration: InputDecoration(
+                                labelText: _isDebit ? 'To' : 'From',
+                                hintText: _isDebit
+                                    ? 'Where did you spend?'
+                                    : 'Who paid you?',
+                                hintStyle: TextStyle(color: hintColor),
+                                labelStyle: TextStyle(color: hintColor),
+                                floatingLabelStyle: TextStyle(
+                                  color: hintColor,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                prefixIcon: Icon(
+                                  _isDebit
+                                      ? Icons.call_made
+                                      : Icons.call_received,
+                                  size: 20,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: colorScheme.outline.withValues(
+                                      alpha: 0.5,
+                                    ),
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: _isDebit ? Colors.red : Colors.green,
+                                    width: 2,
+                                  ),
+                                ),
+                                filled: true,
+                                fillColor: colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.3),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Category
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Category',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: 36,
+                              child: ListView(
+                                scrollDirection: Axis.horizontal,
+                                children: [
+                                  _CashCategoryChip(
+                                    label: 'None',
+                                    icon: null,
+                                    selected: _selectedCategoryId == null,
+                                    accentColor:
+                                        _isDebit ? Colors.red : Colors.green,
+                                    onTap: () => setState(
+                                        () => _selectedCategoryId = null),
+                                  ),
+                                  ..._filteredCategories.map((cat) {
+                                    return _CashCategoryChip(
+                                      label: cat.name,
+                                      icon: iconForCategoryKey(cat.iconKey),
+                                      selected: _selectedCategoryId == cat.id,
+                                      accentColor:
+                                          _isDebit ? Colors.red : Colors.green,
+                                      onTap: () => setState(
+                                        () => _selectedCategoryId = cat.id,
+                                      ),
+                                    );
+                                  }),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: actionTopGap),
+                    Padding(
+                      padding: EdgeInsets.only(
+                        bottom: bottomSafeArea + actionBottomGap,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _isLoading
+                                  ? null
+                                  : () => Navigator.pop(context),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: hintColor,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: FilledButton(
+                              onPressed: _isLoading ? null : _saveTransaction,
+                              style: FilledButton.styleFrom(
+                                backgroundColor:
+                                    _isDebit ? Colors.red : Colors.green,
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : Text(
+                                      _isDebit ? 'Save Expense' : 'Save Income',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                  ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-        ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -378,18 +531,72 @@ class _TypeButton extends StatelessWidget {
               Icon(
                 icon,
                 size: 18,
-                color: isSelected
-                    ? Colors.white
-                    : colorScheme.onSurfaceVariant,
+                color: isSelected ? Colors.white : colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
               Text(
                 label,
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w600,
-                  color: isSelected
-                      ? Colors.white
-                      : colorScheme.onSurfaceVariant,
+                  color:
+                      isSelected ? Colors.white : colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CashCategoryChip extends StatelessWidget {
+  final String label;
+  final IconData? icon;
+  final bool selected;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  const _CashCategoryChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final bg = selected
+        ? accentColor
+        : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5);
+    final fg = selected ? Colors.white : colorScheme.onSurfaceVariant;
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 14, color: fg),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: fg,
                 ),
               ),
             ],

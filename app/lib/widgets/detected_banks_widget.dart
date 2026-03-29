@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
 import 'package:totals/models/bank.dart';
+import 'package:totals/services/account_sync_status_service.dart';
 import 'package:totals/services/bank_detection_service.dart';
 import 'package:totals/widgets/add_account_form.dart';
 
@@ -118,12 +120,18 @@ class _DetectedBanksWidgetState extends State<DetectedBanksWidget>
       isScrollControlled: true,
       context: context,
       builder: (context) {
+        final mediaQuery = MediaQuery.of(context);
         return ClipRRect(
           borderRadius: BorderRadius.circular(15),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
-            height: MediaQuery.of(context).size.height * 0.83,
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+            height: mediaQuery.size.height * 0.83,
             child: SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.only(
+                bottom:
+                    mediaQuery.viewInsets.bottom + mediaQuery.padding.bottom,
+              ),
               child: RegisterAccountForm(
                 initialBankId: bank?.id,
                 onSubmit: () {
@@ -405,73 +413,91 @@ class _DetectedBanksWidgetState extends State<DetectedBanksWidget>
   }
 
   Widget _buildDetectedBanksContent() {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 24),
-            // Header
-            Row(
+    return Consumer<AccountSyncStatusService>(
+      builder: (context, syncStatusService, _) {
+        return SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.auto_awesome,
-                  size: 24,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    "We found your banks!",
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface,
+                const SizedBox(height: 24),
+                // Header
+                Row(
+                  children: [
+                    Icon(
+                      Icons.auto_awesome,
+                      size: 24,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "We found your banks!",
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Tap a bank to add your account details",
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
+                const SizedBox(height: 24),
+
+                // Detected Banks Grid (includes manual add card at the end)
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    childAspectRatio: 1.1,
+                  ),
+                  itemCount: _detectedBanks.length + 1,
+                  itemBuilder: (context, index) {
+                    if (index == _detectedBanks.length) {
+                      return _buildManualAddGridCard();
+                    }
+                    return _buildBankCard(
+                      _detectedBanks[index],
+                      syncStatusService,
+                    );
+                  },
+                ),
+
+                const SizedBox(height: 100), // Bottom padding for nav
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              "Tap a bank to add your account details",
-              style: TextStyle(
-                fontSize: 14,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Detected Banks Grid (includes manual add card at the end)
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: 1.1,
-              ),
-              itemCount: _detectedBanks.length + 1,
-              itemBuilder: (context, index) {
-                if (index == _detectedBanks.length) {
-                  return _buildManualAddGridCard();
-                }
-                return _buildBankCard(_detectedBanks[index]);
-              },
-            ),
-
-            const SizedBox(height: 100), // Bottom padding for nav
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildBankCard(DetectedBank detectedBank) {
+  Widget _buildBankCard(
+    DetectedBank detectedBank,
+    AccountSyncStatusService syncStatusService,
+  ) {
+    final isSyncing =
+        syncStatusService.hasAnyAccountSyncing(detectedBank.bank.id);
+    final syncStatus =
+        syncStatusService.getSyncStatusForBank(detectedBank.bank.id) ??
+            'Adding account...';
+
     return GestureDetector(
-      onTap: () => _openRegistrationForm(bank: detectedBank.bank),
+      onTap: isSyncing
+          ? null
+          : () => _openRegistrationForm(bank: detectedBank.bank),
       child: Container(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
@@ -526,25 +552,59 @@ class _DetectedBanksWidgetState extends State<DetectedBanksWidget>
                     ),
                   ),
                   const SizedBox(height: 4),
-                  // Message count badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      "${detectedBank.messageCount} messages",
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  if (isSyncing)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              syncStatus,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        "${detectedBank.messageCount} messages",
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -558,11 +618,22 @@ class _DetectedBanksWidgetState extends State<DetectedBanksWidget>
                   color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  Icons.add_rounded,
-                  size: 18,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+                child: isSyncing
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      )
+                    : Icon(
+                        Icons.add_rounded,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
               ),
             ),
           ],

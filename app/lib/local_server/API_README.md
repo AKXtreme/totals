@@ -10,6 +10,8 @@ This document describes all available API endpoints in the Totals local server a
 - [Response Format](#response-format)
 - [Endpoints](#endpoints)
   - [Accounts](#accounts-endpoints)
+  - [Shared Accounts](#shared-accounts-endpoints)
+  - [Budgets](#budgets-endpoints)
   - [Transactions](#transactions-endpoints)
   - [Summary](#summary-endpoints)
   - [Categories](#categories-endpoints)
@@ -22,7 +24,7 @@ This document describes all available API endpoints in the Totals local server a
 
 ## Overview
 
-The Totals local server provides a RESTful API to access your financial data including accounts, transactions, summaries, categories, and bank information. The server runs locally on your device and is accessible from any device on the same WiFi network.
+The Totals local server provides a RESTful API to access your financial data including accounts, shared accounts, budgets, transactions, summaries, categories, and bank information. The server runs locally on your device and is accessible from any device on the same WiFi network.
 
 ---
 
@@ -134,6 +136,216 @@ Returns a specific account by bank ID and account number.
 **Example:**
 ```bash
 curl http://localhost:8080/api/accounts/1/1234567890
+```
+
+---
+
+### Shared Accounts Endpoints
+
+Shared accounts are the quick-access accounts managed from the Tools page.
+
+#### `GET /api/shared-accounts`
+
+Returns all shared/quick-access accounts with enriched bank information.
+
+**Response:**
+```json
+[
+  {
+    "id": 12,
+    "accountNumber": "1000123456",
+    "bankId": 1,
+    "bankName": "Commercial Bank of Ethiopia",
+    "bankShortName": "CBE",
+    "bankImage": "assets/images/cbe.png",
+    "accountHolderName": "Jane Doe",
+    "createdAt": "2026-03-29T12:00:00.000Z"
+  }
+]
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/api/shared-accounts
+```
+
+---
+
+#### `GET /api/shared-accounts/<bankId>/<accountNumber>`
+
+Returns one shared account by bank ID and account number.
+
+**Example:**
+```bash
+curl http://localhost:8080/api/shared-accounts/1/1000123456
+```
+
+---
+
+#### `POST /api/shared-accounts`
+
+Creates a shared account.
+
+**Request Body:**
+```json
+{
+  "accountNumber": "1000123456",
+  "bankId": 1,
+  "accountHolderName": "Jane Doe"
+}
+```
+
+`createdAt` is optional. The endpoint also accepts `bank` as an alias for `bankId`.
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/shared-accounts \
+  -H "Content-Type: application/json" \
+  -d '{"accountNumber":"1000123456","bankId":1,"accountHolderName":"Jane Doe"}'
+```
+
+---
+
+#### `DELETE /api/shared-accounts/<bankId>/<accountNumber>`
+
+Deletes a shared account.
+
+**Example:**
+```bash
+curl -X DELETE http://localhost:8080/api/shared-accounts/1/1000123456
+```
+
+---
+
+### Budgets Endpoints
+
+#### `GET /api/budgets`
+
+Returns budgets from the local database.
+
+**Query Parameters:**
+- `active` (boolean, optional) - Filter active/inactive budgets
+- `type` (string, optional) - Filter by `daily`, `monthly`, `yearly`, or `category`
+- `includeStatus` (boolean, optional) - Include computed spending status
+
+**Response:**
+```json
+[
+  {
+    "id": 3,
+    "name": "April Essentials",
+    "type": "category",
+    "amount": 5000.0,
+    "categoryId": 9,
+    "categoryIds": [9, 10],
+    "selectedCategoryIds": [9, 10],
+    "startDate": "2026-04-01T00:00:00.000",
+    "endDate": null,
+    "rollover": false,
+    "alertThreshold": 80.0,
+    "isActive": true,
+    "createdAt": "2026-03-29T12:00:00.000Z",
+    "updatedAt": "2026-03-29T12:00:00.000Z",
+    "timeFrame": "monthly",
+    "appliesToAllExpenses": false,
+    "categories": [
+      {
+        "id": 9,
+        "name": "Rent",
+        "essential": true,
+        "flow": "expense",
+        "typeLabel": "Essential"
+      }
+    ],
+    "status": {
+      "spent": 1500.0,
+      "remaining": 3500.0,
+      "percentageUsed": 30.0,
+      "isExceeded": false,
+      "isApproachingLimit": false,
+      "periodStart": "2026-04-01T00:00:00.000",
+      "periodEnd": "2026-04-30T23:59:59.000"
+    }
+  }
+]
+```
+
+**Examples:**
+```bash
+curl http://localhost:8080/api/budgets
+curl "http://localhost:8080/api/budgets?active=true&includeStatus=true"
+curl "http://localhost:8080/api/budgets?type=category"
+```
+
+---
+
+#### `GET /api/budgets/<id>`
+
+Returns a single budget by ID.
+
+**Query Parameters:**
+- `includeStatus` (boolean, optional) - Include computed spending status
+
+**Example:**
+```bash
+curl "http://localhost:8080/api/budgets/3?includeStatus=true"
+```
+
+---
+
+#### `POST /api/budgets`
+
+Creates a new budget.
+
+**Request Body:**
+```json
+{
+  "name": "April Essentials",
+  "amount": 5000,
+  "type": "monthly",
+  "categoryIds": [9, 10],
+  "timeFrame": "monthly",
+  "startDate": "2026-04-01T00:00:00.000",
+  "rollover": false,
+  "alertThreshold": 80,
+  "isActive": true
+}
+```
+
+**Notes:**
+- If `categoryIds` or `categoryId` are supplied, the budget is treated as a category budget.
+- Category budgets accept `timeFrame` values of `daily`, `monthly`, `yearly`, or `never`.
+- `startDate` is optional; when omitted, the API derives it from the budget type.
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/budgets \
+  -H "Content-Type: application/json" \
+  -d '{"name":"April Essentials","amount":5000,"categoryIds":[9,10],"timeFrame":"monthly"}'
+```
+
+---
+
+#### `PUT /api/budgets/<id>`
+
+Updates an existing budget. Partial updates are allowed; unspecified fields keep their current values.
+
+**Example:**
+```bash
+curl -X PUT http://localhost:8080/api/budgets/3 \
+  -H "Content-Type: application/json" \
+  -d '{"amount":6500,"alertThreshold":90}'
+```
+
+---
+
+#### `DELETE /api/budgets/<id>`
+
+Deletes a budget permanently.
+
+**Example:**
+```bash
+curl -X DELETE http://localhost:8080/api/budgets/3
 ```
 
 ---
@@ -553,6 +765,16 @@ fetch('http://localhost:8080/api/accounts')
   .then(response => response.json())
   .then(data => console.log(data));
 
+// Get shared accounts
+fetch('http://localhost:8080/api/shared-accounts')
+  .then(response => response.json())
+  .then(data => console.log(data));
+
+// Get budgets with status
+fetch('http://localhost:8080/api/budgets?includeStatus=true')
+  .then(response => response.json())
+  .then(data => console.log(data));
+
 // Get transactions with filters
 fetch('http://localhost:8080/api/transactions?bankId=1&type=CREDIT&limit=10')
   .then(response => response.json())
@@ -574,6 +796,14 @@ response = requests.get('http://localhost:8080/api/accounts')
 accounts = response.json()
 print(accounts)
 
+# Get budgets
+response = requests.get(
+    'http://localhost:8080/api/budgets',
+    params={'includeStatus': 'true'},
+)
+budgets = response.json()
+print(budgets)
+
 # Get transactions with filters
 params = {
     'bankId': 1,
@@ -590,6 +820,12 @@ print(transactions)
 ```bash
 # Get all accounts
 curl http://localhost:8080/api/accounts
+
+# Get quick-access shared accounts
+curl http://localhost:8080/api/shared-accounts
+
+# Get budgets with computed status
+curl "http://localhost:8080/api/budgets?includeStatus=true"
 
 # Get transactions for bank ID 1
 curl http://localhost:8080/api/transactions?bankId=1
@@ -611,7 +847,9 @@ curl http://localhost:8080/api/accounts/1/1234567890
 All endpoints return standard HTTP status codes:
 
 - `200 OK` - Request successful
+- `201 Created` - Resource created successfully
 - `400 Bad Request` - Invalid request parameters
+- `409 Conflict` - Duplicate resource or conflicting request
 - `404 Not Found` - Resource not found
 - `500 Internal Server Error` - Server error
 

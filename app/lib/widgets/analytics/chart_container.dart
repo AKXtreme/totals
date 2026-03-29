@@ -17,9 +17,14 @@ class ChartContainer extends StatefulWidget {
   final DateTime Function(int?) getBaseDate;
   final List<ChartDataPoint> Function(int) getChartDataForOffset;
   final String? selectedCard;
+  final String barChartFlow;
   final List<Transaction> barChartTransactions;
   final List<Transaction> pnlTransactions;
+  final Set<int?> selectedIncomeCategoryIds;
+  final Set<int?> selectedExpenseCategoryIds;
   final DateTime? Function(Transaction) dateForTransaction;
+  final ValueChanged<String> onBarChartFlowChanged;
+  final ValueChanged<String> onBarChartPeriodChanged;
   final ValueChanged<DateTime>? onCalendarCellSelected;
   final VoidCallback onResetTimeFrame;
   final ValueChanged<bool> onNavigateTimeFrame;
@@ -36,9 +41,14 @@ class ChartContainer extends StatefulWidget {
     required this.getBaseDate,
     required this.getChartDataForOffset,
     required this.selectedCard,
+    required this.barChartFlow,
     required this.barChartTransactions,
     required this.pnlTransactions,
+    required this.selectedIncomeCategoryIds,
+    required this.selectedExpenseCategoryIds,
     required this.dateForTransaction,
+    required this.onBarChartFlowChanged,
+    required this.onBarChartPeriodChanged,
     this.onCalendarCellSelected,
     required this.onResetTimeFrame,
     required this.onNavigateTimeFrame,
@@ -54,6 +64,8 @@ class _ChartContainerState extends State<ChartContainer> {
 
   double _getChartHeight() {
     switch (widget.chartType) {
+      case 'Bar Chart':
+        return 520;
       case 'Heatmap':
         return 350;
       default:
@@ -86,12 +98,15 @@ class _ChartContainerState extends State<ChartContainer> {
       case 'Bar Chart':
         chartWidget = BarChartWidget(
           data: data,
-          maxValue: maxValue,
           baseDate: baseDate,
           selectedPeriod: widget.selectedPeriod,
-          timeFrameOffset: widget.timeFrameOffset,
+          selectedFlow: widget.barChartFlow,
           transactions: widget.barChartTransactions,
+          selectedIncomeCategoryIds: widget.selectedIncomeCategoryIds,
+          selectedExpenseCategoryIds: widget.selectedExpenseCategoryIds,
           dateForTransaction: widget.dateForTransaction,
+          onFlowChanged: widget.onBarChartFlowChanged,
+          onPeriodChanged: widget.onBarChartPeriodChanged,
         );
         break;
       case 'Pie Chart':
@@ -126,6 +141,16 @@ class _ChartContainerState extends State<ChartContainer> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.chartType == 'Bar Chart') {
+      final currentBaseDate = widget.getBaseDate(widget.timeFrameOffset);
+      return RepaintBoundary(
+        child: SizedBox(
+          height: _getChartHeight(),
+          child: _buildChart(widget.data, widget.maxValue, currentBaseDate),
+        ),
+      );
+    }
+
     return Column(
       children: [
         Stack(

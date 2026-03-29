@@ -639,7 +639,6 @@ class _AccountsSummaryListState extends State<AccountsSummaryList> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Account deleted successfully'),
-            backgroundColor: Colors.green,
             duration: Duration(seconds: 2),
           ),
         );
@@ -650,7 +649,6 @@ class _AccountsSummaryListState extends State<AccountsSummaryList> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error deleting account: $e'),
-            backgroundColor: Colors.red,
             duration: Duration(seconds: 3),
           ),
         );

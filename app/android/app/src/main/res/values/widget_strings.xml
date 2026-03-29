@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_expense_name">Expenses</string>
+    <string name="widget_budget_name">Budget</string>
+</resources>

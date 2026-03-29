@@ -99,6 +99,10 @@ class _CategoryBudgetFormSheetState extends State<CategoryBudgetFormSheet> {
       final category = transactionProvider.categories.firstWhere(
         (c) => c.id == _selectedCategoryId,
       );
+      final selectedCategoryIds = widget.budget?.categoryIds != null &&
+              widget.budget!.categoryIds!.isNotEmpty
+          ? List<int>.from(widget.budget!.categoryIds!)
+          : (_selectedCategoryId != null ? <int>[_selectedCategoryId!] : null);
 
       final budget = Budget(
         id: widget.budget?.id,
@@ -106,6 +110,7 @@ class _CategoryBudgetFormSheetState extends State<CategoryBudgetFormSheet> {
         type: 'category',
         amount: amount,
         categoryId: _selectedCategoryId,
+        categoryIds: selectedCategoryIds,
         startDate: widget.budget?.startDate ?? _getPeriodStart(),
         rollover: false,
         alertThreshold: alertThreshold,

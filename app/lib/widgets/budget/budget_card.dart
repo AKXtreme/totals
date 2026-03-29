@@ -47,7 +47,9 @@ class BudgetCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusColor = _getStatusColor();
-    final isCategoryBudget = status.budget.type == 'category' && status.budget.categoryId != null;
+    final primaryCategoryId = status.budget.primaryCategoryId;
+    final isCategoryBudget =
+        status.budget.type == 'category' && primaryCategoryId != null;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -87,7 +89,7 @@ class BudgetCard extends StatelessWidget {
                                 builder: (context, transactionProvider, _) {
                                   try {
                                     final category = transactionProvider.categories.firstWhere(
-                                      (c) => c.id == status.budget.categoryId,
+                                      (c) => c.id == primaryCategoryId,
                                     );
                                     final categoryColor = categoryTypeColor(category, context);
                                     return Container(

@@ -4,6 +4,7 @@ class Category {
   final bool essential;
   final bool uncategorized;
   final String? iconKey;
+  final String? colorKey;
   final String? description;
   final String flow; // 'expense' | 'income'
   final bool recurring;
@@ -16,6 +17,7 @@ class Category {
     required this.essential,
     this.uncategorized = false,
     this.iconKey,
+    this.colorKey,
     this.description,
     this.flow = 'expense',
     this.recurring = false,
@@ -25,12 +27,18 @@ class Category {
 
   factory Category.fromDb(Map<String, dynamic> row) {
     final rawFlow = (row['flow'] as String?)?.trim().toLowerCase();
+    final rawIconKey = row['iconKey'] as String?;
+    final parsedColorKey = _normalizedColorKey(row['colorKey'] as String?);
+    final legacyColorKey = _legacyColorKeyFromIconKey(rawIconKey);
+    final effectiveColorKey = parsedColorKey ?? legacyColorKey;
+    final effectiveIconKey = legacyColorKey != null ? 'more_horiz' : rawIconKey;
     return Category(
       id: row['id'] as int?,
       name: (row['name'] as String?) ?? '',
       essential: (row['essential'] as int? ?? 0) == 1,
       uncategorized: (row['uncategorized'] as int? ?? 0) == 1,
-      iconKey: row['iconKey'] as String?,
+      iconKey: effectiveIconKey,
+      colorKey: effectiveColorKey,
       description: row['description'] as String?,
       flow: rawFlow == 'income' ? 'income' : 'expense',
       recurring: (row['recurring'] as int? ?? 0) == 1,
@@ -59,12 +67,18 @@ class Category {
     }
 
     final rawFlow = (json['flow'] as String?)?.trim().toLowerCase();
+    final rawIconKey = json['iconKey'] as String?;
+    final parsedColorKey = _normalizedColorKey(json['colorKey'] as String?);
+    final legacyColorKey = _legacyColorKeyFromIconKey(rawIconKey);
+    final effectiveColorKey = parsedColorKey ?? legacyColorKey;
+    final effectiveIconKey = legacyColorKey != null ? 'more_horiz' : rawIconKey;
     return Category(
       id: toInt(json['id']),
       name: (json['name'] as String?) ?? '',
       essential: toBool(json['essential']),
       uncategorized: toBool(json['uncategorized']),
-      iconKey: json['iconKey'] as String?,
+      iconKey: effectiveIconKey,
+      colorKey: effectiveColorKey,
       description: json['description'] as String?,
       flow: rawFlow == 'income' ? 'income' : 'expense',
       recurring: toBool(json['recurring']),
@@ -80,6 +94,7 @@ class Category {
       'essential': essential ? 1 : 0,
       'uncategorized': uncategorized ? 1 : 0,
       'iconKey': iconKey,
+      'colorKey': colorKey,
       'description': description,
       'flow': flow,
       'recurring': recurring ? 1 : 0,
@@ -94,6 +109,7 @@ class Category {
         'essential': essential,
         'uncategorized': uncategorized,
         'iconKey': iconKey,
+        'colorKey': colorKey,
         'description': description,
         'flow': flow,
         'recurring': recurring,
@@ -107,6 +123,7 @@ class Category {
     bool? essential,
     bool? uncategorized,
     String? iconKey,
+    String? colorKey,
     String? description,
     String? flow,
     bool? recurring,
@@ -119,12 +136,28 @@ class Category {
       essential: essential ?? this.essential,
       uncategorized: uncategorized ?? this.uncategorized,
       iconKey: iconKey ?? this.iconKey,
+      colorKey: colorKey ?? this.colorKey,
       description: description ?? this.description,
       flow: flow ?? this.flow,
       recurring: recurring ?? this.recurring,
       builtIn: builtIn ?? this.builtIn,
       builtInKey: builtInKey ?? this.builtInKey,
     );
+  }
+
+  static String? _normalizedColorKey(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    return trimmed;
+  }
+
+  static String? _legacyColorKeyFromIconKey(String? iconKey) {
+    if (iconKey == null) return null;
+    const prefix = 'color:';
+    if (!iconKey.startsWith(prefix)) return null;
+    final value = iconKey.substring(prefix.length).trim();
+    if (value.isEmpty) return null;
+    return value;
   }
 }
 

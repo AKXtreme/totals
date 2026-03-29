@@ -3,6 +3,7 @@ import 'package:totals/models/budget.dart';
 import 'package:totals/repositories/budget_repository.dart';
 import 'package:totals/services/budget_service.dart';
 import 'package:totals/services/budget_alert_service.dart';
+import 'package:totals/services/widget_service.dart';
 import 'package:totals/providers/transaction_provider.dart';
 
 export 'package:totals/services/budget_service.dart' show BudgetStatus;
@@ -34,6 +35,7 @@ class BudgetProvider with ChangeNotifier {
     try {
       _budgets = await _budgetRepository.getActiveBudgets();
       await _refreshBudgetStatuses();
+      await _refreshBudgetWidgetSafe();
     } catch (e) {
       print("debug: Error loading budgets: $e");
     } finally {
@@ -46,7 +48,7 @@ class BudgetProvider with ChangeNotifier {
     _budgetStatuses = await _budgetService.getAllBudgetStatuses();
   }
 
-  Future<void> createBudget(Budget budget) async {
+  Future<Budget> createBudget(Budget budget) async {
     try {
       final id = await _budgetRepository.insertBudget(budget);
       // Get the created budget with its ID
@@ -59,14 +61,14 @@ class BudgetProvider with ChangeNotifier {
       } catch (e) {
         print("debug: Error checking budget alerts after creating budget: $e");
       }
-      return;
+      return createdBudget;
     } catch (e) {
       print("debug: Error creating budget: $e");
       rethrow;
     }
   }
 
-  Future<void> updateBudget(Budget budget) async {
+  Future<Budget> updateBudget(Budget budget) async {
     try {
       await _budgetRepository.updateBudget(budget);
       await loadBudgets();
@@ -77,8 +79,31 @@ class BudgetProvider with ChangeNotifier {
       } catch (e) {
         print("debug: Error checking budget alerts after updating budget: $e");
       }
+      return budget;
     } catch (e) {
       print("debug: Error updating budget: $e");
+      rethrow;
+    }
+  }
+
+  Future<Budget> updateBudgetForMonthOnly({
+    required Budget originalBudget,
+    required Budget editedBudget,
+    required DateTime month,
+    bool keepFutureSegment = true,
+  }) async {
+    try {
+      final editedBudgetId = await _budgetRepository.updateBudgetForMonthOnly(
+        originalBudget: originalBudget,
+        editedBudget: editedBudget,
+        month: month,
+        keepFutureSegment: keepFutureSegment,
+      );
+      await loadBudgets();
+      notifyListeners();
+      return editedBudget.copyWith(id: editedBudgetId);
+    } catch (e) {
+      print("debug: Error updating budget for month only: $e");
       rethrow;
     }
   }
@@ -90,6 +115,25 @@ class BudgetProvider with ChangeNotifier {
       notifyListeners();
     } catch (e) {
       print("debug: Error deleting budget: $e");
+      rethrow;
+    }
+  }
+
+  Future<void> deleteBudgetForMonth({
+    required Budget originalBudget,
+    required DateTime month,
+    bool deleteFutureBudgets = false,
+  }) async {
+    try {
+      await _budgetRepository.deleteBudgetForMonth(
+        originalBudget: originalBudget,
+        month: month,
+        deleteFutureBudgets: deleteFutureBudgets,
+      );
+      await loadBudgets();
+      notifyListeners();
+    } catch (e) {
+      print("debug: Error deleting budget for month: $e");
       rethrow;
     }
   }
@@ -132,6 +176,7 @@ class BudgetProvider with ChangeNotifier {
 
   Future<void> refreshBudgetStatuses() async {
     await _refreshBudgetStatuses();
+    await _refreshBudgetWidgetSafe();
     notifyListeners();
   }
 
@@ -152,5 +197,13 @@ class BudgetProvider with ChangeNotifier {
     // If multiple exist, use the most recent one
     final budget = budgets.first;
     return await _budgetService.getBudgetStatus(budget);
+  }
+
+  Future<void> _refreshBudgetWidgetSafe() async {
+    try {
+      await WidgetService.refreshBudgetWidget();
+    } catch (e) {
+      print("debug: Error refreshing budget widget: $e");
+    }
   }
 }

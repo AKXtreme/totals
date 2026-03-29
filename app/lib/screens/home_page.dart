@@ -22,7 +22,7 @@ import 'package:totals/screens/tools_page.dart';
 import 'package:totals/screens/settings_page.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/services/notification_intent_bus.dart';
-import 'package:totals/data/consts.dart';
+import 'package:totals/services/widget_launch_intent_service.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/widgets/today_transactions_list.dart';
 import 'package:totals/widgets/categorize_transaction_sheet.dart';
@@ -31,6 +31,7 @@ import 'package:totals/widgets/category_filter_sheet.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:totals/services/bank_detection_startup_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -60,6 +61,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int activeTab = 0;
   int _bottomNavIndex = 2; // Home is now at index 2 (center)
   StreamSubscription<NotificationIntent>? _notificationIntentSub;
+  StreamSubscription<WidgetLaunchTarget>? _widgetLaunchIntentSub;
   String? _pendingNotificationReference;
   String? _highlightedReference;
   Set<int?> _selectedTodayIncomeCategoryIds = {};
@@ -70,6 +72,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(BankDetectionStartupService.runOnAppOpen());
 
     _notificationIntentSub = NotificationIntentBus.instance.stream.listen(
       (intent) {
@@ -81,6 +84,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         }
       },
     );
+
+    _widgetLaunchIntentSub = WidgetLaunchIntentService.instance.stream.listen(
+      (target) {
+        if (target != WidgetLaunchTarget.budget) return;
+        _openBudgetFromWidget();
+      },
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final initialTarget =
+          WidgetLaunchIntentService.instance.consumePendingTarget();
+      if (initialTarget != WidgetLaunchTarget.budget) return;
+      _openBudgetFromWidget();
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await NotificationService.instance.emitLaunchIntentIfAny();
@@ -94,21 +111,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (!mounted) return;
 
         Provider.of<TransactionProvider>(context, listen: false).loadData();
+        final provider =
+            Provider.of<TransactionProvider>(context, listen: false);
 
-        final bankLabel = tx.bankId == CashConstants.bankId
-            ? CashConstants.bankShortName
-            : AppConstants.banks
-                .firstWhere(
-                  (b) => b.id == tx.bankId,
-                  orElse: () => const Bank(
-                    id: -1,
-                    name: 'Totals',
-                    shortName: 'Totals',
-                    codes: [],
-                    image: '',
-                  ),
-                )
-                .shortName;
+        final bankLabel = provider.getBankShortName(tx.bankId);
 
         final sign = tx.type == 'CREDIT'
             ? '+'
@@ -183,9 +189,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _notificationIntentSub?.cancel();
+    _widgetLaunchIntentSub?.cancel();
     _pageController.dispose();
     _mainPageController.dispose();
     super.dispose();
+  }
+
+  void _openBudgetFromWidget() {
+    if (!mounted) return;
+    if (_bottomNavIndex == 1) return;
+    setState(() {
+      _bottomNavIndex = 1;
+    });
+    _mainPageController.jumpToPage(1);
   }
 
   Future<void> _openTodayAndCategorize(String reference) async {
@@ -256,9 +272,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _handleQuickCategorize(String reference, int categoryId) async {
     if (!mounted) return;
     final provider = Provider.of<TransactionProvider>(context, listen: false);
-    final transaction = provider.transactions.where(
-      (t) => t.reference == reference,
-    ).firstOrNull;
+    final transaction = provider.transactions
+        .where(
+          (t) => t.reference == reference,
+        )
+        .firstOrNull;
 
     if (transaction == null) {
       if (kDebugMode) {
@@ -277,7 +295,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     await provider.setCategoryForTransaction(transaction, category);
     if (kDebugMode) {
-      print('debug: Quick categorized ${transaction.reference} as ${category.name}');
+      print(
+          'debug: Quick categorized ${transaction.reference} as ${category.name}');
     }
   }
 
@@ -836,13 +855,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   }
 
                   ScaffoldMessenger.of(context).showSnackBar(
-                    // style it
                     SnackBar(
-                      content: const Text(
-                        'Sweet!',
-                        style: TextStyle(fontSize: 16, color: Colors.white),
-                      ),
-                      backgroundColor: Colors.blue[200],
+                      content: const Text('Sweet!'),
                       duration: Duration(seconds: 2),
                     ),
                   );
@@ -888,19 +902,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         isScrollControlled: true,
                                         context: context,
                                         builder: (context) {
+                                          final mediaQuery =
+                                              MediaQuery.of(context);
                                           return ClipRRect(
                                             borderRadius:
                                                 BorderRadius.circular(15),
                                             child: Container(
                                               padding:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 20,
-                                                      horizontal: 20),
-                                              height: MediaQuery.of(context)
-                                                      .size
-                                                      .height *
-                                                  0.83,
+                                                  const EdgeInsets.fromLTRB(
+                                                20,
+                                                20,
+                                                20,
+                                                20,
+                                              ),
+                                              height:
+                                                  mediaQuery.size.height * 0.83,
                                               child: SingleChildScrollView(
+                                                keyboardDismissBehavior:
+                                                    ScrollViewKeyboardDismissBehavior
+                                                        .onDrag,
+                                                padding: EdgeInsets.only(
+                                                  bottom: mediaQuery
+                                                          .viewInsets.bottom +
+                                                      mediaQuery.padding.bottom,
+                                                ),
                                                 child: RegisterAccountForm(
                                                   onSubmit: () {
                                                     provider.loadData();

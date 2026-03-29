@@ -9,10 +9,98 @@ import 'package:totals/constants/cash_constants.dart';
 
 class BankConfigService {
   static const String _banksAssetPath = 'assets/banks.json';
+  static const int _mpesaBankId = 8;
   List<Bank>? _assetBanksCache;
 
   List<Bank> _filterCashBanks(List<Bank> banks) {
     return banks.where((bank) => bank.id != CashConstants.bankId).toList();
+  }
+
+  bool _isMpesaBank(Bank bank) {
+    final token = '${bank.name} ${bank.shortName} ${bank.codes.join(' ')} ${bank.image}'
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+    return token.contains('mpesa');
+  }
+
+  Bank _canonicalMpesaBank() {
+    return Bank(
+      id: _mpesaBankId,
+      name: 'M Pesa',
+      shortName: 'MPESA',
+      codes: const ['MPESA'],
+      image: 'assets/images/mpesa.png',
+      maskPattern: 0,
+      uniformMasking: false,
+      simBased: true,
+      colors: const ['#00a859', '#ffffff'],
+    );
+  }
+
+  bool _sameStringList(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  bool _sameBanks(Bank a, Bank b) {
+    return a.id == b.id &&
+        a.name == b.name &&
+        a.shortName == b.shortName &&
+        _sameStringList(a.codes, b.codes) &&
+        a.image == b.image &&
+        a.maskPattern == b.maskPattern &&
+        a.uniformMasking == b.uniformMasking &&
+        a.simBased == b.simBased &&
+        _sameStringList(a.colors ?? const [], b.colors ?? const []);
+  }
+
+  bool _sameBankLists(List<Bank> a, List<Bank> b) {
+    if (a.length != b.length) return false;
+    final banksByIdA = <int, Bank>{for (final bank in a) bank.id: bank};
+    final banksByIdB = <int, Bank>{for (final bank in b) bank.id: bank};
+    if (banksByIdA.length != banksByIdB.length) return false;
+    for (final entry in banksByIdA.entries) {
+      final other = banksByIdB[entry.key];
+      if (other == null || !_sameBanks(entry.value, other)) return false;
+    }
+    return true;
+  }
+
+  List<Bank> _normalizeKnownBankAliases(List<Bank> banks) {
+    if (banks.isEmpty) return banks;
+    final normalized = List<Bank>.from(banks);
+    final mpesaByIdIndex =
+        normalized.indexWhere((bank) => bank.id == _mpesaBankId);
+    if (mpesaByIdIndex == -1) return normalized;
+
+    final bankAtMpesaId = normalized[mpesaByIdIndex];
+    if (_isMpesaBank(bankAtMpesaId)) {
+      return normalized;
+    }
+
+    final mpesaAliasIndex = normalized.indexWhere(
+      (bank) => bank.id != _mpesaBankId && _isMpesaBank(bank),
+    );
+    final source = mpesaAliasIndex >= 0
+        ? normalized[mpesaAliasIndex]
+        : _canonicalMpesaBank();
+
+    normalized[mpesaByIdIndex] = Bank(
+      id: _mpesaBankId,
+      name: source.name,
+      shortName: source.shortName,
+      codes: source.codes,
+      image: source.image,
+      maskPattern: source.maskPattern,
+      uniformMasking: source.uniformMasking,
+      simBased: source.simBased,
+      colors: source.colors,
+    );
+
+    return normalized;
   }
 
   Future<List<Bank>> _loadAssetBanks() async {
@@ -22,7 +110,8 @@ class BankConfigService {
 
     try {
       final body = await rootBundle.loadString(_banksAssetPath);
-      final banks = _filterCashBanks(_parseBanksFromJson(body));
+      final banks =
+          _normalizeKnownBankAliases(_filterCashBanks(_parseBanksFromJson(body)));
       _assetBanksCache = banks;
       print("debug: Loaded ${banks.length} banks from assets");
       return banks;
@@ -57,8 +146,10 @@ class BankConfigService {
                 : null,
           });
         }).toList();
-        final banks = _filterCashBanks(parsedBanks);
-        if (banks.length != parsedBanks.length) {
+        final filteredBanks = _filterCashBanks(parsedBanks);
+        final banks = _normalizeKnownBankAliases(filteredBanks);
+        if (!_sameBankLists(filteredBanks, banks) ||
+            filteredBanks.length != parsedBanks.length) {
           await saveBanks(banks);
         }
         print("debug: Loaded ${banks.length} banks from database");
@@ -153,7 +244,9 @@ class BankConfigService {
           );
 
       if (response.statusCode == 200) {
-        final banks = _parseBanksFromJson(response.body);
+        final banks = _normalizeKnownBankAliases(
+          _filterCashBanks(_parseBanksFromJson(response.body)),
+        );
         print("debug: Fetched ${banks.length} banks from remote");
         return banks;
       } else {

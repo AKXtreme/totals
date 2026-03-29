@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:totals/screens/web_page.dart';
 import 'package:totals/screens/accounts_page.dart';
+import 'package:totals/screens/failed_parses_page.dart';
 import 'package:totals/screens/verify_payments_page.dart';
 
 class ToolsPage extends StatelessWidget {
@@ -74,6 +75,18 @@ class ToolsPage extends StatelessWidget {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (context) => const VerifyPaymentsPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  _ToolCard(
+                    title: 'Failed Parsings',
+                    icon: Icons.sms_failed_rounded,
+                    iconColor: colorScheme.error,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const FailedParsesPage(),
                         ),
                       );
                     },

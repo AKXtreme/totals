@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' hide Category;
 import 'package:totals/models/account.dart';
+import 'package:totals/models/auto_categorization.dart';
 import 'package:totals/models/category.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/models/summary_models.dart';
@@ -9,10 +13,124 @@ import 'package:totals/repositories/transaction_repository.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/services/bank_config_service.dart';
 import 'package:totals/services/budget_alert_service.dart';
-import 'package:totals/services/receiver_category_service.dart';
+import 'package:totals/services/auto_categorization_service.dart';
 import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/telebirr_bank_transfer_service.dart';
 import 'package:totals/services/widget_service.dart';
+import 'package:totals/utils/account_balance_resolver.dart';
+import 'package:totals/utils/text_utils.dart';
+
+class TransactionTotals {
+  final double income;
+  final double expense;
+
+  const TransactionTotals({
+    required this.income,
+    required this.expense,
+  });
+
+  const TransactionTotals.zero()
+      : income = 0.0,
+        expense = 0.0;
+}
+
+class TransactionTrendSeries {
+  final List<double> incomePoints;
+  final List<double> expensePoints;
+  final double maxValue;
+  final double totalIncome;
+  final double totalExpense;
+  final int days;
+
+  const TransactionTrendSeries({
+    required this.incomePoints,
+    required this.expensePoints,
+    required this.maxValue,
+    required this.totalIncome,
+    required this.totalExpense,
+    required this.days,
+  });
+
+  factory TransactionTrendSeries.empty(int days) {
+    return TransactionTrendSeries(
+      incomePoints: List<double>.filled(days, 0),
+      expensePoints: List<double>.filled(days, 0),
+      maxValue: 0,
+      totalIncome: 0,
+      totalExpense: 0,
+      days: days,
+    );
+  }
+}
+
+class FinancialHealthSnapshot {
+  final int score;
+  final int cashFlowScore;
+  final int runwayScore;
+  final int stabilityScore;
+  final int fixedCostScore;
+  final double trailingIncome;
+  final double trailingExpense;
+  final double savingsRate;
+  final double totalBalance;
+  final double averageMonthlyExpense;
+  final double runwayMonths;
+  final double stabilityAverageDeviation;
+  final int stabilitySampleCount;
+  final double categorizedCoverage;
+  final double essentialBurden;
+
+  const FinancialHealthSnapshot({
+    required this.score,
+    required this.cashFlowScore,
+    required this.runwayScore,
+    required this.stabilityScore,
+    required this.fixedCostScore,
+    required this.trailingIncome,
+    required this.trailingExpense,
+    required this.savingsRate,
+    required this.totalBalance,
+    required this.averageMonthlyExpense,
+    required this.runwayMonths,
+    required this.stabilityAverageDeviation,
+    required this.stabilitySampleCount,
+    required this.categorizedCoverage,
+    required this.essentialBurden,
+  });
+
+  const FinancialHealthSnapshot.neutral()
+      : score = 50,
+        cashFlowScore = 50,
+        runwayScore = 50,
+        stabilityScore = 50,
+        fixedCostScore = 50,
+        trailingIncome = 0.0,
+        trailingExpense = 0.0,
+        savingsRate = 0.0,
+        totalBalance = 0.0,
+        averageMonthlyExpense = 0.0,
+        runwayMonths = 0.0,
+        stabilityAverageDeviation = 0.0,
+        stabilitySampleCount = 0,
+        categorizedCoverage = 0.0,
+        essentialBurden = 0.0;
+
+  double get trailingNet => trailingIncome - trailingExpense;
+  bool get hasStabilityHistory => stabilitySampleCount >= 2;
+  bool get usesCategoryData => categorizedCoverage >= 0.4;
+}
+
+class _StabilityHealthMetrics {
+  final double score;
+  final double averageDeviation;
+  final int sampleCount;
+
+  const _StabilityHealthMetrics({
+    required this.score,
+    required this.averageDeviation,
+    required this.sampleCount,
+  });
+}
 
 class TransactionProvider with ChangeNotifier {
   final TransactionRepository _transactionRepo = TransactionRepository();
@@ -20,6 +138,8 @@ class TransactionProvider with ChangeNotifier {
   final CategoryRepository _categoryRepo = CategoryRepository();
   final BankConfigService _bankConfigService = BankConfigService();
   final BudgetAlertService _budgetAlertService = BudgetAlertService();
+  final AutoCategorizationService _autoCategorizationService =
+      AutoCategorizationService.instance;
   final TelebirrBankTransferService _telebirrMatchService =
       TelebirrBankTransferService();
 
@@ -27,7 +147,16 @@ class TransactionProvider with ChangeNotifier {
   List<Account> _accounts = [];
   List<Category> _categories = [];
   Map<int, Category> _categoryById = {};
+  List<AutoCategorizationRule> _autoCategorizationRules = [];
+  List<AutoCategoryPromptDismissal> _autoCategoryPromptDismissals = [];
+  bool _autoCategorizationEnabled = false;
   Map<String, String> _selfTransferLabelByReference = {};
+  Map<int, String> _bankNamesById = {
+    CashConstants.bankId: CashConstants.bankName,
+  };
+  Map<int, String> _bankShortNamesById = {
+    CashConstants.bankId: CashConstants.bankShortName,
+  };
 
   // Summaries
   AllSummary? _summary;
@@ -38,37 +167,154 @@ class TransactionProvider with ChangeNotifier {
   String _searchKey = "";
   DateTime _selectedDate = DateTime.now();
 
-  // Getters
   List<Transaction> _allTransactions = [];
+
+  // Redesign home cached metrics
+  List<Transaction> _todayTransactions = [];
+  List<Transaction> _monthTransactions = [];
+  TransactionTotals _todayTotals = const TransactionTotals.zero();
+  TransactionTotals _weekTotals = const TransactionTotals.zero();
+  TransactionTotals _monthTotals = const TransactionTotals.zero();
+  TransactionTotals _thirtyDayTotals = const TransactionTotals.zero();
+  int _selfTransferCount = 0;
+  String _monthlyInsight =
+      'No monthly activity yet. Keep using Totals to unlock insights.';
+  TransactionTrendSeries _weekTrendSeries = TransactionTrendSeries.empty(7);
+  TransactionTrendSeries _monthTrendSeries = TransactionTrendSeries.empty(30);
+  FinancialHealthSnapshot _financialHealth =
+      const FinancialHealthSnapshot.neutral();
+  int _dataVersion = 0;
+  Future<void>? _activeLoadDataFuture;
+  bool _reloadQueuedWhileLoading = false;
 
   // Getters
   List<Transaction> get transactions => _transactions;
   List<Transaction> get allTransactions => _allTransactions;
   List<Category> get categories => _categories;
+  List<AutoCategorizationRule> get autoCategorizationRules =>
+      _autoCategorizationRules;
+  List<AutoCategoryPromptDismissal> get autoCategoryPromptDismissals =>
+      _autoCategoryPromptDismissals;
+  bool get isAutoCategorizationEnabled => _autoCategorizationEnabled;
   bool get isLoading => _isLoading;
   AllSummary? get summary => _summary;
   List<BankSummary> get bankSummaries => _bankSummaries;
   List<AccountSummary> get accountSummaries => _accountSummaries;
   DateTime get selectedDate => _selectedDate;
+  List<Transaction> get todayTransactions => _todayTransactions;
+  List<Transaction> get monthTransactions => _monthTransactions;
+  TransactionTotals get todayTotals => _todayTotals;
+  TransactionTotals get weekTotals => _weekTotals;
+  TransactionTotals get monthTotals => _monthTotals;
+  TransactionTotals get thirtyDayTotals => _thirtyDayTotals;
+  int get selfTransferCount => _selfTransferCount;
+  String get monthlyInsight => _monthlyInsight;
+  TransactionTrendSeries get weekTrendSeries => _weekTrendSeries;
+  TransactionTrendSeries get monthTrendSeries => _monthTrendSeries;
+  FinancialHealthSnapshot get financialHealth => _financialHealth;
+  int get dataVersion => _dataVersion;
+  Map<int, String> get bankNamesById => _bankNamesById;
+  Map<int, String> get bankShortNamesById => _bankShortNamesById;
+
+  String getBankName(int? bankId) {
+    if (bankId == null) return 'Bank';
+    if (bankId == CashConstants.bankId) return CashConstants.bankName;
+    return _bankNamesById[bankId] ?? 'Bank $bankId';
+  }
+
+  String getBankShortName(int? bankId) {
+    if (bankId == null) return 'Bank';
+    if (bankId == CashConstants.bankId) return CashConstants.bankShortName;
+    return _bankShortNamesById[bankId] ?? 'Bank $bankId';
+  }
 
   Category? getCategoryById(int? id) {
     if (id == null) return null;
     return _categoryById[id];
   }
 
+  List<AutoCategorizationRule> autoCategorizationRulesForFlow(String flow) {
+    final normalizedFlow = _autoCategorizationService.normalizeFlow(flow);
+    final rules = _autoCategorizationRules
+        .where((rule) => rule.flow == normalizedFlow)
+        .where((rule) => _categoryById.containsKey(rule.categoryId))
+        .toList(growable: false);
+    rules.sort(
+      (a, b) => a.counterparty.toLowerCase().compareTo(
+            b.counterparty.toLowerCase(),
+          ),
+    );
+    return rules;
+  }
+
+  List<AutoCategoryPromptDismissal> autoCategoryPromptDismissalsForFlow(
+    String flow,
+  ) {
+    final normalizedFlow = _autoCategorizationService.normalizeFlow(flow);
+    final dismissals = _autoCategoryPromptDismissals
+        .where((dismissal) => dismissal.flow == normalizedFlow)
+        .toList(growable: false);
+    dismissals.sort(
+      (a, b) => a.counterparty.toLowerCase().compareTo(
+            b.counterparty.toLowerCase(),
+          ),
+    );
+    return dismissals;
+  }
+
   String? getSelfTransferLabel(Transaction transaction) {
-    return _selfTransferLabelByReference[transaction.reference];
+    final existing = _selfTransferLabelByReference[transaction.reference];
+    if (existing != null) return existing;
+    if (_isManualSelfCategory(transaction)) {
+      return transaction.type == 'CREDIT' ? 'to self' : 'from self';
+    }
+    return null;
   }
 
   bool isSelfTransfer(Transaction transaction) {
+    return _isSelfTransfer(transaction);
+  }
+
+  bool isDetectedSelfTransfer(Transaction transaction) {
     return _selfTransferLabelByReference.containsKey(transaction.reference);
   }
 
   bool _isSelfTransfer(Transaction transaction) {
-    return _selfTransferLabelByReference.containsKey(transaction.reference);
+    return isDetectedSelfTransfer(transaction) ||
+        _isManualSelfCategory(transaction);
   }
 
-  Future<void> loadData() async {
+  bool _isManualSelfCategory(Transaction transaction) {
+    final category = _categoryById[transaction.categoryId];
+    if (category == null) return false;
+    return category.name.trim().toLowerCase() == 'self';
+  }
+
+  Future<void> loadData() {
+    final existing = _activeLoadDataFuture;
+    if (existing != null) {
+      _reloadQueuedWhileLoading = true;
+      return existing;
+    }
+
+    final future = _loadDataUntilSettled();
+    _activeLoadDataFuture = future;
+    future.whenComplete(() {
+      if (identical(_activeLoadDataFuture, future)) {
+        _activeLoadDataFuture = null;
+      }
+    });
+    return future;
+  }
+
+  Future<void> _loadDataUntilSettled() async {
+    do {
+      _reloadQueuedWhileLoading = false;
+      await _loadDataInternal();
+    } while (_reloadQueuedWhileLoading);
+  }
+
+  Future<void> _loadDataInternal() async {
     _isLoading = true;
     notifyListeners();
 
@@ -82,11 +328,20 @@ class TransactionProvider with ChangeNotifier {
         for (final c in _categories)
           if (c.id != null) c.id!: c,
       };
+      await _reloadAutoCategorizationState();
 
       _allTransactions = await _transactionRepo.getTransactions();
       print("debug: Transactions: ${_allTransactions.length}");
 
       final banks = await _bankConfigService.getBanks();
+      _bankNamesById = {
+        CashConstants.bankId: CashConstants.bankName,
+        for (final bank in banks) bank.id: bank.name,
+      };
+      _bankShortNamesById = {
+        CashConstants.bankId: CashConstants.bankShortName,
+        for (final bank in banks) bank.id: bank.shortName,
+      };
       final labels = _buildSelfTransferLabels(
         _telebirrMatchService.findMatches(_allTransactions, banks),
       );
@@ -95,6 +350,8 @@ class TransactionProvider with ChangeNotifier {
 
       await _calculateSummaries(_allTransactions);
       _filterTransactions(_allTransactions);
+      _recomputeRedesignHomeMetrics(_allTransactions);
+      _dataVersion += 1;
     } catch (e) {
       print("debug: Error loading data: $e");
     } finally {
@@ -169,53 +426,7 @@ class TransactionProvider with ChangeNotifier {
       groupedAccounts[account.bank]!.add(account);
     }
 
-    // Calculate Bank Summaries
-    _bankSummaries = groupedAccounts.entries.map((entry) {
-      int bankId = entry.key;
-      List<Account> accounts = entry.value;
-
-      // Filter transactions for this bank (using valid transactions only)
-      var bankTransactions =
-          validTransactions.where((t) => t.bankId == bankId).toList();
-
-      double totalDebit = 0.0;
-      double totalCredit = 0.0;
-      double cashBalance = 0.0;
-
-      for (var t in bankTransactions) {
-        double amount = t.amount;
-        if (t.type == "DEBIT") {
-          cashBalance -= amount;
-          if (!_isSelfTransfer(t)) {
-            totalDebit += amount;
-          }
-        } else if (t.type == "CREDIT") {
-          cashBalance += amount;
-          if (!_isSelfTransfer(t)) {
-            totalCredit += amount;
-          }
-        }
-      }
-
-      double settledBalance =
-          accounts.fold(0.0, (sum, a) => sum + (a.settledBalance ?? 0.0));
-      double pendingCredit =
-          accounts.fold(0.0, (sum, a) => sum + (a.pendingCredit ?? 0.0));
-      final isCashBank = bankId == CashConstants.bankId;
-      double totalBalance = isCashBank
-          ? cashBalance
-          : accounts.fold(0.0, (sum, a) => sum + a.balance);
-
-      return BankSummary(
-        bankId: bankId,
-        totalCredit: totalCredit,
-        totalDebit: totalDebit,
-        settledBalance: settledBalance,
-        pendingCredit: pendingCredit,
-        totalBalance: totalBalance,
-        accountCount: accounts.length,
-      );
-    }).toList();
+    final resolvedAccountBalances = <String, double>{};
 
     // Calculate Account Summaries
     _accountSummaries = _accounts.map((account) {
@@ -276,23 +487,33 @@ class TransactionProvider with ChangeNotifier {
       double cashBalance = 0.0;
       for (var t in accountTransactions) {
         double amount = t.amount;
+        final skip = _isSelfTransfer(t) ||
+            _categoryById[t.categoryId]?.uncategorized == true;
         if (t.type == "DEBIT") {
           cashBalance -= amount;
-          if (!_isSelfTransfer(t)) {
+          if (!skip) {
             totalDebit += amount;
           }
         }
         if (t.type == "CREDIT") {
           cashBalance += amount;
-          if (!_isSelfTransfer(t)) {
+          if (!skip) {
             totalCredit += amount;
           }
         }
       }
 
       final isCashAccount = account.bank == CashConstants.bankId;
-      final accountBalance =
-          isCashAccount ? cashBalance : account.balance;
+      final bankAccountCount = groupedAccounts[account.bank]?.length ?? 0;
+      final accountBalance = resolveDisplayedAccountBalance(
+        account: account,
+        accountTransactions: accountTransactions,
+        bankAccountCount: bankAccountCount,
+        cashBalanceDelta: cashBalance,
+        isCashAccount: isCashAccount,
+      );
+      resolvedAccountBalances[accountBalanceResolverKey(account)] =
+          accountBalance;
 
       return AccountSummary(
         bankId: account.bank,
@@ -304,6 +525,61 @@ class TransactionProvider with ChangeNotifier {
         settledBalance: account.settledBalance ?? 0.0,
         balance: accountBalance,
         pendingCredit: account.pendingCredit ?? 0.0,
+      );
+    }).toList();
+
+    // Calculate Bank Summaries
+    _bankSummaries = groupedAccounts.entries.map((entry) {
+      final bankId = entry.key;
+      final accounts = entry.value;
+
+      // Filter transactions for this bank (using valid transactions only)
+      final bankTransactions =
+          validTransactions.where((t) => t.bankId == bankId).toList();
+
+      double totalDebit = 0.0;
+      double totalCredit = 0.0;
+      double cashBalance = 0.0;
+
+      for (var t in bankTransactions) {
+        double amount = t.amount;
+        final skip = _isSelfTransfer(t) ||
+            _categoryById[t.categoryId]?.uncategorized == true;
+        if (t.type == "DEBIT") {
+          cashBalance -= amount;
+          if (!skip) {
+            totalDebit += amount;
+          }
+        } else if (t.type == "CREDIT") {
+          cashBalance += amount;
+          if (!skip) {
+            totalCredit += amount;
+          }
+        }
+      }
+
+      double settledBalance =
+          accounts.fold(0.0, (sum, a) => sum + (a.settledBalance ?? 0.0));
+      double pendingCredit =
+          accounts.fold(0.0, (sum, a) => sum + (a.pendingCredit ?? 0.0));
+      final isCashBank = bankId == CashConstants.bankId;
+      final hasSingleNonCashAccount = !isCashBank && accounts.length == 1;
+      final totalBalance = isCashBank
+          ? accounts.fold(0.0, (sum, a) => sum + a.balance) + cashBalance
+          : hasSingleNonCashAccount
+              ? resolvedAccountBalances[
+                      accountBalanceResolverKey(accounts.first)] ??
+                  accounts.first.balance
+              : accounts.fold(0.0, (sum, a) => sum + a.balance);
+
+      return BankSummary(
+        bankId: bankId,
+        totalCredit: totalCredit,
+        totalDebit: totalDebit,
+        settledBalance: settledBalance,
+        pendingCredit: pendingCredit,
+        totalBalance: totalBalance,
+        accountCount: accounts.length,
       );
     }).toList();
 
@@ -370,8 +646,50 @@ class TransactionProvider with ChangeNotifier {
 
       return (t.creditor?.toLowerCase().contains(_searchKey.toLowerCase()) ??
               false) ||
+          (t.receiver?.toLowerCase().contains(_searchKey.toLowerCase()) ??
+              false) ||
+          (t.note?.toLowerCase().contains(_searchKey.toLowerCase()) ?? false) ||
           (t.reference.toLowerCase().contains(_searchKey.toLowerCase()));
     }).toList();
+  }
+
+  Transaction? _replaceTransactionLocally(Transaction updated) {
+    Transaction? previous;
+
+    List<Transaction> replaceInList(List<Transaction> source) {
+      return source.map((transaction) {
+        if (transaction.reference != updated.reference) return transaction;
+        previous ??= transaction;
+        return updated;
+      }).toList();
+    }
+
+    _allTransactions = replaceInList(_allTransactions);
+    _transactions = replaceInList(_transactions);
+    _todayTransactions = replaceInList(_todayTransactions);
+    _monthTransactions = replaceInList(_monthTransactions);
+    return previous;
+  }
+
+  void _notifyOptimisticChange() {
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
+  Future<void> _reloadAutoCategorizationState() async {
+    _autoCategorizationEnabled = await NotificationSettingsService.instance
+        .isAutoCategorizationEnabled();
+    _autoCategorizationRules = await _autoCategorizationService.getRules();
+    _autoCategoryPromptDismissals =
+        await _autoCategorizationService.getDismissals();
+  }
+
+  Future<void> _recomputeAfterTransactionMutation() async {
+    await _calculateSummaries(_allTransactions);
+    _filterTransactions(_allTransactions);
+    _recomputeRedesignHomeMetrics(_allTransactions);
+    _dataVersion += 1;
+    notifyListeners();
   }
 
   Map<String, String> _buildSelfTransferLabels(
@@ -390,7 +708,8 @@ class TransactionProvider with ChangeNotifier {
   ) {
     final labels = <String, String>{};
     final byReference = {
-      for (final transaction in transactions) transaction.reference: transaction,
+      for (final transaction in transactions)
+        transaction.reference: transaction,
     };
 
     for (final transaction in transactions) {
@@ -407,6 +726,510 @@ class TransactionProvider with ChangeNotifier {
     }
 
     return labels;
+  }
+
+  void _recomputeRedesignHomeMetrics(List<Transaction> transactions) {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final tomorrowStart = todayStart.add(const Duration(days: 1));
+    // Rolling 7-day window (today + previous 6 days).
+    final weekStart = todayStart.subtract(const Duration(days: 6));
+    final monthStart = DateTime(now.year, now.month, 1);
+    final nextMonthStart = DateTime(now.year, now.month + 1, 1);
+    final last30Start = todayStart.subtract(const Duration(days: 29));
+    final last90Start = todayStart.subtract(const Duration(days: 89));
+
+    final todayEntries = <MapEntry<Transaction, DateTime>>[];
+    final monthTransactions = <Transaction>[];
+
+    var todayIncome = 0.0;
+    var todayExpense = 0.0;
+    var weekIncome = 0.0;
+    var weekExpense = 0.0;
+    var monthIncome = 0.0;
+    var monthExpense = 0.0;
+    var thirtyDayIncome = 0.0;
+    var thirtyDayExpense = 0.0;
+    var selfTransferCount = 0;
+
+    final weekIncomeBuckets = List<double>.filled(7, 0);
+    final weekExpenseBuckets = List<double>.filled(7, 0);
+    final monthIncomeBuckets = List<double>.filled(30, 0);
+    final monthExpenseBuckets = List<double>.filled(30, 0);
+
+    final monthNetByOffset = List<double>.filled(4, 0);
+    final monthHasTransactions = List<bool>.filled(4, false);
+    final healthMonthIncomeByOffset = List<double>.filled(4, 0);
+    final healthMonthExpenseByOffset = List<double>.filled(4, 0);
+
+    var ninetyDayIncome = 0.0;
+    var ninetyDayExpense = 0.0;
+    var ninetyDayCategorizedExpense = 0.0;
+    var ninetyDayEssentialExpense = 0.0;
+
+    for (final transaction in transactions) {
+      final dt = _parseTransactionTimeLocal(transaction.time);
+      if (dt == null) continue;
+
+      final dateOnly = DateTime(dt.year, dt.month, dt.day);
+      final isToday =
+          !dateOnly.isBefore(todayStart) && dateOnly.isBefore(tomorrowStart);
+      final isWeek =
+          !dateOnly.isBefore(weekStart) && !dateOnly.isAfter(todayStart);
+      final isMonth =
+          !dateOnly.isBefore(monthStart) && dateOnly.isBefore(nextMonthStart);
+      final isLast30 =
+          !dateOnly.isBefore(last30Start) && !dateOnly.isAfter(todayStart);
+      final isLast90 =
+          !dateOnly.isBefore(last90Start) && !dateOnly.isAfter(todayStart);
+      final isSelfTransfer = _isSelfTransfer(transaction);
+
+      if (isToday) {
+        todayEntries.add(MapEntry(transaction, dt));
+      }
+      if (isMonth) {
+        monthTransactions.add(transaction);
+      }
+      if (isSelfTransfer) {
+        selfTransferCount += 1;
+      }
+
+      final monthOffset =
+          (now.year - dateOnly.year) * 12 + (now.month - dateOnly.month);
+      if (monthOffset >= 0 && monthOffset <= 3) {
+        monthHasTransactions[monthOffset] = true;
+      }
+
+      final isMisc =
+          _categoryById[transaction.categoryId]?.uncategorized == true;
+
+      if (isSelfTransfer || isMisc) continue;
+
+      final isCredit = transaction.type == 'CREDIT';
+      final isDebit = transaction.type == 'DEBIT';
+      if (!isCredit && !isDebit) continue;
+
+      final amount = transaction.amount;
+      final category = _categoryById[transaction.categoryId];
+
+      if (isToday) {
+        if (isCredit) {
+          todayIncome += amount;
+        } else {
+          todayExpense += amount;
+        }
+      }
+
+      if (isWeek) {
+        if (isCredit) {
+          weekIncome += amount;
+        } else {
+          weekExpense += amount;
+        }
+
+        final weekIndex = dateOnly.difference(weekStart).inDays;
+        if (weekIndex >= 0 && weekIndex < 7) {
+          if (isCredit) {
+            weekIncomeBuckets[weekIndex] += amount;
+          } else {
+            weekExpenseBuckets[weekIndex] += amount;
+          }
+        }
+      }
+
+      if (isMonth) {
+        if (isCredit) {
+          monthIncome += amount;
+        } else {
+          monthExpense += amount;
+        }
+      }
+
+      if (isLast30) {
+        if (isCredit) {
+          thirtyDayIncome += amount;
+        } else {
+          thirtyDayExpense += amount;
+        }
+
+        final monthIndex = dateOnly.difference(last30Start).inDays;
+        if (monthIndex >= 0 && monthIndex < 30) {
+          if (isCredit) {
+            monthIncomeBuckets[monthIndex] += amount;
+          } else {
+            monthExpenseBuckets[monthIndex] += amount;
+          }
+        }
+      }
+
+      if (monthOffset >= 0 && monthOffset <= 3) {
+        monthNetByOffset[monthOffset] += isCredit ? amount : -amount;
+        if (isCredit) {
+          healthMonthIncomeByOffset[monthOffset] += amount;
+        } else {
+          healthMonthExpenseByOffset[monthOffset] += amount;
+        }
+      }
+
+      if (isLast90) {
+        if (isCredit) {
+          ninetyDayIncome += amount;
+        } else {
+          ninetyDayExpense += amount;
+          if (category != null && !category.uncategorized) {
+            ninetyDayCategorizedExpense += amount;
+            if (category.essential) {
+              ninetyDayEssentialExpense += amount;
+            }
+          }
+        }
+      }
+    }
+
+    todayEntries.sort((a, b) => b.value.compareTo(a.value));
+
+    _todayTransactions =
+        todayEntries.map((entry) => entry.key).toList(growable: false);
+    _monthTransactions = monthTransactions.toList(growable: false);
+    _todayTotals =
+        TransactionTotals(income: todayIncome, expense: todayExpense);
+    _weekTotals = TransactionTotals(income: weekIncome, expense: weekExpense);
+    _monthTotals =
+        TransactionTotals(income: monthIncome, expense: monthExpense);
+    _thirtyDayTotals = TransactionTotals(
+      income: thirtyDayIncome,
+      expense: thirtyDayExpense,
+    );
+    _selfTransferCount = selfTransferCount;
+    _weekTrendSeries =
+        _buildTrendSeriesFromBuckets(weekIncomeBuckets, weekExpenseBuckets);
+    _monthTrendSeries =
+        _buildTrendSeriesFromBuckets(monthIncomeBuckets, monthExpenseBuckets);
+    _monthlyInsight =
+        _buildMonthlyInsightFromNets(monthNetByOffset, monthHasTransactions);
+    _financialHealth = _buildFinancialHealthSnapshot(
+      trailingIncome: ninetyDayIncome,
+      trailingExpense: ninetyDayExpense,
+      categorizedExpense: ninetyDayCategorizedExpense,
+      essentialExpense: ninetyDayEssentialExpense,
+      monthlyIncomeByOffset: healthMonthIncomeByOffset,
+      monthlyExpenseByOffset: healthMonthExpenseByOffset,
+      totalBalance: _summary?.totalBalance ??
+          _accountSummaries.fold<double>(
+            0.0,
+            (sum, summary) => sum + summary.balance,
+          ),
+    );
+  }
+
+  DateTime? _parseTransactionTimeLocal(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return DateTime.parse(raw).toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  TransactionTrendSeries _buildTrendSeriesFromBuckets(
+    List<double> income,
+    List<double> expense,
+  ) {
+    final days = income.length;
+    final totalIncome = income.fold<double>(0.0, (sum, value) => sum + value);
+    final totalExpense = expense.fold<double>(0.0, (sum, value) => sum + value);
+    final maxIncome = income.fold<double>(0.0, math.max);
+    final maxExpense = expense.fold<double>(0.0, math.max);
+    final maxValue = math.max(maxIncome, maxExpense);
+
+    if (maxValue <= 0) {
+      return TransactionTrendSeries.empty(days);
+    }
+
+    List<double> normalize(List<double> values) {
+      return values
+          .map((value) => (value / maxValue).clamp(0.0, 1.0).toDouble())
+          .toList(growable: false);
+    }
+
+    return TransactionTrendSeries(
+      incomePoints: normalize(income),
+      expensePoints: normalize(expense),
+      maxValue: maxValue,
+      totalIncome: totalIncome,
+      totalExpense: totalExpense,
+      days: days,
+    );
+  }
+
+  // Composite redesign score: recent cash flow, liquidity runway,
+  // stability across prior full months, and essential-cost pressure.
+  FinancialHealthSnapshot _buildFinancialHealthSnapshot({
+    required double trailingIncome,
+    required double trailingExpense,
+    required double categorizedExpense,
+    required double essentialExpense,
+    required List<double> monthlyIncomeByOffset,
+    required List<double> monthlyExpenseByOffset,
+    required double totalBalance,
+  }) {
+    final savingsRate = trailingIncome <= 0
+        ? 0.0
+        : ((trailingIncome - trailingExpense) / trailingIncome)
+            .clamp(-1.0, 1.0);
+    final averageMonthlyExpense = trailingExpense / 3.0;
+    final runwayMonths = averageMonthlyExpense <= 0
+        ? (totalBalance > 0 ? double.infinity : 0.0)
+        : (totalBalance <= 0 ? 0.0 : totalBalance / averageMonthlyExpense);
+    final categorizedCoverage = trailingExpense <= 0
+        ? 0.0
+        : (categorizedExpense / trailingExpense).clamp(0.0, 1.0);
+    final essentialBurden = trailingIncome <= 0
+        ? 0.0
+        : (essentialExpense / trailingIncome).clamp(0.0, 2.0);
+    final stabilityMetrics = _buildStabilityMetrics(
+      monthlyIncomeByOffset: monthlyIncomeByOffset,
+      monthlyExpenseByOffset: monthlyExpenseByOffset,
+    );
+    final cashFlowScore = _computeCashFlowScore(
+      savingsRate: savingsRate,
+    );
+    final runwayScore = _computeRunwayScore(
+      runwayMonths: runwayMonths,
+      totalBalance: totalBalance,
+      averageMonthlyExpense: averageMonthlyExpense,
+    );
+    final stabilityScore = stabilityMetrics.score;
+    final fixedCostScore = _computeFixedCostScore(
+      trailingIncome: trailingIncome,
+      trailingExpense: trailingExpense,
+      categorizedCoverage: categorizedCoverage,
+      essentialBurden: essentialBurden,
+    );
+
+    final weightedScore = 0.40 * cashFlowScore +
+        0.30 * runwayScore +
+        0.20 * stabilityScore +
+        0.10 * fixedCostScore;
+
+    return FinancialHealthSnapshot(
+      score: weightedScore.round().clamp(0, 100),
+      cashFlowScore: cashFlowScore.round().clamp(0, 100),
+      runwayScore: runwayScore.round().clamp(0, 100),
+      stabilityScore: stabilityScore.round().clamp(0, 100),
+      fixedCostScore: fixedCostScore.round().clamp(0, 100),
+      trailingIncome: trailingIncome,
+      trailingExpense: trailingExpense,
+      savingsRate: savingsRate,
+      totalBalance: totalBalance,
+      averageMonthlyExpense: averageMonthlyExpense,
+      runwayMonths: runwayMonths,
+      stabilityAverageDeviation: stabilityMetrics.averageDeviation,
+      stabilitySampleCount: stabilityMetrics.sampleCount,
+      categorizedCoverage: categorizedCoverage,
+      essentialBurden: essentialBurden,
+    );
+  }
+
+  double _computeCashFlowScore({
+    required double savingsRate,
+  }) {
+    return _scoreLinear(savingsRate, min: -0.20, max: 0.20);
+  }
+
+  double _computeRunwayScore({
+    required double runwayMonths,
+    required double totalBalance,
+    required double averageMonthlyExpense,
+  }) {
+    if (averageMonthlyExpense <= 0) {
+      if (totalBalance > 0) return 75;
+      return 50;
+    }
+
+    return _scoreLinear(runwayMonths, min: 0.0, max: 6.0);
+  }
+
+  _StabilityHealthMetrics _buildStabilityMetrics({
+    required List<double> monthlyIncomeByOffset,
+    required List<double> monthlyExpenseByOffset,
+  }) {
+    final monthlySavingsRates = <double>[];
+
+    for (var offset = 1; offset < monthlyIncomeByOffset.length; offset++) {
+      final income = monthlyIncomeByOffset[offset];
+      final expense = monthlyExpenseByOffset[offset];
+      if (income <= 0 && expense <= 0) continue;
+
+      if (income <= 0) {
+        monthlySavingsRates.add(-1.0);
+        continue;
+      }
+
+      monthlySavingsRates.add(
+        ((income - expense) / income).clamp(-1.0, 1.0),
+      );
+    }
+
+    if (monthlySavingsRates.length < 2) {
+      return const _StabilityHealthMetrics(
+        score: 50,
+        averageDeviation: 0.0,
+        sampleCount: 0,
+      );
+    }
+
+    final mean = monthlySavingsRates.fold<double>(
+          0.0,
+          (sum, value) => sum + value,
+        ) /
+        monthlySavingsRates.length;
+    final averageDeviation = monthlySavingsRates.fold<double>(
+          0.0,
+          (sum, value) => sum + (value - mean).abs(),
+        ) /
+        monthlySavingsRates.length;
+
+    return _StabilityHealthMetrics(
+      score: _inverseScoreLinear(averageDeviation, min: 0.05, max: 0.35),
+      averageDeviation: averageDeviation,
+      sampleCount: monthlySavingsRates.length,
+    );
+  }
+
+  double _computeFixedCostScore({
+    required double trailingIncome,
+    required double trailingExpense,
+    required double categorizedCoverage,
+    required double essentialBurden,
+  }) {
+    if (trailingExpense <= 0 || trailingIncome <= 0) return 50;
+
+    if (categorizedCoverage < 0.4) return 50;
+
+    return _inverseScoreLinear(essentialBurden, min: 0.50, max: 0.85);
+  }
+
+  double _scoreLinear(
+    double value, {
+    required double min,
+    required double max,
+  }) {
+    if (max <= min) return 50;
+    return (((value - min) / (max - min)).clamp(0.0, 1.0)) * 100.0;
+  }
+
+  double _inverseScoreLinear(
+    double value, {
+    required double min,
+    required double max,
+  }) {
+    return 100.0 - _scoreLinear(value, min: min, max: max);
+  }
+
+  String _buildMonthlyInsightFromNets(
+    List<double> monthNetByOffset,
+    List<bool> monthHasTransactions,
+  ) {
+    final currentNet = monthNetByOffset[0];
+    final priorNets = <double>[];
+
+    for (int offset = 1; offset <= 3; offset++) {
+      if (!monthHasTransactions[offset]) continue;
+      priorNets.add(monthNetByOffset[offset]);
+    }
+
+    if (!monthHasTransactions[0] && priorNets.isEmpty) {
+      return 'No monthly activity yet. Keep using Totals to unlock insights.';
+    }
+
+    final currentLabel = _formatEtbValue(currentNet.abs());
+    final currentSign = currentNet >= 0 ? 'saved' : 'spent more than earned';
+
+    if (priorNets.isEmpty) {
+      return currentNet >= 0
+          ? "You've saved ETB $currentLabel so far this month."
+          : "You've spent ETB $currentLabel more than you earned this month.";
+    }
+
+    final avgNet =
+        priorNets.reduce((sum, value) => sum + value) / priorNets.length;
+    if (avgNet.abs() < 0.01) {
+      return currentNet >= 0
+          ? "You've saved ETB $currentLabel so far this month."
+          : "You've spent ETB $currentLabel more than you earned this month.";
+    }
+
+    final deltaPercent = ((currentNet - avgNet).abs() / avgNet.abs()) * 100;
+    final roundedPercent = deltaPercent.isFinite ? deltaPercent.round() : 0;
+    final direction = currentNet >= avgNet ? 'better' : 'lower';
+
+    return "You've $currentSign ETB $currentLabel this month, $roundedPercent% $direction than your 3-month average.";
+  }
+
+  String _formatEtbValue(double value) {
+    final rounded = value.roundToDouble();
+    return formatNumberWithComma(rounded).replaceFirst(RegExp(r'\\.00$'), '');
+  }
+
+  Future<double> setCashWalletBalance({
+    required double targetBalance,
+    required String accountNumber,
+  }) async {
+    if (targetBalance < 0) {
+      throw ArgumentError('Target balance cannot be negative');
+    }
+
+    final cashAccounts =
+        _accounts.where((a) => a.bank == CashConstants.bankId).toList();
+
+    if (cashAccounts.isEmpty) {
+      final accountToCreate = accountNumber.isNotEmpty
+          ? accountNumber
+          : CashConstants.defaultAccountNumber;
+      await _accountRepo.saveAccount(
+        Account(
+          accountNumber: accountToCreate,
+          bank: CashConstants.bankId,
+          balance: targetBalance,
+          accountHolderName: CashConstants.defaultAccountHolderName,
+        ),
+      );
+      await loadData();
+      await WidgetService.refreshWidget();
+      return targetBalance;
+    }
+
+    final cashAccount = cashAccounts.firstWhere(
+      (a) => a.accountNumber == accountNumber,
+      orElse: () => cashAccounts.first,
+    );
+
+    final walletSummaries = _accountSummaries
+        .where((summary) => summary.bankId == CashConstants.bankId)
+        .toList();
+    final currentBalance = walletSummaries.isNotEmpty
+        ? walletSummaries.fold<double>(
+            0.0, (sum, summary) => sum + summary.balance)
+        : cashAccounts.fold<double>(
+            0.0, (sum, account) => sum + account.balance);
+
+    final delta = targetBalance - currentBalance;
+    if (delta.abs() < 0.0001) return 0.0;
+
+    final updatedCashAccount = Account(
+      accountNumber: cashAccount.accountNumber,
+      bank: cashAccount.bank,
+      balance: cashAccount.balance + delta,
+      accountHolderName: cashAccount.accountHolderName,
+      settledBalance: cashAccount.settledBalance,
+      pendingCredit: cashAccount.pendingCredit,
+      profileId: cashAccount.profileId,
+    );
+    await _accountRepo.saveAccount(updatedCashAccount);
+    await loadData();
+    await WidgetService.refreshWidget();
+    return delta;
   }
 
   // Method to handle new incoming SMS transaction
@@ -432,54 +1255,165 @@ class TransactionProvider with ChangeNotifier {
     Category category,
   ) async {
     if (category.id == null) return;
-    await _transactionRepo.saveTransaction(
-      transaction.copyWith(categoryId: category.id),
+    final updated = transaction.copyWith(categoryId: category.id);
+    final previous = _replaceTransactionLocally(updated);
+    if (previous != null) {
+      _notifyOptimisticChange();
+    }
+
+    try {
+      await _transactionRepo.saveTransaction(updated);
+    } catch (e) {
+      if (previous != null) {
+        _replaceTransactionLocally(previous);
+        _notifyOptimisticChange();
+      }
+      rethrow;
+    }
+
+    unawaited(
+      _finalizeCategoryMutationAfterSave(
+        transactionType: transaction.type,
+        categoryId: category.id,
+      ),
+    );
+  }
+
+  Future<void> updateNoteForTransaction(
+    Transaction transaction,
+    String? note,
+  ) async {
+    final normalizedNote = note?.trim();
+    final updated = normalizedNote == null || normalizedNote.isEmpty
+        ? transaction.copyWith(clearNote: true)
+        : transaction.copyWith(note: normalizedNote);
+    final previous = _replaceTransactionLocally(updated);
+    if (previous != null) {
+      _filterTransactions(_allTransactions);
+      _notifyOptimisticChange();
+    }
+
+    try {
+      await _transactionRepo.saveTransaction(
+        updated,
+        skipAutoCategorization: true,
+      );
+    } catch (e) {
+      if (previous != null) {
+        _replaceTransactionLocally(previous);
+        _filterTransactions(_allTransactions);
+        _notifyOptimisticChange();
+      }
+      rethrow;
+    }
+
+    _filterTransactions(_allTransactions);
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
+  Future<void> updateCounterpartyForTransaction(
+    Transaction transaction,
+    String? counterparty,
+  ) async {
+    final normalizedCounterparty = counterparty?.trim();
+    final updatedValue =
+        normalizedCounterparty == null || normalizedCounterparty.isEmpty
+            ? null
+            : normalizedCounterparty;
+    final updated = Transaction(
+      amount: transaction.amount,
+      reference: transaction.reference,
+      creditor:
+          transaction.type == 'CREDIT' ? updatedValue : transaction.creditor,
+      receiver:
+          transaction.type == 'CREDIT' ? transaction.receiver : updatedValue,
+      note: transaction.note,
+      time: transaction.time,
+      status: transaction.status,
+      currentBalance: transaction.currentBalance,
+      bankId: transaction.bankId,
+      type: transaction.type,
+      transactionLink: transaction.transactionLink,
+      accountNumber: transaction.accountNumber,
+      categoryId: transaction.categoryId,
+      profileId: transaction.profileId,
+      serviceCharge: transaction.serviceCharge,
+      vat: transaction.vat,
     );
 
-    // Save mapping if auto-categorization is enabled
-    final isEnabled = await NotificationSettingsService.instance
-        .isAutoCategorizeByReceiverEnabled();
-    if (isEnabled && category.id != null) {
-      // Save receiver mapping if receiver exists
-      if (transaction.receiver != null && transaction.receiver!.isNotEmpty) {
-        await ReceiverCategoryService.instance.saveMapping(
-          transaction.receiver!,
-          category.id!,
-          'receiver',
-        );
-      }
-      // Save creditor mapping if creditor exists
-      if (transaction.creditor != null && transaction.creditor!.isNotEmpty) {
-        await ReceiverCategoryService.instance.saveMapping(
-          transaction.creditor!,
-          category.id!,
-          'creditor',
-        );
-      }
+    final previous = _replaceTransactionLocally(updated);
+    if (previous != null) {
+      _filterTransactions(_allTransactions);
+      _notifyOptimisticChange();
     }
 
-    await loadData();
-    await WidgetService.refreshWidget();
-    // Check budget alerts after categorizing transaction (only for DEBIT transactions)
-    // Only check budgets for the specific category that was selected
-    if (transaction.type == 'DEBIT' && category.id != null) {
-      try {
-        await _budgetAlertService
-            .checkAndNotifyBudgetAlertsForCategory(category.id!);
-      } catch (e) {
-        print("debug: Error checking budget alerts after categorizing: $e");
+    try {
+      await _transactionRepo.saveTransaction(
+        updated,
+        skipAutoCategorization: true,
+      );
+    } catch (e) {
+      if (previous != null) {
+        _replaceTransactionLocally(previous);
+        _filterTransactions(_allTransactions);
+        _notifyOptimisticChange();
       }
+      rethrow;
     }
+
+    _filterTransactions(_allTransactions);
+    _dataVersion += 1;
+    notifyListeners();
   }
 
   Future<void> clearCategoryForTransaction(Transaction transaction) async {
     // Use copyWith with clearCategoryId flag to explicitly set categoryId to null
-    await _transactionRepo.saveTransaction(
-      transaction.copyWith(clearCategoryId: true),
-      skipAutoCategorization: true,
+    final updated = transaction.copyWith(clearCategoryId: true);
+    final previous = _replaceTransactionLocally(updated);
+    if (previous != null) {
+      _notifyOptimisticChange();
+    }
+
+    try {
+      await _transactionRepo.saveTransaction(
+        updated,
+        skipAutoCategorization: true,
+      );
+    } catch (e) {
+      if (previous != null) {
+        _replaceTransactionLocally(previous);
+        _notifyOptimisticChange();
+      }
+      rethrow;
+    }
+
+    unawaited(
+      _finalizeCategoryMutationAfterSave(
+        transactionType: transaction.type,
+      ),
     );
-    await loadData();
-    await WidgetService.refreshWidget();
+  }
+
+  Future<void> _finalizeCategoryMutationAfterSave({
+    required String? transactionType,
+    int? categoryId,
+  }) async {
+    try {
+      await _recomputeAfterTransactionMutation();
+      await WidgetService.refreshWidget();
+    } catch (e) {
+      print("debug: Error recomputing state after categorizing: $e");
+    }
+
+    if (transactionType == 'DEBIT' && categoryId != null) {
+      try {
+        await _budgetAlertService
+            .checkAndNotifyBudgetAlertsForCategory(categoryId);
+      } catch (e) {
+        print("debug: Error checking budget alerts after categorizing: $e");
+      }
+    }
   }
 
   Future<void> deleteTransactionsByReferences(
@@ -494,6 +1428,7 @@ class TransactionProvider with ChangeNotifier {
     required bool essential,
     bool uncategorized = false,
     String? iconKey,
+    String? colorKey,
     String? description,
     String flow = 'expense',
     bool recurring = false,
@@ -503,6 +1438,7 @@ class TransactionProvider with ChangeNotifier {
       essential: essential,
       uncategorized: uncategorized,
       iconKey: iconKey,
+      colorKey: colorKey,
       description: description,
       flow: flow,
       recurring: recurring,
@@ -520,12 +1456,121 @@ class TransactionProvider with ChangeNotifier {
     await loadData();
   }
 
+  String? resolvePrimaryCounterparty(Transaction transaction) {
+    return _autoCategorizationService.resolvePrimaryCounterparty(
+      type: transaction.type,
+      receiver: transaction.receiver,
+      creditor: transaction.creditor,
+    );
+  }
+
+  Future<AutoCategorizationPromptDecision?>
+      buildAutoCategorizationPromptDecision(
+    Transaction transaction,
+    Category category,
+  ) async {
+    if (!_autoCategorizationEnabled) return null;
+    final categoryId = category.id;
+    if (categoryId == null) return null;
+    if (transaction.categoryId == categoryId) return null;
+    if (_isSelfTransfer(transaction)) return null;
+
+    final counterparty = resolvePrimaryCounterparty(transaction);
+    if (counterparty == null) return null;
+
+    final flow = _autoCategorizationService.normalizeFlow(category.flow);
+    final isDismissed = await _autoCategorizationService.isPromptDismissed(
+      counterparty: counterparty,
+      flow: flow,
+    );
+    if (isDismissed) return null;
+
+    final existingRule =
+        await _autoCategorizationService.getRuleForCounterparty(
+      counterparty,
+      flow,
+    );
+    if (existingRule != null && existingRule.categoryId == categoryId) {
+      return null;
+    }
+
+    return AutoCategorizationPromptDecision(
+      counterparty: counterparty,
+      flow: flow,
+      categoryId: categoryId,
+      existingRule: existingRule,
+    );
+  }
+
+  Future<void> saveAutoCategorizationRule(
+    AutoCategorizationPromptDecision decision,
+  ) async {
+    await _autoCategorizationService.upsertRule(
+      counterparty: decision.counterparty,
+      flow: decision.flow,
+      categoryId: decision.categoryId,
+    );
+    await _autoCategorizationService.clearPromptDismissal(
+      counterparty: decision.counterparty,
+      flow: decision.flow,
+    );
+    await _reloadAutoCategorizationState();
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
+  Future<void> dismissAutoCategorizationPrompt(
+    AutoCategorizationPromptDecision decision,
+  ) async {
+    await _autoCategorizationService.dismissPrompt(
+      counterparty: decision.counterparty,
+      flow: decision.flow,
+    );
+    await _reloadAutoCategorizationState();
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
+  Future<void> deleteAutoCategorizationRule(
+    AutoCategorizationRule rule,
+  ) async {
+    final id = rule.id;
+    if (id == null) return;
+    await _autoCategorizationService.deleteRule(id);
+    await _reloadAutoCategorizationState();
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
+  Future<void> clearAutoCategoryPromptDismissal(
+    AutoCategoryPromptDismissal dismissal,
+  ) async {
+    final id = dismissal.id;
+    if (id != null) {
+      await _autoCategorizationService.clearPromptDismissalById(id);
+    } else {
+      await _autoCategorizationService.clearPromptDismissal(
+        counterparty: dismissal.counterparty,
+        flow: dismissal.flow,
+      );
+    }
+    await _reloadAutoCategorizationState();
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
+  Future<void> setAutoCategorizationEnabled(bool enabled) async {
+    if (_autoCategorizationEnabled == enabled) return;
+    await NotificationSettingsService.instance
+        .setAutoCategorizationEnabled(enabled);
+    _autoCategorizationEnabled = enabled;
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
   /// Apply auto-categorization to existing uncategorized transactions
-  /// This is called when the feature is enabled
   Future<int> applyAutoCategorizationToExisting() async {
-    final isEnabled = await NotificationSettingsService.instance
-        .isAutoCategorizeByReceiverEnabled();
-    if (!isEnabled) return 0;
+    if (!_autoCategorizationEnabled) return 0;
 
     // Get all uncategorized transactions
     final uncategorizedTransactions = _allTransactions
@@ -540,7 +1585,8 @@ class TransactionProvider with ChangeNotifier {
 
     for (final transaction in uncategorizedTransactions) {
       final categoryId =
-          await ReceiverCategoryService.instance.getCategoryForTransaction(
+          await _autoCategorizationService.getCategoryForTransaction(
+        type: transaction.type,
         receiver: transaction.receiver,
         creditor: transaction.creditor,
       );

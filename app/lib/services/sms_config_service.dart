@@ -222,6 +222,25 @@ class SmsConfigService {
     }
   }
 
+  Future<int> refreshPatternsFromInternet() async {
+    print("debug: Manual SMS pattern refresh started");
+    final hasInternet = await _hasInternetConnection();
+    if (!hasInternet) {
+      print("debug: Manual SMS pattern refresh failed - no internet");
+      throw Exception('No internet connection. Connect and try again.');
+    }
+
+    final patterns = await _fetchRemotePatterns();
+    if (patterns.isEmpty) {
+      print("debug: Manual SMS pattern refresh failed - remote returned 0 patterns");
+      throw Exception('Could not download SMS patterns right now.');
+    }
+
+    await savePatterns(patterns);
+    print("debug: Manual SMS pattern refresh completed with ${patterns.length} patterns");
+    return patterns.length;
+  }
+
   // Initialize patterns on app launch
   // Returns true if internet is needed but not available
   // Only fetches if patterns don't exist (no background sync)

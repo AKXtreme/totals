@@ -5,6 +5,7 @@ import 'package:totals/models/account.dart';
 import 'package:totals/models/bank.dart';
 import 'package:totals/repositories/account_repository.dart';
 import 'package:totals/services/bank_config_service.dart';
+import 'package:totals/services/sms_config_service.dart';
 
 /// Represents a bank detected from SMS messages
 class DetectedBank {
@@ -63,7 +64,22 @@ class BankDetectionService {
   final Telephony _telephony = Telephony.instance;
   final AccountRepository _accountRepo = AccountRepository();
   final BankConfigService _bankConfigService = BankConfigService();
+  final SmsConfigService _smsConfigService = SmsConfigService();
   List<Bank>? _cachedBanks;
+
+  bool _hasDetectedBanksCache(List<DetectedBank>? banks) {
+    return banks != null && banks.isNotEmpty;
+  }
+
+  Future<Set<int>> _getSupportedBankIds() async {
+    try {
+      final patterns = await _smsConfigService.getPatterns();
+      return patterns.map((pattern) => pattern.bankId).toSet();
+    } catch (e) {
+      print("debug: Error loading supported bank IDs: $e");
+      return <int>{};
+    }
+  }
 
   /// Scans the SMS inbox and returns banks that the user has messages from
   /// but hasn't registered an account for yet.
@@ -77,23 +93,32 @@ class BankDetectionService {
       List<Account> registeredAccounts = await _accountRepo.getAccounts();
       Set<int> registeredBankIds =
           registeredAccounts.map((a) => a.bank).toSet();
+      final supportedBankIds = await _getSupportedBankIds();
 
       // Try to get cached data first (unless force refresh)
       if (!forceRefresh) {
         final cachedBanks = await _getCachedBanks();
-        if (cachedBanks != null) {
+        if (_hasDetectedBanksCache(cachedBanks)) {
           // Filter out already registered banks from cache
-          final filtered = cachedBanks
-              .where((db) => !registeredBankIds.contains(db.bank.id))
+          final filtered = cachedBanks!
+              .where((db) =>
+                  !registeredBankIds.contains(db.bank.id) &&
+                  supportedBankIds.contains(db.bank.id))
               .toList();
 
           return filtered;
         }
+
+        print("debug: Detected banks cache is empty, scanning SMS inbox");
       }
 
       // No cache or force refresh - scan SMS
       // Force reload banks to ensure we have latest synced banks
-      return await _scanAndCacheBanks(registeredBankIds, forceReloadBanks: forceRefresh);
+      return await _scanAndCacheBanks(
+        registeredBankIds,
+        supportedBankIds: supportedBankIds,
+        forceReloadBanks: forceRefresh,
+      );
     } catch (e) {
       print("debug: Error detecting banks from SMS: $e");
       // Try to return cached data on error
@@ -102,8 +127,11 @@ class BankDetectionService {
         List<Account> registeredAccounts = await _accountRepo.getAccounts();
         Set<int> registeredBankIds =
             registeredAccounts.map((a) => a.bank).toSet();
+        final supportedBankIds = await _getSupportedBankIds();
         return cachedBanks
-            .where((db) => !registeredBankIds.contains(db.bank.id))
+            .where((db) =>
+                !registeredBankIds.contains(db.bank.id) &&
+                supportedBankIds.contains(db.bank.id))
             .toList();
       }
       return [];
@@ -193,7 +221,10 @@ class BankDetectionService {
 
   /// Scan SMS and cache results
   Future<List<DetectedBank>> _scanAndCacheBanks(
-      Set<int> registeredBankIds, {bool forceReloadBanks = false}) async {
+    Set<int> registeredBankIds, {
+    required Set<int> supportedBankIds,
+    bool forceReloadBanks = false,
+  }) async {
     // Fetch banks from database (reload if forced or not cached)
     if (_cachedBanks == null || forceReloadBanks) {
       _cachedBanks = await _bankConfigService.getBanks();
@@ -251,10 +282,22 @@ class BankDetectionService {
 
     // Return only unregistered banks
     List<DetectedBank> unregisteredBanks = allBanks
-        .where((db) => !registeredBankIds.contains(db.bank.id))
+        .where((db) =>
+            !registeredBankIds.contains(db.bank.id) &&
+            supportedBankIds.contains(db.bank.id))
         .toList();
 
     return unregisteredBanks;
+  }
+
+  String _normalizeSenderToken(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  bool _addressMatchesCode(String normalizedAddress, String code) {
+    final normalizedCode = _normalizeSenderToken(code);
+    if (normalizedCode.isEmpty) return false;
+    return normalizedAddress.contains(normalizedCode);
   }
 
   /// Checks if the address matches any known bank and returns it
@@ -265,9 +308,12 @@ class BankDetectionService {
       return null;
     }
 
+    final normalizedAddress = _normalizeSenderToken(address);
+    if (normalizedAddress.isEmpty) return null;
+
     for (var bank in _cachedBanks!) {
       for (var code in bank.codes) {
-        if (address.contains(code)) {
+        if (_addressMatchesCode(normalizedAddress, code)) {
           return bank;
         }
       }
@@ -281,9 +327,11 @@ class BankDetectionService {
       // Try cache first
       if (!forceRefresh) {
         final cachedBanks = await _getCachedBanks();
-        if (cachedBanks != null) {
-          return cachedBanks;
+        if (_hasDetectedBanksCache(cachedBanks)) {
+          return cachedBanks!;
         }
+
+        print("debug: Detected banks cache is empty, scanning SMS inbox");
       }
 
       // Fetch banks from database (with caching)

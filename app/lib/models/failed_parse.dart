@@ -1,4 +1,6 @@
 class FailedParse {
+  static const String noMatchingPatternReason = 'No matching pattern';
+
   final int? id;
   final String address;
   final String body;
@@ -27,4 +29,6 @@ class FailedParse {
         'reason': reason,
         'timestamp': timestamp,
       };
+
+  bool get isMissingPattern => reason == noMatchingPatternReason;
 }
