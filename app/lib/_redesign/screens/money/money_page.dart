@@ -11464,6 +11464,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final navBarInset = MediaQuery.of(context).viewPadding.bottom;
+    final hintColor = Theme.of(context).colorScheme.onSurfaceVariant;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -11557,18 +11558,6 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                     ],
                     const SizedBox(height: 20),
 
-                    // Account number
-                    Text(
-                      'Account Number',
-                      style: TextStyle(
-                        color: AppColors.isDark(context)
-                            ? AppColors.slate400
-                            : AppColors.slate700,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
                     TextFormField(
                       controller: _accountNumberController,
                       keyboardType: TextInputType.number,
@@ -11577,9 +11566,14 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                         fontSize: 15,
                       ),
                       decoration: InputDecoration(
+                        labelText: 'Account Number',
                         hintText: 'Enter account number',
-                        hintStyle:
-                            TextStyle(color: AppColors.textTertiary(context)),
+                        hintStyle: TextStyle(color: hintColor),
+                        labelStyle: TextStyle(color: hintColor),
+                        floatingLabelStyle: TextStyle(
+                          color: hintColor,
+                          fontWeight: FontWeight.w500,
+                        ),
                         filled: true,
                         fillColor: AppColors.surfaceColor(context),
                         border: OutlineInputBorder(
@@ -11605,18 +11599,6 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                     ),
                     const SizedBox(height: 20),
 
-                    // Account holder name
-                    Text(
-                      'Account Holder Name',
-                      style: TextStyle(
-                        color: AppColors.isDark(context)
-                            ? AppColors.slate400
-                            : AppColors.slate700,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
                     TextFormField(
                       controller: _holderNameController,
                       style: TextStyle(
@@ -11624,9 +11606,14 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                         fontSize: 15,
                       ),
                       decoration: InputDecoration(
+                        labelText: 'Account Holder Name',
                         hintText: 'Enter account holder name',
-                        hintStyle:
-                            TextStyle(color: AppColors.textTertiary(context)),
+                        hintStyle: TextStyle(color: hintColor),
+                        labelStyle: TextStyle(color: hintColor),
+                        floatingLabelStyle: TextStyle(
+                          color: hintColor,
+                          fontWeight: FontWeight.w500,
+                        ),
                         filled: true,
                         fillColor: AppColors.surfaceColor(context),
                         border: OutlineInputBorder(

@@ -249,6 +249,7 @@ class _AddUserAccountFormState extends State<AddUserAccountForm> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final hintColor = colorScheme.onSurfaceVariant;
 
     if (_isLoadingBanks) {
       return const Center(child: CircularProgressIndicator());
@@ -379,6 +380,7 @@ class _AddUserAccountFormState extends State<AddUserAccountForm> {
                   child: OutlinedButton(
                     onPressed: () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
+                      foregroundColor: hintColor,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -387,16 +389,15 @@ class _AddUserAccountFormState extends State<AddUserAccountForm> {
                     child: const Text('Cancel'),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 Expanded(
                   flex: 2,
-                  child: ElevatedButton(
+                  child: FilledButton(
                     onPressed: _canSubmit ? _submitForm : null,
-                    style: ElevatedButton.styleFrom(
+                    style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: colorScheme.primary,
                       foregroundColor: Colors.white,
-                      elevation: 0,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),

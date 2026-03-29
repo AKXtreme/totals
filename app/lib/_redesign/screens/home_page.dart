@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
@@ -10,6 +12,7 @@ import 'package:totals/models/summary_models.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/_redesign/screens/redesign_shell.dart';
+import 'package:totals/services/data_export_import_service.dart';
 import 'package:totals/services/sms_service.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/_redesign/widgets/transaction_category_sheet.dart';
@@ -37,11 +40,14 @@ class _RedesignHomePageState extends State<RedesignHomePage>
   bool get wantKeepAlive => true;
 
   final SmsService _smsService = SmsService();
+  final DataExportImportService _dataExportImportService =
+      DataExportImportService();
   bool _showBalance = false;
   _ChartRange _chartRange = _ChartRange.week;
   final Set<String> _selectedRefs = {};
   bool _isRefreshingTodaySms = false;
   bool _isBootstrapping = true;
+  bool _isImportingBackup = false;
 
   bool get _isSelecting => _selectedRefs.isNotEmpty;
 
@@ -165,6 +171,9 @@ class _RedesignHomePageState extends State<RedesignHomePage>
         final monthTotals = provider.monthTotals;
         final thirtyDayTotals = provider.thirtyDayTotals;
         final selfTransferCount = provider.selfTransferCount;
+        final hasAddedBankAccounts = provider.accountSummaries.any(
+          (account) => account.bankId != CashConstants.bankId,
+        );
         final insightMessage = provider.monthlyInsight;
         final trendSeries = _chartRange == _ChartRange.week
             ? provider.weekTrendSeries
@@ -196,6 +205,7 @@ class _RedesignHomePageState extends State<RedesignHomePage>
                                 _showBalance = !_showBalance;
                               });
                             },
+                            hasAddedBankAccounts: hasAddedBankAccounts,
                             onCardTap: _openAccountsPage,
                             onBreakdownTap: () => _openBalanceBreakdown(
                               totalBalance: totalBalance,
@@ -206,7 +216,12 @@ class _RedesignHomePageState extends State<RedesignHomePage>
                             ),
                           ),
                           const SizedBox(height: 12),
-                          _InsightCard(message: insightMessage),
+                          _InsightCard(
+                            message: insightMessage,
+                            showImportBackupPrompt: !hasAddedBankAccounts,
+                            isImportingBackup: _isImportingBackup,
+                            onImportBackupTap: () => _importBackup(provider),
+                          ),
                           const SizedBox(height: 20),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -338,6 +353,93 @@ class _RedesignHomePageState extends State<RedesignHomePage>
   void _openAccountsPage() {
     final shellState = context.findAncestorStateOfType<RedesignShellState>();
     shellState?.openMoneyAccountsPage();
+  }
+
+  Future<void> _importBackup(TransactionProvider provider) async {
+    if (_isImportingBackup) return;
+    setState(() => _isImportingBackup = true);
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        dialogTitle: 'Choose your Totals backup',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+
+      if (result == null ||
+          result.files.isEmpty ||
+          result.files.single.path == null) {
+        return;
+      }
+
+      final file = File(result.files.single.path!);
+      final jsonData = await file.readAsString();
+
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.cardColor(ctx),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Import backup?',
+            style: TextStyle(color: AppColors.textPrimary(ctx)),
+          ),
+          content: Text(
+            'This restores data from the selected backup file. '
+            'Existing data stays in place and duplicates are skipped.',
+            style: TextStyle(color: AppColors.textSecondary(ctx)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(
+                'Cancel',
+                style: TextStyle(color: AppColors.textSecondary(ctx)),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryDark,
+                foregroundColor: AppColors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Import'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true || !mounted) return;
+
+      await _dataExportImportService.importAllData(jsonData);
+      await provider.loadData();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Backup imported successfully'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Import failed: $e'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isImportingBackup = false);
+    }
   }
 
   String _cashAccountNumber() {
@@ -519,6 +621,7 @@ class _TotalBalanceCard extends StatelessWidget {
   final double weekExpense;
   final bool showBalance;
   final VoidCallback onToggleBalance;
+  final bool hasAddedBankAccounts;
   final VoidCallback onCardTap;
   final VoidCallback onBreakdownTap;
 
@@ -530,6 +633,7 @@ class _TotalBalanceCard extends StatelessWidget {
     required this.weekExpense,
     required this.showBalance,
     required this.onToggleBalance,
+    required this.hasAddedBankAccounts,
     required this.onCardTap,
     required this.onBreakdownTap,
   });
@@ -562,7 +666,7 @@ class _TotalBalanceCard extends StatelessWidget {
             Row(
               children: [
                 Text(
-                  'TOTAL BALANCE',
+                  hasAddedBankAccounts ? 'TOTAL BALANCE' : 'GET STARTED',
                   style: TextStyle(
                     color: AppColors.white.withValues(alpha: 0.85),
                     fontSize: 12,
@@ -572,87 +676,129 @@ class _TotalBalanceCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Text(
-                  'ETB $displayBalance',
-                  style: const TextStyle(
-                    color: AppColors.white,
-                    fontSize: 32,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
+            if (hasAddedBankAccounts) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Text(
+                    'ETB $displayBalance',
+                    style: const TextStyle(
+                      color: AppColors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: onToggleBalance,
-                  style: IconButton.styleFrom(
-                    foregroundColor: AppColors.white.withValues(alpha: 0.9),
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(24, 24),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  const Spacer(),
+                  IconButton(
+                    onPressed: onToggleBalance,
+                    style: IconButton.styleFrom(
+                      foregroundColor: AppColors.white.withValues(alpha: 0.9),
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(24, 24),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: Icon(
+                      showBalance
+                          ? AppIcons.visibility_outlined
+                          : AppIcons.visibility_off_outlined,
+                      size: 24,
+                    ),
                   ),
-                  icon: Icon(
-                    showBalance
-                        ? AppIcons.visibility_outlined
-                        : AppIcons.visibility_off_outlined,
-                    size: 24,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            InkWell(
-              onTap: onBreakdownTap,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Text(
-                      'How did I get here?',
-                      style: TextStyle(
-                        color: AppColors.white.withValues(alpha: 0.85),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
+                ],
+              ),
+              const SizedBox(height: 6),
+              InkWell(
+                onTap: onBreakdownTap,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Text(
+                        'How did I get here?',
+                        style: TextStyle(
+                          color: AppColors.white.withValues(alpha: 0.85),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Icon(
-                      AppIcons.arrow_forward,
-                      size: 14,
-                      color: AppColors.white.withValues(alpha: 0.8),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Icon(
+                        AppIcons.arrow_forward,
+                        size: 14,
+                        color: AppColors.white.withValues(alpha: 0.8),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              height: 1,
-              color: AppColors.white.withValues(alpha: 0.22),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: _BalanceDelta(
-                    label: 'Today',
-                    income: todayIncomeLabel,
-                    expense: todayExpenseLabel,
+              const SizedBox(height: 10),
+              Container(
+                height: 1,
+                color: AppColors.white.withValues(alpha: 0.22),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _BalanceDelta(
+                      label: 'Today',
+                      income: todayIncomeLabel,
+                      expense: todayExpenseLabel,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _BalanceDelta(
-                    label: 'This week',
-                    income: weekIncomeLabel,
-                    expense: weekExpenseLabel,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _BalanceDelta(
+                      label: 'This week',
+                      income: weekIncomeLabel,
+                      expense: weekExpenseLabel,
+                    ),
                   ),
+                ],
+              ),
+            ] else ...[
+              const SizedBox(height: 14),
+              Text(
+                'No bank accounts added yet.',
+                style: const TextStyle(
+                  color: AppColors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Tap this card to open Accounts and add your bank accounts.',
+                style: TextStyle(
+                  color: AppColors.white.withValues(alpha: 0.82),
+                  fontSize: 14,
+                  height: 1.35,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Text(
+                    'Open Accounts',
+                    style: TextStyle(
+                      color: AppColors.white.withValues(alpha: 0.95),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    AppIcons.arrow_forward,
+                    size: 16,
+                    color: AppColors.white.withValues(alpha: 0.9),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -772,9 +918,15 @@ String _formatDelta(double value) {
 
 class _InsightCard extends StatelessWidget {
   final String message;
+  final bool showImportBackupPrompt;
+  final bool isImportingBackup;
+  final VoidCallback? onImportBackupTap;
 
   const _InsightCard({
     required this.message,
+    this.showImportBackupPrompt = false,
+    this.isImportingBackup = false,
+    this.onImportBackupTap,
   });
 
   @override
@@ -791,26 +943,28 @@ class _InsightCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: AppColors.amber.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
+          if (!showImportBackupPrompt) ...[
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: AppColors.amber.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                AppIcons.lightbulb_outline,
+                color: AppColors.amber,
+                size: 18,
+              ),
             ),
-            child: const Icon(
-              AppIcons.lightbulb_outline,
-              color: AppColors.amber,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: 10),
+            const SizedBox(width: 10),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'INSIGHT',
+                  showImportBackupPrompt ? 'RESTORE FROM BACKUP' : 'INSIGHT',
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: AppColors.textSecondary(context),
                     letterSpacing: 0.8,
@@ -818,15 +972,64 @@ class _InsightCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  message,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.isDark(context)
-                        ? AppColors.slate400
-                        : AppColors.slate700,
-                    height: 1.4,
+                if (showImportBackupPrompt) ...[
+                  Text(
+                      'Used Totals before? Import your backup to restore your '
+                      'accounts, transactions, budgets, and categories.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.isDark(context)
+                          ? AppColors.slate400
+                          : AppColors.slate700,
+                      height: 1.45,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap import backup, then choose your exported JSON file. '
+                    'No backup? Use the card above to add your accounts manually.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary(context),
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  FilledButton.icon(
+                    onPressed: isImportingBackup ? null : onImportBackupTap,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primaryDark,
+                      foregroundColor: AppColors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: isImportingBackup
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.white,
+                            ),
+                          )
+                        : const Icon(AppIcons.cloud_download, size: 16),
+                    label: Text(
+                      isImportingBackup ? 'Importing...' : 'Import Backup',
+                    ),
+                  ),
+                ] else
+                  Text(
+                    message,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.isDark(context)
+                          ? AppColors.slate400
+                          : AppColors.slate700,
+                      height: 1.4,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -906,10 +1109,10 @@ class _HomeLoadingSkeletonState extends State<_HomeLoadingSkeleton>
             ],
           ),
           const SizedBox(height: 12),
-            Row(
-              children: [
-                Text(
-                  'ETB ...',
+          Row(
+            children: [
+              Text(
+                'ETB ...',
                 style: TextStyle(
                   color: AppColors.white.withValues(alpha: 0.74),
                   fontSize: 32,
