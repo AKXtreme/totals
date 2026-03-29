@@ -160,6 +160,7 @@ Future<void> showClearDatabaseDialog(BuildContext context) async {
                         child: OutlinedButton(
                           onPressed: () => Navigator.pop(sheetContext),
                           style: OutlinedButton.styleFrom(
+                            foregroundColor: theme.colorScheme.onSurfaceVariant,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -297,9 +298,8 @@ Widget _buildClearOption({
               ),
               child: Icon(
                 icon,
-                color: value
-                    ? theme.colorScheme.error
-                    : theme.colorScheme.primary,
+                color:
+                    value ? theme.colorScheme.error : theme.colorScheme.primary,
                 size: 20,
               ),
             ),
