@@ -3,13 +3,14 @@ import 'package:totals/database/database_helper.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/repositories/profile_repository.dart';
 import 'package:totals/services/bank_config_service.dart';
-import 'package:totals/services/receiver_category_service.dart';
-import 'package:totals/services/notification_settings_service.dart';
+import 'package:totals/services/auto_categorization_service.dart';
 import 'package:totals/constants/cash_constants.dart';
 
 class TransactionRepository {
   final BankConfigService _bankConfigService = BankConfigService();
   final ProfileRepository _profileRepo = ProfileRepository();
+  final AutoCategorizationService _autoCategorizationService =
+      AutoCategorizationService.instance;
 
   Future<int?> _getActiveProfileId() async {
     return await _profileRepo.getActiveProfileId();
@@ -99,19 +100,16 @@ class TransactionRepository {
     // Skip if explicitly requested (e.g., when user clears category)
     Transaction transactionToSave = transaction;
     if (!skipAutoCategorization && transaction.categoryId == null) {
-      final isEnabled = await NotificationSettingsService.instance
-          .isAutoCategorizeByReceiverEnabled();
-      if (isEnabled) {
-        final categoryId =
-            await ReceiverCategoryService.instance.getCategoryForTransaction(
-          receiver: transaction.receiver,
-          creditor: transaction.creditor,
-        );
-        if (categoryId != null) {
-          transactionToSave = transaction.copyWith(categoryId: categoryId);
-          print(
-              "debug: Auto-categorized transaction ${transaction.reference} with categoryId $categoryId");
-        }
+      final categoryId =
+          await _autoCategorizationService.getCategoryForTransaction(
+        type: transaction.type,
+        receiver: transaction.receiver,
+        creditor: transaction.creditor,
+      );
+      if (categoryId != null) {
+        transactionToSave = transaction.copyWith(categoryId: categoryId);
+        print(
+            "debug: Auto-categorized transaction ${transaction.reference} with categoryId $categoryId");
       }
     } else if (skipAutoCategorization) {
       print(

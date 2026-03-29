@@ -168,14 +168,22 @@ class NotificationSettingsService {
         await isMonthlySummaryEnabled();
   }
 
-  Future<bool> isAutoCategorizeByReceiverEnabled() async {
+  Future<bool> isAutoCategorizationEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_kAutoCategorizeReceiverEnabled) ?? false;
   }
 
-  Future<void> setAutoCategorizeByReceiverEnabled(bool enabled) async {
+  Future<void> setAutoCategorizationEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kAutoCategorizeReceiverEnabled, enabled);
+  }
+
+  Future<bool> isAutoCategorizeByReceiverEnabled() async {
+    return isAutoCategorizationEnabled();
+  }
+
+  Future<void> setAutoCategorizeByReceiverEnabled(bool enabled) async {
+    await setAutoCategorizationEnabled(enabled);
   }
 
   Future<List<int>> getQuickCategorizeIncomeIds() async {

@@ -21,7 +21,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 19,
+      version: 20,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -37,6 +37,8 @@ class DatabaseHelper {
     await _ensureProfileSchema(db);
     await _ensureTransactionFeesSchema(db);
     await _ensureTransactionNotesSchema(db);
+    await _ensureAutoCategorizationSchema(db);
+    await _migrateLegacyReceiverMappingsToAutoRules(db);
 
     return db;
   }
@@ -193,6 +195,38 @@ class DatabaseHelper {
     );
     await db.execute(
       "CREATE INDEX idx_receiver_mappings_categoryId ON receiver_category_mappings(categoryId)",
+    );
+
+    await db.execute('''
+      CREATE TABLE auto_category_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        counterparty TEXT NOT NULL,
+        normalizedCounterparty TEXT NOT NULL,
+        flow TEXT NOT NULL,
+        categoryId INTEGER NOT NULL,
+        createdAt TEXT NOT NULL,
+        UNIQUE(normalizedCounterparty, flow)
+      )
+    ''');
+    await db.execute(
+      "CREATE INDEX idx_auto_category_rules_flow ON auto_category_rules(flow)",
+    );
+    await db.execute(
+      "CREATE INDEX idx_auto_category_rules_categoryId ON auto_category_rules(categoryId)",
+    );
+
+    await db.execute('''
+      CREATE TABLE auto_category_prompt_dismissals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        counterparty TEXT NOT NULL,
+        normalizedCounterparty TEXT NOT NULL,
+        flow TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        UNIQUE(normalizedCounterparty, flow)
+      )
+    ''');
+    await db.execute(
+      "CREATE INDEX idx_auto_category_prompt_dismissals_flow ON auto_category_prompt_dismissals(flow)",
     );
 
     // User accounts table (for quick access accounts)
@@ -708,6 +742,11 @@ class DatabaseHelper {
         print("debug: Error adding note column (might already exist): $e");
       }
     }
+
+    if (oldVersion < 20) {
+      await _ensureAutoCategorizationSchema(db);
+      await _migrateLegacyReceiverMappingsToAutoRules(db);
+    }
   }
 
   Future<void> _seedBuiltInCategories(Database db) async {
@@ -1073,6 +1112,95 @@ class DatabaseHelper {
     try {
       await db.execute('ALTER TABLE transactions ADD COLUMN note TEXT');
     } catch (_) {}
+  }
+
+  Future<void> _ensureAutoCategorizationSchema(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS auto_category_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        counterparty TEXT NOT NULL,
+        normalizedCounterparty TEXT NOT NULL,
+        flow TEXT NOT NULL,
+        categoryId INTEGER NOT NULL,
+        createdAt TEXT NOT NULL,
+        UNIQUE(normalizedCounterparty, flow)
+      )
+    ''');
+    await db.execute(
+      "CREATE INDEX IF NOT EXISTS idx_auto_category_rules_flow ON auto_category_rules(flow)",
+    );
+    await db.execute(
+      "CREATE INDEX IF NOT EXISTS idx_auto_category_rules_categoryId ON auto_category_rules(categoryId)",
+    );
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS auto_category_prompt_dismissals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        counterparty TEXT NOT NULL,
+        normalizedCounterparty TEXT NOT NULL,
+        flow TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        UNIQUE(normalizedCounterparty, flow)
+      )
+    ''');
+    await db.execute(
+      "CREATE INDEX IF NOT EXISTS idx_auto_category_prompt_dismissals_flow ON auto_category_prompt_dismissals(flow)",
+    );
+  }
+
+  Future<void> _migrateLegacyReceiverMappingsToAutoRules(Database db) async {
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='receiver_category_mappings'",
+    );
+    if (tables.isEmpty) return;
+
+    final rows = await db.rawQuery('''
+      SELECT
+        m.accountNumber,
+        m.categoryId,
+        m.createdAt,
+        c.flow
+      FROM receiver_category_mappings m
+      INNER JOIN categories c ON c.id = m.categoryId
+      WHERE m.accountNumber IS NOT NULL AND TRIM(m.accountNumber) <> ''
+      ORDER BY
+        CASE
+          WHEN m.createdAt IS NULL OR TRIM(m.createdAt) = '' THEN 1
+          ELSE 0
+        END,
+        m.createdAt ASC,
+        m.id ASC
+    ''');
+    if (rows.isEmpty) return;
+
+    String normalizeCounterparty(String value) {
+      return value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+    }
+
+    final batch = db.batch();
+    for (final row in rows) {
+      final counterparty = (row['accountNumber'] as String?)?.trim();
+      final categoryId = row['categoryId'] as int?;
+      if (counterparty == null || counterparty.isEmpty || categoryId == null) {
+        continue;
+      }
+      final flow = ((row['flow'] as String?) ?? 'expense').trim().toLowerCase();
+      batch.insert(
+        'auto_category_rules',
+        {
+          'counterparty': counterparty.replaceAll(RegExp(r'\s+'), ' '),
+          'normalizedCounterparty': normalizeCounterparty(counterparty),
+          'flow': flow == 'income' ? 'income' : 'expense',
+          'categoryId': categoryId,
+          'createdAt': (row['createdAt'] as String?)?.trim().isNotEmpty == true
+              ? row['createdAt']
+              : DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+    await db.delete('receiver_category_mappings');
   }
 
   Future<void> _assignBuiltInCategoryKeys(Database db) async {

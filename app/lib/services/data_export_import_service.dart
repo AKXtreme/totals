@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart' hide Transaction;
 import 'package:totals/database/database_helper.dart';
 import 'package:totals/models/account.dart';
+import 'package:totals/models/auto_categorization.dart';
 import 'package:totals/models/bank.dart';
 import 'package:totals/models/budget.dart';
 import 'package:totals/models/category.dart';
@@ -15,14 +16,14 @@ import 'package:totals/repositories/category_repository.dart';
 import 'package:totals/repositories/transaction_repository.dart';
 import 'package:totals/repositories/failed_parse_repository.dart';
 import 'package:totals/repositories/user_account_repository.dart';
-import 'package:totals/services/receiver_category_service.dart';
+import 'package:totals/services/auto_categorization_service.dart';
 import 'package:totals/services/sms_config_service.dart';
 import 'package:totals/utils/transaction_duplicate_detector.dart';
 
 const int _dashenBankId = 4;
 
 class DataExportImportService {
-  static const int currentSchemaVersion = 3;
+  static const int currentSchemaVersion = 4;
   static const int minimumSchemaVersion = 1;
 
   final AccountRepository _accountRepo = AccountRepository();
@@ -31,8 +32,8 @@ class DataExportImportService {
   final TransactionRepository _transactionRepo = TransactionRepository();
   final FailedParseRepository _failedParseRepo = FailedParseRepository();
   final UserAccountRepository _userAccountRepo = UserAccountRepository();
-  final ReceiverCategoryService _receiverCategoryService =
-      ReceiverCategoryService.instance;
+  final AutoCategorizationService _autoCategorizationService =
+      AutoCategorizationService.instance;
   final SmsConfigService _smsConfigService = SmsConfigService();
 
   /// Export all data to JSON
@@ -45,8 +46,9 @@ class DataExportImportService {
       final userAccounts = await _userAccountRepo.getUserAccounts();
       final transactions = await _transactionRepo.getTransactions();
       final failedParses = await _failedParseRepo.getAll();
-      final receiverCategoryMappings =
-          await _receiverCategoryService.getAllMappings();
+      final autoCategoryRules = await _autoCategorizationService.getRules();
+      final autoCategoryPromptDismissals =
+          await _autoCategorizationService.getDismissals();
       final smsPatterns = await _smsConfigService.getPatterns();
 
       final exportData = {
@@ -60,14 +62,11 @@ class DataExportImportService {
         'userAccounts': userAccounts.map((a) => a.toJson()).toList(),
         'transactions': transactions.map((t) => t.toJson()).toList(),
         'failedParses': failedParses.map((f) => f.toJson()).toList(),
-        'receiverCategoryMappings': receiverCategoryMappings.map((mapping) {
-          return {
-            'accountNumber': mapping['accountNumber'],
-            'categoryId': mapping['categoryId'],
-            'accountType': mapping['accountType'],
-            'createdAt': mapping['createdAt'],
-          };
-        }).toList(),
+        'autoCategoryRules':
+            autoCategoryRules.map((rule) => rule.toJson()).toList(),
+        'autoCategoryPromptDismissals': autoCategoryPromptDismissals
+            .map((dismissal) => dismissal.toJson())
+            .toList(),
         'smsPatterns': smsPatterns.map((p) => p.toJson()).toList(),
       };
 
@@ -100,10 +99,8 @@ class DataExportImportService {
       // Import banks (replace - configuration)
       final banksRaw = _asMapList(data['banks']);
       if (banksRaw.isNotEmpty) {
-        final banksList = banksRaw
-            .map(Bank.fromJson)
-            .map(_normalizeImportedBank)
-            .toList();
+        final banksList =
+            banksRaw.map(Bank.fromJson).map(_normalizeImportedBank).toList();
 
         if (banksList.isNotEmpty) {
           await db.delete('banks');
@@ -337,8 +334,8 @@ class DataExportImportService {
         String budgetKey(Budget budget) {
           final name = budget.name.trim().toLowerCase();
           final type = budget.type.trim().toLowerCase();
-          final category =
-              budget.selectedCategoryIds.toList()..sort((a, b) => a - b);
+          final category = budget.selectedCategoryIds.toList()
+            ..sort((a, b) => a - b);
           final start = budget.startDate.toIso8601String();
           final end = budget.endDate?.toIso8601String() ?? '';
           final amount = budget.amount.toStringAsFixed(2);
@@ -393,9 +390,77 @@ class DataExportImportService {
         }
       }
 
-      // Import receiver category mappings (append, replace duplicates)
+      // Import explicit auto-category rules.
+      final autoCategoryRulesRaw = _asMapList(data['autoCategoryRules']);
+      if (autoCategoryRulesRaw.isNotEmpty) {
+        final rules = autoCategoryRulesRaw
+            .map(AutoCategorizationRule.fromJson)
+            .toList(growable: false);
+        final batch = db.batch();
+        for (final rule in rules) {
+          final categoryId = categoryIdMap[rule.categoryId] ?? rule.categoryId;
+          if (categoryId == 0) continue;
+          if (categoryIdsCanBeMapped &&
+              categoryIdMap.isNotEmpty &&
+              categoryId == rule.categoryId &&
+              !categoryIdMap.containsKey(rule.categoryId)) {
+            continue;
+          }
+          batch.insert(
+            'auto_category_rules',
+            {
+              'counterparty': rule.counterparty,
+              'normalizedCounterparty': rule.normalizedCounterparty.isNotEmpty
+                  ? rule.normalizedCounterparty
+                  : _autoCategorizationService.normalizeCounterparty(
+                      rule.counterparty,
+                    ),
+              'flow': rule.flow,
+              'categoryId': categoryId,
+              'createdAt': rule.createdAt,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        await batch.commit(noResult: true);
+      }
+
+      // Import dismissed prompts.
+      final autoCategoryPromptDismissalsRaw =
+          _asMapList(data['autoCategoryPromptDismissals']);
+      if (autoCategoryPromptDismissalsRaw.isNotEmpty) {
+        final dismissals = autoCategoryPromptDismissalsRaw
+            .map(AutoCategoryPromptDismissal.fromJson)
+            .toList(growable: false);
+        final batch = db.batch();
+        for (final dismissal in dismissals) {
+          batch.insert(
+            'auto_category_prompt_dismissals',
+            {
+              'counterparty': dismissal.counterparty,
+              'normalizedCounterparty':
+                  dismissal.normalizedCounterparty.isNotEmpty
+                      ? dismissal.normalizedCounterparty
+                      : _autoCategorizationService.normalizeCounterparty(
+                          dismissal.counterparty,
+                        ),
+              'flow': dismissal.flow,
+              'createdAt': dismissal.createdAt,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        await batch.commit(noResult: true);
+      }
+
+      // Import legacy receiver category mappings by converting them into
+      // flow-aware auto-category rules.
       final mappingsRaw = _asMapList(data['receiverCategoryMappings']);
       if (mappingsRaw.isNotEmpty) {
+        final categoriesById = {
+          for (final category in await _categoryRepo.getCategories())
+            if (category.id != null) category.id!: category,
+        };
         final batch = db.batch();
         for (final mapping in mappingsRaw) {
           final categoryId = _asInt(mapping['categoryId']);
@@ -407,13 +472,24 @@ class DataExportImportService {
             // Skip unresolved mappings when categories are part of the backup.
             continue;
           }
+          final resolvedCategoryId = mappedId ?? categoryId;
+          if (resolvedCategoryId == null) continue;
+          final category = categoriesById[resolvedCategoryId];
+          if (category == null) continue;
+          final rawCounterparty = mapping['accountNumber']?.toString().trim();
+          if (rawCounterparty == null || rawCounterparty.isEmpty) continue;
           batch.insert(
-            'receiver_category_mappings',
+            'auto_category_rules',
             {
-              'accountNumber': mapping['accountNumber'],
-              'categoryId': mappedId ?? categoryId,
-              'accountType': mapping['accountType'],
-              'createdAt': mapping['createdAt'],
+              'counterparty': rawCounterparty,
+              'normalizedCounterparty':
+                  _autoCategorizationService.normalizeCounterparty(
+                rawCounterparty,
+              ),
+              'flow': _autoCategorizationService.normalizeFlow(category.flow),
+              'categoryId': resolvedCategoryId,
+              'createdAt':
+                  mapping['createdAt'] ?? DateTime.now().toIso8601String(),
             },
             conflictAlgorithm: ConflictAlgorithm.replace,
           );
@@ -491,6 +567,16 @@ class DataExportImportService {
         'receiverCategoryMappings',
         aliases: const ['receiver_category_mappings'],
       ),
+      'autoCategoryRules': _readList(
+        raw,
+        'autoCategoryRules',
+        aliases: const ['auto_category_rules'],
+      ),
+      'autoCategoryPromptDismissals': _readList(
+        raw,
+        'autoCategoryPromptDismissals',
+        aliases: const ['auto_category_prompt_dismissals'],
+      ),
       'smsPatterns': _readList(
         raw,
         'smsPatterns',
@@ -504,6 +590,14 @@ class DataExportImportService {
         _asInt(data['schemaVersion']) ?? _asInt(data['schema_version']);
     if (explicit != null) return explicit;
 
+    if (_hasAnySection(data, const [
+      'autoCategoryRules',
+      'auto_category_rules',
+      'autoCategoryPromptDismissals',
+      'auto_category_prompt_dismissals',
+    ])) {
+      return 4;
+    }
     if (_hasAnySection(
         data, const ['banks', 'budgets', 'userAccounts', 'user_accounts'])) {
       return 3;

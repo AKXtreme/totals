@@ -14,7 +14,6 @@ import 'package:totals/widgets/clear_database_dialog.dart';
 import 'package:totals/screens/profile_management_page.dart';
 // import 'package:totals/screens/telebirr_bank_transfer_matches_page.dart';
 import 'package:totals/repositories/profile_repository.dart';
-import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/sms_config_service.dart';
 import 'package:totals/services/widget_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -102,8 +101,6 @@ class _SettingsPageState extends State<SettingsPage>
   bool _isImporting = false;
   bool _isRefreshingWidget = false;
   bool _isFetchingSmsPatterns = false;
-  bool _autoCategorizeEnabled = false;
-  bool _isLoadingAutoCategorize = true;
   bool _useRedesign = true;
   bool _isLoadingRedesign = true;
 
@@ -116,7 +113,6 @@ class _SettingsPageState extends State<SettingsPage>
       vsync: this,
       duration: const Duration(milliseconds: 2000),
     )..repeat();
-    _loadAutoCategorizeSetting();
     _loadRedesignSetting();
   }
 
@@ -140,66 +136,6 @@ class _SettingsPageState extends State<SettingsPage>
         content: Text('Restart the app to apply the new design.'),
       ),
     );
-  }
-
-  Future<void> _loadAutoCategorizeSetting() async {
-    final enabled = await NotificationSettingsService.instance
-        .isAutoCategorizeByReceiverEnabled();
-    if (mounted) {
-      setState(() {
-        _autoCategorizeEnabled = enabled;
-        _isLoadingAutoCategorize = false;
-      });
-    }
-  }
-
-  Future<void> _toggleAutoCategorize(bool value) async {
-    setState(() {
-      _autoCategorizeEnabled = value;
-    });
-    await NotificationSettingsService.instance
-        .setAutoCategorizeByReceiverEnabled(value);
-
-    if (value) {
-      // Show dialog asking if user wants to apply to existing transactions
-      if (!mounted) return;
-      final applyToExisting = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Auto-categorize by Receiver'),
-          content: const Text(
-            'This feature will automatically categorize transactions based on previously categorized receivers/creditors.\n\n'
-            'Would you like to apply this to your existing uncategorized transactions?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('No'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Yes'),
-            ),
-          ],
-        ),
-      );
-
-      if (applyToExisting == true && mounted) {
-        // Apply to existing transactions
-        final provider =
-            Provider.of<TransactionProvider>(context, listen: false);
-        final count = await provider.applyAutoCategorizationToExisting();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Applied auto-categorization to $count existing transactions',
-              ),
-            ),
-          );
-        }
-      }
-    }
   }
 
   Future<void> _fetchSmsPatterns() async {
@@ -1210,18 +1146,6 @@ class _SettingsPageState extends State<SettingsPage>
                                 );
                               },
                             ),
-                            _buildDivider(context),
-                            _isLoadingAutoCategorize
-                                ? const SizedBox.shrink()
-                                : _buildSettingTile(
-                                    icon: Icons.auto_awesome_rounded,
-                                    title: 'Auto-categorize by receiver',
-                                    trailing: Switch(
-                                      value: _autoCategorizeEnabled,
-                                      onChanged: _toggleAutoCategorize,
-                                    ),
-                                    onTap: null,
-                                  ),
                             _buildDivider(context),
                             _buildSettingTile(
                               icon: Icons.notifications_rounded,

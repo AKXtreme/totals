@@ -15,7 +15,6 @@ import 'package:totals/repositories/category_repository.dart';
 import 'package:totals/repositories/transaction_repository.dart';
 import 'package:totals/services/failed_parse_review_service.dart';
 import 'package:totals/services/background_refresh_signal_service.dart';
-import 'package:totals/services/receiver_category_service.dart';
 import 'package:totals/services/notification_intent_bus.dart';
 import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/widget_service.dart';
@@ -190,27 +189,6 @@ class NotificationService {
 
       if (kDebugMode) {
         print('debug: Quick categorize: saved successfully');
-      }
-
-      final isAutoCategorizeEnabled = await NotificationSettingsService.instance
-          .isAutoCategorizeByReceiverEnabled();
-      if (isAutoCategorizeEnabled) {
-        final receiver = transaction.receiver;
-        if (receiver != null && receiver.isNotEmpty) {
-          await ReceiverCategoryService.instance.saveMapping(
-            receiver,
-            categoryId,
-            'receiver',
-          );
-        }
-        final creditor = transaction.creditor;
-        if (creditor != null && creditor.isNotEmpty) {
-          await ReceiverCategoryService.instance.saveMapping(
-            creditor,
-            categoryId,
-            'creditor',
-          );
-        }
       }
 
       // Cancel the notification

@@ -15,7 +15,6 @@ import 'package:totals/screens/profile_management_page.dart';
 import 'package:totals/widgets/clear_database_dialog.dart';
 import 'package:totals/repositories/profile_repository.dart';
 import 'package:totals/services/data_export_import_service.dart';
-import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/sms_config_service.dart';
 import 'package:totals/_redesign/theme/app_icons.dart';
 import 'package:totals/theme/app_font_option.dart';
@@ -58,8 +57,6 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
 
   bool _useRedesign = true;
   bool _isLoadingRedesign = true;
-  bool _autoCategorizeEnabled = false;
-  bool _isLoadingAutoCategorize = true;
   bool _isExporting = false;
   bool _isImporting = false;
   bool _isFetchingSmsPatterns = false;
@@ -68,7 +65,6 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
   void initState() {
     super.initState();
     _loadRedesignSetting();
-    _loadAutoCategorizeSetting();
   }
 
   // ── Preferences loading ─────────────────────────────────────────────────
@@ -94,74 +90,6 @@ class _RedesignSettingsPageState extends State<RedesignSettingsPage> {
         behavior: SnackBarBehavior.floating,
       ),
     );
-  }
-
-  Future<void> _loadAutoCategorizeSetting() async {
-    final enabled = await NotificationSettingsService.instance
-        .isAutoCategorizeByReceiverEnabled();
-    if (mounted) {
-      setState(() {
-        _autoCategorizeEnabled = enabled;
-        _isLoadingAutoCategorize = false;
-      });
-    }
-  }
-
-  Future<void> _toggleAutoCategorize(bool value) async {
-    setState(() => _autoCategorizeEnabled = value);
-    await NotificationSettingsService.instance
-        .setAutoCategorizeByReceiverEnabled(value);
-
-    if (value && mounted) {
-      final applyToExisting = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: AppColors.cardColor(ctx),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(
-            'Auto-categorize by Receiver',
-            style: TextStyle(color: AppColors.textPrimary(ctx)),
-          ),
-          content: Text(
-            'This will automatically categorize transactions based on '
-            'previously categorized receivers/creditors.\n\n'
-            'Apply to existing uncategorized transactions?',
-            style: TextStyle(color: AppColors.textSecondary(ctx)),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(
-                'No',
-                style: TextStyle(color: AppColors.textSecondary(ctx)),
-              ),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Yes'),
-            ),
-          ],
-        ),
-      );
-
-      if (applyToExisting == true && mounted) {
-        final provider =
-            Provider.of<TransactionProvider>(context, listen: false);
-        final count = await provider.applyAutoCategorizationToExisting();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Applied auto-categorization to $count transactions',
-              ),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      }
-    }
   }
 
   Future<void> _fetchSmsPatterns() async {
@@ -1623,7 +1551,8 @@ class _RedesignAboutPage extends StatelessWidget {
               child: Text(
                 'Made by Detached',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: AppColors.textSecondary(context).withValues(alpha: 0.6),
+                  color:
+                      AppColors.textSecondary(context).withValues(alpha: 0.6),
                 ),
               ),
             ),
@@ -1786,9 +1715,8 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
     {
       'icon': 'sms',
       'question': 'How does Totals read my transactions?',
-      'answer':
-          'Totals reads SMS messages from your bank and automatically '
-              'extracts transaction details like amount, date, and balance.',
+      'answer': 'Totals reads SMS messages from your bank and automatically '
+          'extracts transaction details like amount, date, and balance.',
     },
     {
       'icon': 'category',
@@ -1801,10 +1729,9 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
     {
       'icon': 'account',
       'question': 'Can I track multiple bank accounts?',
-      'answer':
-          'Yes. Totals automatically detects accounts from your SMS and '
-              'tracks each one separately. You can view balances and '
-              'transactions per account.',
+      'answer': 'Yes. Totals automatically detects accounts from your SMS and '
+          'tracks each one separately. You can view balances and '
+          'transactions per account.',
     },
   ];
 
@@ -1812,24 +1739,21 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
     {
       'icon': 'export',
       'question': 'How do I export my data?',
-      'answer':
-          'Go to Settings > Export Data. You can save the file directly '
-              'or share it with other apps.',
+      'answer': 'Go to Settings > Export Data. You can save the file directly '
+          'or share it with other apps.',
     },
     {
       'icon': 'import',
       'question': 'Can I import data from another device?',
-      'answer':
-          'Yes. Use Export Data to create a backup, then use Import Data '
-              'on your other device to restore it.',
+      'answer': 'Yes. Use Export Data to create a backup, then use Import Data '
+          'on your other device to restore it.',
     },
     {
       'icon': 'failed',
       'question': 'My SMS was not parsed. What can I do?',
-      'answer':
-          'Open the Failed Parses page from the home screen. You can '
-              'retry parsing from there. If it still fails, the bank format '
-              'may not be supported yet.',
+      'answer': 'Open the Failed Parses page from the home screen. You can '
+          'retry parsing from there. If it still fails, the bank format '
+          'may not be supported yet.',
     },
   ];
 
@@ -1837,33 +1761,29 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
     {
       'icon': 'refresh',
       'question': 'Missed a transaction today?',
-      'answer':
-          "In Today's transactions, tap the refresh button to rescan "
-              "today's bank SMS and pick up anything that was missed.",
+      'answer': "In Today's transactions, tap the refresh button to rescan "
+          "today's bank SMS and pick up anything that was missed.",
     },
     {
       'icon': 'budget',
       'question': 'How do budgets work?',
-      'answer':
-          'Create a budget in the Budget tab with a spending limit and '
-              'time period. Totals tracks your spending against it and '
-              'notifies you when you are close to your limit.',
+      'answer': 'Create a budget in the Budget tab with a spending limit and '
+          'time period. Totals tracks your spending against it and '
+          'notifies you when you are close to your limit.',
     },
     {
       'icon': 'lock',
       'question': 'How do I lock the app?',
-      'answer':
-          'Double-tap the lock icon on the home screen to instantly '
-              'lock the app. You will need to authenticate to get back in.',
+      'answer': 'Double-tap the lock icon on the home screen to instantly '
+          'lock the app. You will need to authenticate to get back in.',
     },
     {
       'icon': 'gesture',
       'question': 'Are there any shortcuts?',
-      'answer':
-          'Long-press the bottom navigation bar items for quick actions. '
-              'Long-press Money to add a cash transaction, long-press Tools '
-              'to open your quick-access accounts, and long-press You to '
-              'switch between profiles.',
+      'answer': 'Long-press the bottom navigation bar items for quick actions. '
+          'Long-press Money to add a cash transaction, long-press Tools '
+          'to open your quick-access accounts, and long-press You to '
+          'switch between profiles.',
     },
   ];
 
@@ -2041,8 +1961,7 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
           color: AppColors.cardColor(context),
           borderRadius: BorderRadius.circular(14),
           child: InkWell(
-            onTap: () =>
-                setState(() => _expanded[globalIndex] = !isExpanded),
+            onTap: () => setState(() => _expanded[globalIndex] = !isExpanded),
             borderRadius: BorderRadius.circular(14),
             child: Container(
               padding: const EdgeInsets.all(16),
@@ -2060,8 +1979,7 @@ class _RedesignFAQPageState extends State<_RedesignFAQPage> {
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: AppColors.primaryLight
-                              .withValues(alpha: 0.1),
+                          color: AppColors.primaryLight.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(

@@ -1,12 +1,12 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
+import 'package:totals/_redesign/widgets/auto_categorization_prompt_dialog.dart';
 import 'package:totals/models/category.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
+import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/utils/text_utils.dart';
 import 'package:totals/_redesign/theme/app_icons.dart';
 
@@ -15,6 +15,8 @@ Future<void> showTransactionDetailsSheet({
   required BuildContext context,
   required Transaction transaction,
   required TransactionProvider provider,
+  bool initiallyExpandCategory = false,
+  bool showQuickAccessCategories = false,
 }) async {
   FocusManager.instance.primaryFocus?.unfocus();
   await showModalBottomSheet<void>(
@@ -24,6 +26,8 @@ Future<void> showTransactionDetailsSheet({
     builder: (context) => _TransactionDetailsSheet(
       transaction: transaction,
       provider: provider,
+      initiallyExpandCategory: initiallyExpandCategory,
+      showQuickAccessCategories: showQuickAccessCategories,
     ),
   );
 }
@@ -31,10 +35,14 @@ Future<void> showTransactionDetailsSheet({
 class _TransactionDetailsSheet extends StatefulWidget {
   final Transaction transaction;
   final TransactionProvider provider;
+  final bool initiallyExpandCategory;
+  final bool showQuickAccessCategories;
 
   const _TransactionDetailsSheet({
     required this.transaction,
     required this.provider,
+    this.initiallyExpandCategory = false,
+    this.showQuickAccessCategories = false,
   });
 
   @override
@@ -46,9 +54,11 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   bool _categoryExpanded = false;
   bool _isSavingCounterparty = false;
   bool _isSavingNote = false;
+  bool _isApplyingCategory = false;
   bool _showNewCategoryForm = false;
   bool _showColorChoices = false;
   String _draftColorKey = _kCategoryColorOptions.first.key;
+  List<int> _quickCategoryIds = const [];
   late Transaction _transaction;
   final TextEditingController _counterpartyController = TextEditingController();
   final FocusNode _counterpartyFocus = FocusNode();
@@ -67,11 +77,15 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   @override
   void initState() {
     super.initState();
+    _categoryExpanded = widget.initiallyExpandCategory;
     _transaction = widget.transaction;
     _counterpartyController.text = _storedCounterpartyValue ?? '';
     _counterpartyFocus.addListener(_handleCounterpartyFocusChange);
     _noteController.text = _tx.note?.trim() ?? '';
     _noteFocus.addListener(_handleNoteFocusChange);
+    if (widget.showQuickAccessCategories) {
+      _loadQuickCategoryIds();
+    }
   }
 
   String get _counterparty {
@@ -190,6 +204,52 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
         .toList(growable: false);
   }
 
+  List<Category> get _quickAccessCategories {
+    if (!widget.showQuickAccessCategories || _quickCategoryIds.isEmpty) {
+      return const [];
+    }
+
+    final categoriesById = <int, Category>{};
+    for (final category in _availableCategories) {
+      final id = category.id;
+      if (id != null) {
+        categoriesById[id] = category;
+      }
+    }
+
+    final result = <Category>[];
+    for (final id in _quickCategoryIds) {
+      final category = categoriesById[id];
+      if (category != null) {
+        result.add(category);
+      }
+    }
+    return result;
+  }
+
+  List<Category> get _remainingCategories {
+    final quickIds = _quickAccessCategories
+        .map((category) => category.id)
+        .whereType<int>()
+        .toSet();
+    if (quickIds.isEmpty) return _availableCategories;
+    return _availableCategories
+        .where((category) =>
+            category.id == null || !quickIds.contains(category.id))
+        .toList(growable: false);
+  }
+
+  Future<void> _loadQuickCategoryIds() async {
+    final settings = NotificationSettingsService.instance;
+    final ids = _isCredit
+        ? await settings.getQuickCategorizeIncomeIds()
+        : await settings.getQuickCategorizeExpenseIds();
+    if (!mounted) return;
+    setState(() {
+      _quickCategoryIds = ids;
+    });
+  }
+
   void _dismissComposerState({bool clearDraft = false}) {
     FocusManager.instance.primaryFocus?.unfocus();
     _newCategoryFocus.unfocus();
@@ -204,44 +264,90 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
     });
   }
 
-  void _runCategoryMutation(
-    Future<void> Function() operation, {
-    required String failureMessage,
-  }) {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
-    // Let the route dismissal start first so optimistic provider updates do
-    // not short-circuit the bottom-sheet exit animation.
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      unawaited(
-        operation().catchError((Object _, StackTrace __) {
-          messenger
-            ?..hideCurrentSnackBar()
-            ..showSnackBar(
-              SnackBar(content: Text(failureMessage)),
-            );
-        }),
-      );
-    });
-  }
-
   Future<void> _setCategory(Category category) async {
-    if (category.id == null) return;
+    if (_isApplyingCategory || category.id == null) return;
+    if (_currentCategory?.id == category.id) {
+      _dismissComposerState(clearDraft: true);
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+      return;
+    }
     _dismissComposerState(clearDraft: true);
-    _runCategoryMutation(
-      () => _provider.setCategoryForTransaction(_tx, category),
-      failureMessage: 'Could not update category. Changes were reverted.',
-    );
+    setState(() => _isApplyingCategory = true);
+    try {
+      await _provider.setCategoryForTransaction(_tx, category);
+      if (!mounted) return;
+      await _maybeHandleAutoCategorizationPrompt(category);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update category. Changes were reverted.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isApplyingCategory = false);
+      }
+    }
   }
 
   Future<void> _clearCategory() async {
+    if (_isApplyingCategory) return;
     _dismissComposerState(clearDraft: true);
-    _runCategoryMutation(
-      () => _provider.clearCategoryForTransaction(_tx),
-      failureMessage: 'Could not clear category. Changes were reverted.',
+    setState(() => _isApplyingCategory = true);
+    try {
+      await _provider.clearCategoryForTransaction(_tx);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not clear category. Changes were reverted.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isApplyingCategory = false);
+      }
+    }
+  }
+
+  Future<void> _maybeHandleAutoCategorizationPrompt(Category category) async {
+    final decision = await _provider.buildAutoCategorizationPromptDecision(
+      _tx,
+      category,
     );
+    if (!mounted || decision == null) return;
+
+    final shouldAutoCategorize = await showAutoCategorizationPromptDialog(
+      context: context,
+      decision: decision,
+      categoryName: category.name,
+    );
+    if (!mounted) return;
+
+    if (shouldAutoCategorize == true) {
+      await _provider.saveAutoCategorizationRule(decision);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Future ${decision.flow} transactions from ${decision.counterparty} will use ${category.name}.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (shouldAutoCategorize == false) {
+      await _provider.dismissAutoCategorizationPrompt(decision);
+    }
   }
 
   void _copyReference() {
@@ -867,12 +973,14 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
           SizedBox(
             width: valueColumnWidth,
             child: GestureDetector(
-              onTap: () {
-                _noteFocus.unfocus();
-                setState(() {
-                  _categoryExpanded = !_categoryExpanded;
-                });
-              },
+              onTap: _isApplyingCategory
+                  ? null
+                  : () {
+                      _noteFocus.unfocus();
+                      setState(() {
+                        _categoryExpanded = !_categoryExpanded;
+                      });
+                    },
               child: Row(
                 children: [
                   if (category != null) ...[
@@ -924,13 +1032,41 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
   }
 
   Widget _buildCategoryPicker(Category? current) {
-    final categories = _availableCategories;
+    final quickCategories = _quickAccessCategories;
+    final categories = _remainingCategories;
 
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (quickCategories.isNotEmpty) ...[
+            _buildCategorySectionLabel('Quick Access'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ...quickCategories.map((category) {
+                  final isSelected =
+                      current?.id != null && category.id == current!.id;
+                  return _CategoryPickerChip(
+                    label: category.name,
+                    color: _categoryColor(category),
+                    isSelected: isSelected,
+                    onTap: _isApplyingCategory
+                        ? null
+                        : () => _setCategory(category),
+                  );
+                }),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (categories.isNotEmpty && quickCategories.isNotEmpty) ...[
+            _buildCategorySectionLabel('All Categories'),
+            const SizedBox(height: 8),
+          ],
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -941,7 +1077,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                   label: c.name,
                   color: _categoryColor(c),
                   isSelected: isSelected,
-                  onTap: () => _setCategory(c),
+                  onTap: _isApplyingCategory ? null : () => _setCategory(c),
                 );
               }),
             ],
@@ -956,7 +1092,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                 color: _colorFromKey('gray'),
                 isSelected: current?.name.trim().toLowerCase() == 'self',
                 showColorDot: false,
-                onTap: _setSelfCategory,
+                onTap: _isApplyingCategory ? null : _setSelfCategory,
               ),
               _CategoryPickerChip(
                 label: _showNewCategoryForm ? 'Cancel' : '+ New',
@@ -966,7 +1102,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                 isSelected: false,
                 isRemove: _showNewCategoryForm,
                 showColorDot: false,
-                onTap: _toggleNewCategoryForm,
+                onTap: _isApplyingCategory ? null : _toggleNewCategoryForm,
               ),
               if (current != null)
                 _CategoryPickerChip(
@@ -975,13 +1111,24 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
                   isSelected: false,
                   isRemove: true,
                   showColorDot: false,
-                  onTap: _clearCategory,
+                  onTap: _isApplyingCategory ? null : _clearCategory,
                 ),
             ],
           ),
           if (_showNewCategoryForm) _buildNewCategoryComposer(),
         ],
       ),
+    );
+  }
+
+  Widget _buildCategorySectionLabel(String label) {
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            color: AppColors.textSecondary(context),
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.4,
+          ),
     );
   }
 
@@ -1370,7 +1517,7 @@ class _CategoryPickerChip extends StatelessWidget {
   final bool isSelected;
   final bool isRemove;
   final bool showColorDot;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _CategoryPickerChip({
     required this.label,
@@ -1385,7 +1532,10 @@ class _CategoryPickerChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final bg = isSelected ? color.withValues(alpha: 0.15) : Colors.transparent;
     final border = isSelected ? color : AppColors.borderColor(context);
-    final textColor = isRemove ? AppColors.red : AppColors.textPrimary(context);
+    final isEnabled = onTap != null;
+    final textColor = !isEnabled
+        ? AppColors.textTertiary(context)
+        : (isRemove ? AppColors.red : AppColors.textPrimary(context));
 
     return GestureDetector(
       onTap: onTap,
@@ -1404,7 +1554,7 @@ class _CategoryPickerChip extends StatelessWidget {
                 width: 8,
                 height: 8,
                 decoration: BoxDecoration(
-                  color: color,
+                  color: isEnabled ? color : color.withValues(alpha: 0.5),
                   shape: BoxShape.circle,
                 ),
               ),

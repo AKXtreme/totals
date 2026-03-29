@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' hide Category;
 import 'package:totals/models/account.dart';
+import 'package:totals/models/auto_categorization.dart';
 import 'package:totals/models/category.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/models/summary_models.dart';
@@ -11,7 +12,7 @@ import 'package:totals/repositories/transaction_repository.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/services/bank_config_service.dart';
 import 'package:totals/services/budget_alert_service.dart';
-import 'package:totals/services/receiver_category_service.dart';
+import 'package:totals/services/auto_categorization_service.dart';
 import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/telebirr_bank_transfer_service.dart';
 import 'package:totals/services/widget_service.dart';
@@ -136,6 +137,8 @@ class TransactionProvider with ChangeNotifier {
   final CategoryRepository _categoryRepo = CategoryRepository();
   final BankConfigService _bankConfigService = BankConfigService();
   final BudgetAlertService _budgetAlertService = BudgetAlertService();
+  final AutoCategorizationService _autoCategorizationService =
+      AutoCategorizationService.instance;
   final TelebirrBankTransferService _telebirrMatchService =
       TelebirrBankTransferService();
 
@@ -143,6 +146,9 @@ class TransactionProvider with ChangeNotifier {
   List<Account> _accounts = [];
   List<Category> _categories = [];
   Map<int, Category> _categoryById = {};
+  List<AutoCategorizationRule> _autoCategorizationRules = [];
+  List<AutoCategoryPromptDismissal> _autoCategoryPromptDismissals = [];
+  bool _autoCategorizationEnabled = false;
   Map<String, String> _selfTransferLabelByReference = {};
   Map<int, String> _bankNamesById = {
     CashConstants.bankId: CashConstants.bankName,
@@ -184,6 +190,11 @@ class TransactionProvider with ChangeNotifier {
   List<Transaction> get transactions => _transactions;
   List<Transaction> get allTransactions => _allTransactions;
   List<Category> get categories => _categories;
+  List<AutoCategorizationRule> get autoCategorizationRules =>
+      _autoCategorizationRules;
+  List<AutoCategoryPromptDismissal> get autoCategoryPromptDismissals =>
+      _autoCategoryPromptDismissals;
+  bool get isAutoCategorizationEnabled => _autoCategorizationEnabled;
   bool get isLoading => _isLoading;
   AllSummary? get summary => _summary;
   List<BankSummary> get bankSummaries => _bankSummaries;
@@ -219,6 +230,35 @@ class TransactionProvider with ChangeNotifier {
   Category? getCategoryById(int? id) {
     if (id == null) return null;
     return _categoryById[id];
+  }
+
+  List<AutoCategorizationRule> autoCategorizationRulesForFlow(String flow) {
+    final normalizedFlow = _autoCategorizationService.normalizeFlow(flow);
+    final rules = _autoCategorizationRules
+        .where((rule) => rule.flow == normalizedFlow)
+        .where((rule) => _categoryById.containsKey(rule.categoryId))
+        .toList(growable: false);
+    rules.sort(
+      (a, b) => a.counterparty.toLowerCase().compareTo(
+            b.counterparty.toLowerCase(),
+          ),
+    );
+    return rules;
+  }
+
+  List<AutoCategoryPromptDismissal> autoCategoryPromptDismissalsForFlow(
+    String flow,
+  ) {
+    final normalizedFlow = _autoCategorizationService.normalizeFlow(flow);
+    final dismissals = _autoCategoryPromptDismissals
+        .where((dismissal) => dismissal.flow == normalizedFlow)
+        .toList(growable: false);
+    dismissals.sort(
+      (a, b) => a.counterparty.toLowerCase().compareTo(
+            b.counterparty.toLowerCase(),
+          ),
+    );
+    return dismissals;
   }
 
   String? getSelfTransferLabel(Transaction transaction) {
@@ -287,6 +327,7 @@ class TransactionProvider with ChangeNotifier {
         for (final c in _categories)
           if (c.id != null) c.id!: c,
       };
+      await _reloadAutoCategorizationState();
 
       _allTransactions = await _transactionRepo.getTransactions();
       print("debug: Transactions: ${_allTransactions.length}");
@@ -632,6 +673,14 @@ class TransactionProvider with ChangeNotifier {
   void _notifyOptimisticChange() {
     _dataVersion += 1;
     notifyListeners();
+  }
+
+  Future<void> _reloadAutoCategorizationState() async {
+    _autoCategorizationEnabled = await NotificationSettingsService.instance
+        .isAutoCategorizationEnabled();
+    _autoCategorizationRules = await _autoCategorizationService.getRules();
+    _autoCategoryPromptDismissals =
+        await _autoCategorizationService.getDismissals();
   }
 
   Future<void> _recomputeAfterTransactionMutation() async {
@@ -1221,32 +1270,6 @@ class TransactionProvider with ChangeNotifier {
       rethrow;
     }
 
-    // Save mapping if auto-categorization is enabled
-    try {
-      final isEnabled = await NotificationSettingsService.instance
-          .isAutoCategorizeByReceiverEnabled();
-      if (isEnabled && category.id != null) {
-        // Save receiver mapping if receiver exists
-        if (transaction.receiver != null && transaction.receiver!.isNotEmpty) {
-          await ReceiverCategoryService.instance.saveMapping(
-            transaction.receiver!,
-            category.id!,
-            'receiver',
-          );
-        }
-        // Save creditor mapping if creditor exists
-        if (transaction.creditor != null && transaction.creditor!.isNotEmpty) {
-          await ReceiverCategoryService.instance.saveMapping(
-            transaction.creditor!,
-            category.id!,
-            'creditor',
-          );
-        }
-      }
-    } catch (e) {
-      print("debug: Error saving receiver/creditor category mapping: $e");
-    }
-
     try {
       await _recomputeAfterTransactionMutation();
       await WidgetService.refreshWidget();
@@ -1423,12 +1446,121 @@ class TransactionProvider with ChangeNotifier {
     await loadData();
   }
 
+  String? resolvePrimaryCounterparty(Transaction transaction) {
+    return _autoCategorizationService.resolvePrimaryCounterparty(
+      type: transaction.type,
+      receiver: transaction.receiver,
+      creditor: transaction.creditor,
+    );
+  }
+
+  Future<AutoCategorizationPromptDecision?>
+      buildAutoCategorizationPromptDecision(
+    Transaction transaction,
+    Category category,
+  ) async {
+    if (!_autoCategorizationEnabled) return null;
+    final categoryId = category.id;
+    if (categoryId == null) return null;
+    if (transaction.categoryId == categoryId) return null;
+    if (_isSelfTransfer(transaction)) return null;
+
+    final counterparty = resolvePrimaryCounterparty(transaction);
+    if (counterparty == null) return null;
+
+    final flow = _autoCategorizationService.normalizeFlow(category.flow);
+    final isDismissed = await _autoCategorizationService.isPromptDismissed(
+      counterparty: counterparty,
+      flow: flow,
+    );
+    if (isDismissed) return null;
+
+    final existingRule =
+        await _autoCategorizationService.getRuleForCounterparty(
+      counterparty,
+      flow,
+    );
+    if (existingRule != null && existingRule.categoryId == categoryId) {
+      return null;
+    }
+
+    return AutoCategorizationPromptDecision(
+      counterparty: counterparty,
+      flow: flow,
+      categoryId: categoryId,
+      existingRule: existingRule,
+    );
+  }
+
+  Future<void> saveAutoCategorizationRule(
+    AutoCategorizationPromptDecision decision,
+  ) async {
+    await _autoCategorizationService.upsertRule(
+      counterparty: decision.counterparty,
+      flow: decision.flow,
+      categoryId: decision.categoryId,
+    );
+    await _autoCategorizationService.clearPromptDismissal(
+      counterparty: decision.counterparty,
+      flow: decision.flow,
+    );
+    await _reloadAutoCategorizationState();
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
+  Future<void> dismissAutoCategorizationPrompt(
+    AutoCategorizationPromptDecision decision,
+  ) async {
+    await _autoCategorizationService.dismissPrompt(
+      counterparty: decision.counterparty,
+      flow: decision.flow,
+    );
+    await _reloadAutoCategorizationState();
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
+  Future<void> deleteAutoCategorizationRule(
+    AutoCategorizationRule rule,
+  ) async {
+    final id = rule.id;
+    if (id == null) return;
+    await _autoCategorizationService.deleteRule(id);
+    await _reloadAutoCategorizationState();
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
+  Future<void> clearAutoCategoryPromptDismissal(
+    AutoCategoryPromptDismissal dismissal,
+  ) async {
+    final id = dismissal.id;
+    if (id != null) {
+      await _autoCategorizationService.clearPromptDismissalById(id);
+    } else {
+      await _autoCategorizationService.clearPromptDismissal(
+        counterparty: dismissal.counterparty,
+        flow: dismissal.flow,
+      );
+    }
+    await _reloadAutoCategorizationState();
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
+  Future<void> setAutoCategorizationEnabled(bool enabled) async {
+    if (_autoCategorizationEnabled == enabled) return;
+    await NotificationSettingsService.instance
+        .setAutoCategorizationEnabled(enabled);
+    _autoCategorizationEnabled = enabled;
+    _dataVersion += 1;
+    notifyListeners();
+  }
+
   /// Apply auto-categorization to existing uncategorized transactions
-  /// This is called when the feature is enabled
   Future<int> applyAutoCategorizationToExisting() async {
-    final isEnabled = await NotificationSettingsService.instance
-        .isAutoCategorizeByReceiverEnabled();
-    if (!isEnabled) return 0;
+    if (!_autoCategorizationEnabled) return 0;
 
     // Get all uncategorized transactions
     final uncategorizedTransactions = _allTransactions
@@ -1443,7 +1575,8 @@ class TransactionProvider with ChangeNotifier {
 
     for (final transaction in uncategorizedTransactions) {
       final categoryId =
-          await ReceiverCategoryService.instance.getCategoryForTransaction(
+          await _autoCategorizationService.getCategoryForTransaction(
+        type: transaction.type,
         receiver: transaction.receiver,
         creditor: transaction.creditor,
       );

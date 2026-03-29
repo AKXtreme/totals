@@ -1,9 +1,8 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
 import 'package:totals/_redesign/theme/app_icons.dart';
+import 'package:totals/_redesign/widgets/auto_categorization_prompt_dialog.dart';
 import 'package:totals/models/category.dart';
 import 'package:totals/models/transaction.dart';
 import 'package:totals/providers/transaction_provider.dart';
@@ -42,6 +41,7 @@ class _TransactionCategorySheet extends StatefulWidget {
 class _TransactionCategorySheetState extends State<_TransactionCategorySheet> {
   bool _showNewCategoryForm = false;
   bool _showColorChoices = false;
+  bool _isApplyingCategory = false;
   String _draftColorKey = _kCategoryColorOptions.first.key;
   final TextEditingController _newCategoryController = TextEditingController();
   final FocusNode _newCategoryFocus = FocusNode();
@@ -80,44 +80,90 @@ class _TransactionCategorySheetState extends State<_TransactionCategorySheet> {
     });
   }
 
-  void _runCategoryMutation(
-    Future<void> Function() operation, {
-    required String failureMessage,
-  }) {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
-    // Let the route dismissal start first so optimistic provider updates do
-    // not short-circuit the bottom-sheet exit animation.
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      unawaited(
-        operation().catchError((Object _, StackTrace __) {
-          messenger
-            ?..hideCurrentSnackBar()
-            ..showSnackBar(
-              SnackBar(content: Text(failureMessage)),
-            );
-        }),
-      );
-    });
-  }
-
   Future<void> _setCategory(Category category) async {
-    if (category.id == null) return;
+    if (_isApplyingCategory || category.id == null) return;
+    if (_currentCategory?.id == category.id) {
+      _dismissComposerState(clearDraft: true);
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+      return;
+    }
     _dismissComposerState(clearDraft: true);
-    _runCategoryMutation(
-      () => _provider.setCategoryForTransaction(_tx, category),
-      failureMessage: 'Could not update category. Changes were reverted.',
-    );
+    setState(() => _isApplyingCategory = true);
+    try {
+      await _provider.setCategoryForTransaction(_tx, category);
+      if (!mounted) return;
+      await _maybeHandleAutoCategorizationPrompt(category);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update category. Changes were reverted.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isApplyingCategory = false);
+      }
+    }
   }
 
   Future<void> _clearCategory() async {
+    if (_isApplyingCategory) return;
     _dismissComposerState(clearDraft: true);
-    _runCategoryMutation(
-      () => _provider.clearCategoryForTransaction(_tx),
-      failureMessage: 'Could not clear category. Changes were reverted.',
+    setState(() => _isApplyingCategory = true);
+    try {
+      await _provider.clearCategoryForTransaction(_tx);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not clear category. Changes were reverted.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isApplyingCategory = false);
+      }
+    }
+  }
+
+  Future<void> _maybeHandleAutoCategorizationPrompt(Category category) async {
+    final decision = await _provider.buildAutoCategorizationPromptDecision(
+      _tx,
+      category,
     );
+    if (!mounted || decision == null) return;
+
+    final shouldAutoCategorize = await showAutoCategorizationPromptDialog(
+      context: context,
+      decision: decision,
+      categoryName: category.name,
+    );
+    if (!mounted) return;
+
+    if (shouldAutoCategorize == true) {
+      await _provider.saveAutoCategorizationRule(decision);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Future ${decision.flow} transactions from ${decision.counterparty} will use ${category.name}.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (shouldAutoCategorize == false) {
+      await _provider.dismissAutoCategorizationPrompt(decision);
+    }
   }
 
   void _toggleNewCategoryForm() {
@@ -367,10 +413,12 @@ class _TransactionCategorySheetState extends State<_TransactionCategorySheet> {
                     IconButton(
                       icon: const Icon(AppIcons.close, size: 20),
                       color: AppColors.textSecondary(context),
-                      onPressed: () {
-                        _dismissComposerState();
-                        Navigator.pop(context);
-                      },
+                      onPressed: _isApplyingCategory
+                          ? null
+                          : () {
+                              _dismissComposerState();
+                              Navigator.pop(context);
+                            },
                     ),
                   ],
                 ),
@@ -421,7 +469,9 @@ class _TransactionCategorySheetState extends State<_TransactionCategorySheet> {
                     label: category.name,
                     color: _categoryColor(category),
                     isSelected: isSelected,
-                    onTap: () => _setCategory(category),
+                    onTap: _isApplyingCategory
+                        ? null
+                        : () => _setCategory(category),
                   );
                 }),
               _CategoryPickerChip(
@@ -430,7 +480,9 @@ class _TransactionCategorySheetState extends State<_TransactionCategorySheet> {
                 isSelected: isLockedSelfTransfer ||
                     current?.name.trim().toLowerCase() == 'self',
                 showColorDot: false,
-                onTap: isLockedSelfTransfer ? null : _setSelfCategory,
+                onTap: isLockedSelfTransfer || _isApplyingCategory
+                    ? null
+                    : _setSelfCategory,
               ),
               if (!isLockedSelfTransfer)
                 _CategoryPickerChip(
@@ -441,7 +493,7 @@ class _TransactionCategorySheetState extends State<_TransactionCategorySheet> {
                   isSelected: false,
                   isRemove: _showNewCategoryForm,
                   showColorDot: false,
-                  onTap: _toggleNewCategoryForm,
+                  onTap: _isApplyingCategory ? null : _toggleNewCategoryForm,
                 ),
               if (!isLockedSelfTransfer && current != null)
                 _CategoryPickerChip(
@@ -450,7 +502,7 @@ class _TransactionCategorySheetState extends State<_TransactionCategorySheet> {
                   isSelected: false,
                   isRemove: true,
                   showColorDot: false,
-                  onTap: _clearCategory,
+                  onTap: _isApplyingCategory ? null : _clearCategory,
                 ),
             ],
           ),

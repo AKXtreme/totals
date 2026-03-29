@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:totals/_redesign/theme/app_colors.dart';
+import 'package:totals/models/auto_categorization.dart';
 import 'package:totals/models/category.dart';
 import 'package:totals/providers/transaction_provider.dart';
 import 'package:totals/utils/category_icons.dart';
@@ -170,29 +171,98 @@ class _CategoriesPageState extends State<CategoriesPage>
           final incomeCategories = categories
               .where((c) => c.flow.toLowerCase() == 'income')
               .toList(growable: false);
+          final expenseRules =
+              provider.autoCategorizationRulesForFlow('expense');
+          final incomeRules = provider.autoCategorizationRulesForFlow('income');
+          final expenseDismissals =
+              provider.autoCategoryPromptDismissalsForFlow('expense');
+          final incomeDismissals =
+              provider.autoCategoryPromptDismissalsForFlow('income');
 
           return TabBarView(
             controller: _tabController,
             children: [
               _CategoryList(
                 categories: expenseCategories,
+                autoCategorizationRules: expenseRules,
+                promptDismissals: expenseDismissals,
+                isAutoCategorizationEnabled:
+                    provider.isAutoCategorizationEnabled,
                 emptyLabel: 'No expense categories yet',
                 sections: _buildSections(
                   expenseCategories,
                   flow: 'expense',
                 ),
+                resolveCategory: provider.getCategoryById,
+                onSetAutoCategorizationEnabled:
+                    provider.setAutoCategorizationEnabled,
                 onCreate: () => _openEditor(initialFlow: 'expense'),
                 onEdit: (c) => _openEditor(existing: c, initialFlow: c.flow),
+                onDeleteRule: (rule) async {
+                  await provider.deleteAutoCategorizationRule(rule);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Removed auto-categorization for ${rule.counterparty}.',
+                      ),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+                onClearDismissal: (dismissal) async {
+                  await provider.clearAutoCategoryPromptDismissal(dismissal);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Totals can ask again for ${dismissal.counterparty}.',
+                      ),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
               ),
               _CategoryList(
                 categories: incomeCategories,
+                autoCategorizationRules: incomeRules,
+                promptDismissals: incomeDismissals,
+                isAutoCategorizationEnabled:
+                    provider.isAutoCategorizationEnabled,
                 emptyLabel: 'No income categories yet',
                 sections: _buildSections(
                   incomeCategories,
                   flow: 'income',
                 ),
+                resolveCategory: provider.getCategoryById,
+                onSetAutoCategorizationEnabled:
+                    provider.setAutoCategorizationEnabled,
                 onCreate: () => _openEditor(initialFlow: 'income'),
                 onEdit: (c) => _openEditor(existing: c, initialFlow: c.flow),
+                onDeleteRule: (rule) async {
+                  await provider.deleteAutoCategorizationRule(rule);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Removed auto-categorization for ${rule.counterparty}.',
+                      ),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+                onClearDismissal: (dismissal) async {
+                  await provider.clearAutoCategoryPromptDismissal(dismissal);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Totals can ask again for ${dismissal.counterparty}.',
+                      ),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
               ),
             ],
           );
@@ -276,22 +346,39 @@ class _CategorySection {
 // ── Category List ───────────────────────────────────────────────────────────
 class _CategoryList extends StatelessWidget {
   final List<Category> categories;
+  final List<AutoCategorizationRule> autoCategorizationRules;
+  final List<AutoCategoryPromptDismissal> promptDismissals;
+  final bool isAutoCategorizationEnabled;
   final String emptyLabel;
   final List<_CategorySection> sections;
+  final Category? Function(int?) resolveCategory;
+  final Future<void> Function(bool enabled) onSetAutoCategorizationEnabled;
   final VoidCallback onCreate;
   final ValueChanged<Category> onEdit;
+  final Future<void> Function(AutoCategorizationRule rule) onDeleteRule;
+  final Future<void> Function(AutoCategoryPromptDismissal dismissal)
+      onClearDismissal;
 
   const _CategoryList({
     required this.categories,
+    required this.autoCategorizationRules,
+    required this.promptDismissals,
+    required this.isAutoCategorizationEnabled,
     required this.emptyLabel,
     required this.sections,
+    required this.resolveCategory,
+    required this.onSetAutoCategorizationEnabled,
     required this.onCreate,
     required this.onEdit,
+    required this.onDeleteRule,
+    required this.onClearDismissal,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (categories.isEmpty) {
+    if (categories.isEmpty &&
+        autoCategorizationRules.isEmpty &&
+        promptDismissals.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -318,48 +405,309 @@ class _CategoryList extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
       children: [
         for (int s = 0; s < sections.length; s++) ...[
-          if (s > 0) const SizedBox(height: 20),
+          if (s > 0) const SizedBox(height: 28),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SectionHeader(
+                title: sections[s].title,
+                subtitle: sections[s].subtitle,
+                count: sections[s].items.length,
+              ),
+              const SizedBox(height: 14),
+              if (sections[s].items.isEmpty)
+                _EmptySectionCard(
+                  label: sections[s].emptyLabel,
+                  onCreate: sections[s].showsCreateAction ? onCreate : null,
+                )
+              else
+                _CategoryWrap(
+                  categories: sections[s].items,
+                  onCreate: sections[s].showsCreateAction ? onCreate : null,
+                  onEdit: onEdit,
+                ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 28),
+        _AutoCategorizationRulesCard(
+          rules: autoCategorizationRules,
+          isEnabled: isAutoCategorizationEnabled,
+          resolveCategory: resolveCategory,
+          onSetEnabled: onSetAutoCategorizationEnabled,
+          onDeleteRule: onDeleteRule,
+        ),
+        if (promptDismissals.isNotEmpty) ...[
+          const SizedBox(height: 28),
+          _DismissedPromptsCard(
+            dismissals: promptDismissals,
+            onClearDismissal: onClearDismissal,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _AutomationCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final int count;
+  final Widget child;
+  final Widget? trailing;
+
+  const _AutomationCard({
+    required this.title,
+    required this.subtitle,
+    required this.count,
+    required this.child,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(
+          title: title,
+          subtitle: subtitle,
+          count: count,
+          trailing: trailing,
+        ),
+        const SizedBox(height: 14),
+        child,
+      ],
+    );
+  }
+}
+
+class _AutoCategorizationRulesCard extends StatelessWidget {
+  final List<AutoCategorizationRule> rules;
+  final bool isEnabled;
+  final Category? Function(int?) resolveCategory;
+  final Future<void> Function(bool enabled) onSetEnabled;
+  final Future<void> Function(AutoCategorizationRule rule) onDeleteRule;
+
+  const _AutoCategorizationRulesCard({
+    required this.rules,
+    required this.isEnabled,
+    required this.resolveCategory,
+    required this.onSetEnabled,
+    required this.onDeleteRule,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _AutomationCard(
+      title: 'Auto-Categorization',
+      subtitle: isEnabled
+          ? 'Future transactions matched automatically'
+          : 'Auto-categorization is turned off',
+      count: rules.length,
+      trailing: Switch.adaptive(
+        value: isEnabled,
+        onChanged: (value) {
+          onSetEnabled(value);
+        },
+        activeColor: AppColors.primaryLight,
+      ),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        opacity: isEnabled ? 1 : 0.45,
+        child: rules.isEmpty
+            ? const _AutomationEmptyState(
+                label: 'No auto-categorization rules yet.',
+              )
+            : Column(
+                children: [
+                  for (final rule in rules)
+                    _AutoCategorizationRuleRow(
+                      rule: rule,
+                      category: resolveCategory(rule.categoryId),
+                      onDeleteRule: onDeleteRule,
+                    ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class _AutoCategorizationRuleRow extends StatelessWidget {
+  final AutoCategorizationRule rule;
+  final Category? category;
+  final Future<void> Function(AutoCategorizationRule rule) onDeleteRule;
+
+  const _AutoCategorizationRuleRow({
+    required this.rule,
+    required this.category,
+    required this.onDeleteRule,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = category == null
+        ? AppColors.textTertiary(context)
+        : categoryPaletteColor(category!);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
           Container(
-            padding: const EdgeInsets.all(16),
+            width: 8,
+            height: 8,
             decoration: BoxDecoration(
-              color: AppColors.cardColor(context),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.borderColor(context)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(
-                    alpha: AppColors.isDark(context) ? 0.12 : 0.03,
-                  ),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
+              color: color,
+              shape: BoxShape.circle,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Row(
               children: [
-                _SectionHeader(
-                  title: sections[s].title,
-                  subtitle: sections[s].subtitle,
-                  count: sections[s].items.length,
-                ),
-                const SizedBox(height: 14),
-                if (sections[s].items.isEmpty)
-                  _EmptySectionCard(
-                    label: sections[s].emptyLabel,
-                    onCreate: sections[s].showsCreateAction ? onCreate : null,
-                  )
-                else
-                  _CategoryWrap(
-                    categories: sections[s].items,
-                    onCreate: sections[s].showsCreateAction ? onCreate : null,
-                    onEdit: onEdit,
+                Expanded(
+                  child: Text(
+                    rule.counterparty,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary(context),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
+                ),
+                const SizedBox(width: 16),
+                Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 18,
+                  color: AppColors.textTertiary(context),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          category?.name ?? 'Deleted category',
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: category == null
+                                ? AppColors.textTertiary(context)
+                                : AppColors.textSecondary(context),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        onPressed: () async => onDeleteRule(rule),
+                        icon: Icon(
+                          Icons.close_rounded,
+                          size: 20,
+                          color: AppColors.textSecondary(context),
+                        ),
+                        splashRadius: 18,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
         ],
-      ],
+      ),
+    );
+  }
+}
+
+class _DismissedPromptsCard extends StatelessWidget {
+  final List<AutoCategoryPromptDismissal> dismissals;
+  final Future<void> Function(AutoCategoryPromptDismissal dismissal)
+      onClearDismissal;
+
+  const _DismissedPromptsCard({
+    required this.dismissals,
+    required this.onClearDismissal,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _AutomationCard(
+      title: 'Dismissed Prompts',
+      subtitle: 'Addresses that should not trigger the popup again',
+      count: dismissals.length,
+      child: Column(
+        children: [
+          for (final dismissal in dismissals)
+            _DismissedPromptRow(
+              dismissal: dismissal,
+              onClearDismissal: onClearDismissal,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DismissedPromptRow extends StatelessWidget {
+  final AutoCategoryPromptDismissal dismissal;
+  final Future<void> Function(AutoCategoryPromptDismissal dismissal)
+      onClearDismissal;
+
+  const _DismissedPromptRow({
+    required this.dismissal,
+    required this.onClearDismissal,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: AppColors.textTertiary(context),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              dismissal.counterparty,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary(context),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          TextButton(
+            onPressed: () async => onClearDismissal(dismissal),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.primaryLight,
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            child: const Text('Ask again'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -369,11 +717,13 @@ class _SectionHeader extends StatelessWidget {
   final String title;
   final String subtitle;
   final int count;
+  final Widget? trailing;
 
   const _SectionHeader({
     required this.title,
     required this.subtitle,
     required this.count,
+    this.trailing,
   });
 
   @override
@@ -383,31 +733,46 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text(
-              title.toUpperCase(),
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.0,
-                color: AppColors.textTertiary(context),
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      title.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.0,
+                        color: AppColors.textTertiary(context),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.mutedFill(context),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textSecondary(context),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppColors.mutedFill(context),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '$count',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textSecondary(context),
-                ),
-              ),
-            ),
+            if (trailing != null) ...[
+              const SizedBox(width: 12),
+              trailing!,
+            ],
           ],
         ),
         const SizedBox(height: 6),
@@ -435,43 +800,55 @@ class _EmptySectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceColor(context),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor(context)),
-      ),
-      child: Row(
-        children: [
-          if (onCreate != null)
-            _CreateCategoryButton(onTap: onCreate!)
-          else
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: AppColors.mutedFill(context),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                Icons.add_circle_outline_rounded,
-                size: 18,
-                color: AppColors.textSecondary(context),
-              ),
+    return Row(
+      children: [
+        if (onCreate != null)
+          _CreateCategoryButton(onTap: onCreate!)
+        else
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: AppColors.mutedFill(context),
+              borderRadius: BorderRadius.circular(10),
             ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: AppColors.textSecondary(context),
-                fontSize: 13,
-                height: 1.35,
-              ),
+            child: Icon(
+              Icons.add_circle_outline_rounded,
+              size: 18,
+              color: AppColors.textSecondary(context),
             ),
           ),
-        ],
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: AppColors.textSecondary(context),
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AutomationEmptyState extends StatelessWidget {
+  final String label;
+
+  const _AutomationEmptyState({
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: TextStyle(
+        color: AppColors.textSecondary(context),
+        fontSize: 13,
+        height: 1.35,
       ),
     );
   }

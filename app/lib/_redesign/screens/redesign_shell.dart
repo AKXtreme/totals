@@ -349,6 +349,8 @@ class RedesignShellState extends State<RedesignShell>
       context: context,
       transaction: match,
       provider: provider,
+      initiallyExpandCategory: true,
+      showQuickAccessCategories: true,
     );
   }
 
