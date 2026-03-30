@@ -6,14 +6,14 @@ import 'package:totals/services/notification_settings_service.dart';
 class NotificationScheduler {
   NotificationScheduler._();
 
-  static const Duration _dailySummaryCheckFrequency = Duration(minutes: 15);
+  static const Duration _summaryCheckFrequency = Duration(minutes: 15);
 
-  static Future<void> syncDailySummarySchedule() async {
+  static Future<void> syncSpendingSummarySchedule() async {
     if (kIsWeb) return;
 
     try {
-      final enabled =
-          await NotificationSettingsService.instance.isDailySummaryEnabled();
+      final enabled = await NotificationSettingsService.instance
+          .isAnySpendingSummaryEnabled();
 
       if (!enabled) {
         await Workmanager().cancelByUniqueName(dailySpendingSummaryUniqueName);
@@ -24,13 +24,13 @@ class NotificationScheduler {
         dailySpendingSummaryUniqueName,
         dailySpendingSummaryTask,
         existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
-        frequency: _dailySummaryCheckFrequency,
+        frequency: _summaryCheckFrequency,
         initialDelay: Duration.zero,
       );
     } catch (e) {
       // Ignore if not supported on the current platform.
       if (kDebugMode) {
-        print('debug: Failed to sync daily summary schedule: $e');
+        print('debug: Failed to sync spending summary schedule: $e');
       }
     }
   }

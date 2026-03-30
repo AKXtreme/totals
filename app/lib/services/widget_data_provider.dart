@@ -37,7 +37,7 @@ class WidgetDataProvider {
   static const List<String> _rankColors = [
     '#5AC8FA',
     '#FFB347',
-    '#FF5D73',
+    '#EF4444',
   ];
 
   WidgetDataProvider({
@@ -53,18 +53,25 @@ class WidgetDataProvider {
         _telebirrMatchService =
             telebirrMatchService ?? TelebirrBankTransferService();
 
-  Future<List<Transaction>> _getTodayTransactionsByType(String type) async {
-    final now = DateTime.now();
-    final startOfDay = DateTime(now.year, now.month, now.day);
-    final endOfDay = startOfDay.add(const Duration(days: 1));
-
+  Future<List<Transaction>> _getTransactionsByTypeForRange(
+    String type,
+    DateTime start,
+    DateTime end,
+  ) async {
     final transactions = await _transactionRepository.getTransactionsByDateRange(
-      startOfDay,
-      endOfDay,
+      start,
+      end,
       type: type,
     );
 
     return _filterOutSelfTransfers(transactions);
+  }
+
+  Future<List<Transaction>> _getTodayTransactionsByType(String type) async {
+    final now = DateTime.now();
+    final startOfDay = _startOfDay(now);
+    final endOfDay = _endOfDay(now);
+    return _getTransactionsByTypeForRange(type, startOfDay, endOfDay);
   }
 
   Future<List<Transaction>> _getTodayDebitTransactions() async {
@@ -75,6 +82,23 @@ class WidgetDataProvider {
     return _getTodayTransactionsByType('CREDIT');
   }
 
+  DateTime _startOfDay(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  DateTime _endOfDay(DateTime date) {
+    return DateTime(date.year, date.month, date.day, 23, 59, 59, 999);
+  }
+
+  DateTime _startOfWeek(DateTime date) {
+    final startOfDay = _startOfDay(date);
+    return startOfDay.subtract(Duration(days: date.weekday - DateTime.monday));
+  }
+
+  DateTime _startOfMonth(DateTime date) {
+    return DateTime(date.year, date.month, 1);
+  }
+
   Future<List<Transaction>> _filterOutSelfTransfers(
     List<Transaction> transactions,
   ) async {
@@ -82,12 +106,28 @@ class WidgetDataProvider {
     final allTransactions = await _transactionRepository.getTransactions();
     final toSelfReferences =
         await _buildSelfTransferToReferences(allTransactions);
-    if (toSelfReferences.isEmpty) return transactions;
+    final manualSelfCategoryIds = await _loadManualSelfCategoryIds();
+    if (toSelfReferences.isEmpty && manualSelfCategoryIds.isEmpty) {
+      return transactions;
+    }
 
     return transactions
         .where((transaction) =>
-            !toSelfReferences.contains(transaction.reference))
+            (_shouldKeepForWidgetTotals(transaction) ||
+                !toSelfReferences.contains(transaction.reference)) &&
+            !_isManualSelfTransfer(
+              transaction,
+              manualSelfCategoryIds,
+            ))
         .toList();
+  }
+
+  bool _shouldKeepForWidgetTotals(Transaction transaction) {
+    // Manual cash expenses should always contribute to spending totals.
+    // Self-transfer heuristics can occasionally flag overlapping references,
+    // which would hide valid cash expenses from the widget.
+    return transaction.bankId == CashConstants.bankId &&
+        transaction.type == 'DEBIT';
   }
 
   Future<Set<String>> _buildSelfTransferToReferences(
@@ -125,6 +165,24 @@ class WidgetDataProvider {
     }
 
     return toSelfReferences;
+  }
+
+  Future<Set<int>> _loadManualSelfCategoryIds() async {
+    final categories = await _categoryRepository.getCategories();
+    return categories
+        .where((category) => category.name.trim().toLowerCase() == 'self')
+        .map((category) => category.id)
+        .whereType<int>()
+        .toSet();
+  }
+
+  bool _isManualSelfTransfer(
+    Transaction transaction,
+    Set<int> manualSelfCategoryIds,
+  ) {
+    final categoryId = transaction.categoryId;
+    if (categoryId == null) return false;
+    return manualSelfCategoryIds.contains(categoryId);
   }
 
   Future<List<CategoryExpense>> _buildCategoryBreakdown(
@@ -169,11 +227,55 @@ class WidgetDataProvider {
 
   /// Get today's total spending (DEBIT transactions only)
   Future<double> getTodaySpending() async {
-    final transactions = await _getTodayDebitTransactions();
+    final now = DateTime.now();
+    return getSpendingForRange(
+      _startOfDay(now),
+      _endOfDay(now),
+    );
+  }
 
+  Future<double> getSpendingForRange(DateTime start, DateTime end) async {
+    final transactions = await _getTransactionsByTypeForRange(
+      'DEBIT',
+      start,
+      end,
+    );
     return transactions.fold<double>(
       0.0,
       (sum, tx) => sum + tx.amount,
+    );
+  }
+
+  Future<double> getLastCompletedWeekSpending({DateTime? now}) async {
+    final anchor = now ?? DateTime.now();
+    final currentWeekStart = _startOfWeek(anchor);
+    final lastWeekStart = currentWeekStart.subtract(const Duration(days: 7));
+    final lastWeekEnd = _endOfDay(currentWeekStart.subtract(const Duration(days: 1)));
+    return getSpendingForRange(lastWeekStart, lastWeekEnd);
+  }
+
+  Future<double> getCurrentWeekSpending({DateTime? now}) async {
+    final anchor = now ?? DateTime.now();
+    return getSpendingForRange(
+      _startOfWeek(anchor),
+      _endOfDay(anchor),
+    );
+  }
+
+  Future<double> getLastCompletedMonthSpending({DateTime? now}) async {
+    final anchor = now ?? DateTime.now();
+    final currentMonthStart = _startOfMonth(anchor);
+    final lastMonthDate = currentMonthStart.subtract(const Duration(days: 1));
+    final lastMonthStart = _startOfMonth(lastMonthDate);
+    final lastMonthEnd = _endOfDay(lastMonthDate);
+    return getSpendingForRange(lastMonthStart, lastMonthEnd);
+  }
+
+  Future<double> getCurrentMonthSpending({DateTime? now}) async {
+    final anchor = now ?? DateTime.now();
+    return getSpendingForRange(
+      _startOfMonth(anchor),
+      _endOfDay(anchor),
     );
   }
 
@@ -210,6 +312,3 @@ class WidgetDataProvider {
     return '$month/$day, $hour:$minute';
   }
 }
-
-
-

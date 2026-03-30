@@ -118,7 +118,7 @@ class AccountRepository {
           'pendingCredit': account.pendingCredit,
           'profileId': profileId,
         },
-        conflictAlgorithm: ConflictAlgorithm.replace,
+        conflictAlgorithm: ConflictAlgorithm.ignore,
       );
     }
 

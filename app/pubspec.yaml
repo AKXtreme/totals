@@ -30,15 +30,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.2
   platform: ^3.1.0
-  another_telephony: ^0.3.0
+  another_telephony:
+    git:
+      url: https://github.com/detached-space/another_telephony-0.3.0.git
+      ref: main
   http: ^1.2.2
   shelf: ^1.4.1
-  network_info_plus: ^5.0.2
   provider: ^6.1.2
   shelf_router: ^1.1.4
   shelf_static: ^1.1.3
@@ -47,7 +45,6 @@ dependencies:
   shared_preferences: ^2.2.3
   workmanager: ^0.9.0+3
   connectivity_plus: ^6.1.2
-  flutter_launcher_icons: ^0.14.3
   local_auth: ^2.3.0
   fl_chart: ^0.68.0
   sqflite: ^2.3.3+1
@@ -61,7 +58,9 @@ dependencies:
   home_widget: ^0.9.0
   image_picker:
     ^1.1.2
+  google_fonts: 6.3.0
   pretty_qr_code: ^3.6.0
+  phosphor_flutter: ^2.1.0
     # background_sms: ^0.0.4
   # background_sms:
   #   git:
@@ -81,10 +80,11 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^6.0.0
-flutter_icons:
+  flutter_lints: ^2.0.0
+  flutter_launcher_icons: ^0.14.3
+flutter_launcher_icons:
   android: true
-  ios: true
+  ios: false
   image_path: "assets/icon/totals_icon.png" # Path to your app icon
   adaptive_icon_background: "#ffffff" # (Optional) For Android adaptive icons
   adaptive_icon_foreground: "assets/icon/totals_icon.png"
@@ -98,12 +98,12 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   assets:
-    - shorebird.yaml
     - assets/images/
     - assets/banks.json
     - assets/sms_patterns.json
     - assets/webapp/
     - assets/webapp/assets/
+    - assets/icon/totals_icon.png
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:

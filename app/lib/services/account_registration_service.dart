@@ -8,14 +8,18 @@ import 'package:totals/services/account_sync_status_service.dart';
 import 'package:totals/services/notification_service.dart';
 import 'package:totals/sms_handler/telephony.dart';
 import 'package:totals/utils/pattern_parser.dart';
+import 'package:totals/repositories/transaction_repository.dart';
+import 'package:totals/utils/transaction_duplicate_detector.dart';
+
+const int _dashenBankId = 4;
 
 class AccountRegistrationService {
   final AccountRepository _accountRepo = AccountRepository();
+  final TransactionRepository _transactionRepo = TransactionRepository();
   final AccountSyncStatusService _syncStatusService =
       AccountSyncStatusService.instance;
   final BankConfigService _bankConfigService = BankConfigService();
-  final NotificationService _notificationService =
-      NotificationService.instance;
+  final NotificationService _notificationService = NotificationService.instance;
   List<Bank>? _cachedBanks;
 
   /// Registers a new account and optionally syncs previous SMS messages
@@ -50,9 +54,14 @@ class AccountRegistrationService {
       // Start sync in background (don't await)
       _syncPreviousSms(bankId, accountNumber, onProgress).then((_) {
         onSyncComplete?.call();
-      }).catchError((e) {
+      }).catchError((e) async {
         print("debug: Error syncing SMS in background: $e");
+        _syncStatusService.clearSyncStatus(accountNumber, bankId);
         onProgress?.call("Sync failed: $e", 1.0);
+        await _notificationService.dismissAccountSyncNotification(
+          accountNumber: accountNumber,
+          bankId: bankId,
+        );
         onSyncComplete?.call();
       });
     }
@@ -76,25 +85,32 @@ class AccountRegistrationService {
       orElse: () => throw Exception("Bank with id $bankId not found"),
     );
 
-    Future<void> reportProgress(String stage, double progress) async {
-      _syncStatusService.setSyncStatus(accountNumber, bankId, stage);
-      onProgress?.call(stage, progress);
+    Future<void> reportProgress(String stage, {double? progress}) async {
+      final safeProgress = progress?.clamp(0.0, 1.0).toDouble();
+      final notificationProgress = safeProgress ?? 0.0;
+      _syncStatusService.setSyncStatus(
+        accountNumber,
+        bankId,
+        stage,
+        progress: safeProgress,
+      );
+      onProgress?.call(stage, notificationProgress);
       await _notificationService.showAccountSyncProgress(
         accountNumber: accountNumber,
         bankId: bankId,
         bankLabel: bank.shortName,
         stage: stage,
-        progress: progress,
+        progress: notificationProgress,
       );
     }
 
-    await reportProgress("Starting sync...", 0.05);
-    await reportProgress("Finding bank messages...", 0.3);
+    await reportProgress("Starting sync...");
+    await reportProgress("Finding bank messages...");
 
     final bankCodes = bank.codes;
     print("debug: Syncing SMS for bank ${bank.name} with codes: $bankCodes");
 
-    await reportProgress("Fetching SMS messages...", 0.4);
+    await reportProgress("Fetching SMS messages...");
 
     // Get all messages from the bank
     final Telephony telephony = Telephony.instance;
@@ -152,7 +168,7 @@ class AccountRegistrationService {
       return;
     }
 
-    await reportProgress("Loading parsing patterns...", 0.5);
+    await reportProgress("Loading parsing patterns...");
 
     // Load patterns for this bank
     final configService = SmsConfigService();
@@ -172,11 +188,12 @@ class AccountRegistrationService {
       return;
     }
 
-    await reportProgress("Parsing messages...", 0.6);
+    await reportProgress("Parsing messages...", progress: 0.0);
 
     // Process messages in batches for better performance
-    int processedCount = 0;
+    int importedCount = 0;
     int skippedCount = 0;
+    int duplicatesRemovedCount = 0;
     final totalMessages = messages.length;
     const int batchSize = 10; // Process 10 messages concurrently
 
@@ -192,13 +209,6 @@ class AccountRegistrationService {
           ? batchStart + batchSize
           : messages.length;
       final batch = messages.sublist(batchStart, batchEnd);
-
-      // Update progress
-      final baseProgress = 0.6;
-      final batchProgress = batchEnd / totalMessages;
-      final currentProgress = baseProgress + (batchProgress * 0.35);
-      final status = "Processing ${batchEnd}/$totalMessages messages...";
-      await reportProgress(status, currentProgress);
 
       // Process batch concurrently
       final results = await Future.wait(
@@ -226,13 +236,17 @@ class AccountRegistrationService {
               }
 
               // Process the message using the existing SmsService logic with message date
-              await SmsService.processMessage(
+              final transaction = await SmsService.processMessage(
                 message.body!,
                 message.address!,
                 messageDate: messageDate,
+                skipDashenExpenseDuplicates: false,
               );
 
-              return {'status': 'processed', 'details': details};
+              return {
+                'status': transaction == null ? 'skipped' : 'processed',
+                'details': details,
+              };
             } else {
               return {'status': 'skipped', 'details': null};
             }
@@ -245,26 +259,30 @@ class AccountRegistrationService {
 
       // Count results and track latest balance
       for (var result in results) {
-        if (result['status'] == 'processed') {
-          processedCount++;
-          final details = result['details'] as Map<String, dynamic>?;
+        final details = result['details'] as Map<String, dynamic>?;
+        if (details != null &&
+            details['currentBalance'] != null &&
+            latestBalanceDetails == null) {
+          latestBalanceDetails = details;
+          latestAccountNumber = details['accountNumber'];
+        }
 
-          // Track the latest message with balance (messages are sorted DESC, so first match is latest)
-          if (details != null &&
-              details['currentBalance'] != null &&
-              latestBalanceDetails == null) {
-            latestBalanceDetails = details;
-            latestAccountNumber = details['accountNumber'];
-          }
+        if (result['status'] == 'processed') {
+          importedCount++;
         } else {
           skippedCount++;
         }
       }
+
+      // Report parsing progress after this batch finishes.
+      final parsingProgress = batchEnd / totalMessages;
+      final status = "Parsing $batchEnd/$totalMessages messages...";
+      await reportProgress(status, progress: parsingProgress);
     }
 
     // Update account balance from the latest message
     if (latestBalanceDetails != null) {
-      await reportProgress("Updating account balance...", 0.95);
+      await reportProgress("Updating account balance...", progress: 1.0);
       await _updateAccountBalanceFromLatestMessage(
         bankId,
         latestBalanceDetails,
@@ -272,24 +290,90 @@ class AccountRegistrationService {
       );
     }
 
+    duplicatesRemovedCount = await _removeImportedDuplicates(
+      bank: bank,
+      accountNumber: accountNumber,
+    );
+    final finalImportedCount = importedCount > duplicatesRemovedCount
+        ? importedCount - duplicatesRemovedCount
+        : 0;
+    final completionMessage = "Imported $finalImportedCount transactions.";
+
     // Clear sync status when complete
     _syncStatusService.clearSyncStatus(accountNumber, bankId);
     onProgress?.call(
-      "Complete! Processed $processedCount transactions",
+      "Complete! Imported $finalImportedCount transactions",
       1.0,
     );
     await _notificationService.showAccountSyncComplete(
       accountNumber: accountNumber,
       bankId: bankId,
       bankLabel: bank.shortName,
-      message: "Imported $processedCount transactions.",
+      message: completionMessage,
     );
 
     print(
-        "debug: SMS sync complete - Processed: $processedCount, Skipped: $skippedCount");
+        "debug: SMS sync complete - Imported: $finalImportedCount, Removed duplicates: $duplicatesRemovedCount, Skipped: $skippedCount");
   }
 
   AccountSyncStatusService get syncStatusService => _syncStatusService;
+
+  Future<int> _removeImportedDuplicates({
+    required Bank bank,
+    required String accountNumber,
+  }) async {
+    if (bank.id != _dashenBankId) return 0;
+
+    final accountSuffix = _accountSuffixForBank(
+      bank: bank,
+      accountNumber: accountNumber,
+    );
+    if (accountSuffix == null) return 0;
+
+    final plans = buildExactAmountAndBalanceDeduplicationPlans(
+      bankId: bank.id,
+      type: 'DEBIT',
+      transactions: await _transactionRepo.getTransactions(),
+      accountSuffix: accountSuffix,
+    );
+    if (plans.isEmpty) return 0;
+
+    for (final plan in plans) {
+      await _transactionRepo.saveTransaction(
+        plan.mergedKeeper,
+        skipAutoCategorization: true,
+      );
+    }
+    await _transactionRepo.deleteTransactionsByReferences(
+      plans.expand((plan) => plan.duplicateReferences),
+    );
+
+    final removedCount = plans.fold<int>(
+      0,
+      (sum, plan) => sum + plan.duplicates.length,
+    );
+    print(
+      "debug: Removed $removedCount duplicate ${bank.shortName} transaction(s) "
+      "after account sync",
+    );
+    return removedCount;
+  }
+
+  String? _accountSuffixForBank({
+    required Bank bank,
+    required String accountNumber,
+  }) {
+    final trimmedAccount = accountNumber.trim();
+    if (trimmedAccount.isEmpty) return null;
+    final maskPattern = bank.maskPattern;
+    if (bank.uniformMasking == true &&
+        maskPattern != null &&
+        maskPattern > 0 &&
+        trimmedAccount.length > maskPattern) {
+      return trimmedAccount.substring(trimmedAccount.length - maskPattern);
+    }
+    return trimmedAccount;
+  }
 
   /// Updates account balance from the latest message
   Future<void> _updateAccountBalanceFromLatestMessage(

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:cross_file/cross_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:totals/providers/theme_provider.dart';
@@ -15,11 +14,13 @@ import 'package:totals/widgets/clear_database_dialog.dart';
 import 'package:totals/screens/profile_management_page.dart';
 // import 'package:totals/screens/telebirr_bank_transfer_matches_page.dart';
 import 'package:totals/repositories/profile_repository.dart';
-import 'package:totals/services/notification_settings_service.dart';
+import 'package:totals/services/sms_config_service.dart';
 import 'package:totals/services/widget_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:totals/theme/app_font_option.dart';
 
 Future<void> _openSupportLink() async {
-  final uri = Uri.parse('https://jami.bio/detached');
+  final uri = Uri.parse('https://www.gurshaplus.com/detached');
   try {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   } catch (e) {
@@ -95,12 +96,14 @@ class _SettingsPageState extends State<SettingsPage>
   final DataExportImportService _exportImportService =
       DataExportImportService();
   final ProfileRepository _profileRepo = ProfileRepository();
+  final SmsConfigService _smsConfigService = SmsConfigService();
   bool _isExporting = false;
   bool _isExportingCsv = false;
   bool _isImporting = false;
   bool _isRefreshingWidget = false;
-  bool _autoCategorizeEnabled = false;
-  bool _isLoadingAutoCategorize = true;
+  bool _isFetchingSmsPatterns = false;
+  bool _useRedesign = true;
+  bool _isLoadingRedesign = true;
 
   late AnimationController _shimmerController;
 
@@ -111,66 +114,64 @@ class _SettingsPageState extends State<SettingsPage>
       vsync: this,
       duration: const Duration(milliseconds: 2000),
     )..repeat();
-    _loadAutoCategorizeSetting();
+    _loadRedesignSetting();
   }
 
-  Future<void> _loadAutoCategorizeSetting() async {
-    final enabled = await NotificationSettingsService.instance
-        .isAutoCategorizeByReceiverEnabled();
+  Future<void> _loadRedesignSetting() async {
+    final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        _autoCategorizeEnabled = enabled;
-        _isLoadingAutoCategorize = false;
+        _useRedesign = prefs.getBool('use_redesign') ?? true;
+        _isLoadingRedesign = false;
       });
     }
   }
 
-  Future<void> _toggleAutoCategorize(bool value) async {
-    setState(() {
-      _autoCategorizeEnabled = value;
-    });
-    await NotificationSettingsService.instance
-        .setAutoCategorizeByReceiverEnabled(value);
+  Future<void> _toggleRedesign(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('use_redesign', value);
+    setState(() => _useRedesign = value);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Restart the app to apply the new design.'),
+      ),
+    );
+  }
 
-    if (value) {
-      // Show dialog asking if user wants to apply to existing transactions
+  Future<void> _fetchSmsPatterns() async {
+    if (_isFetchingSmsPatterns) {
+      print(
+          "debug: Legacy settings SMS pattern fetch ignored - already in progress");
+      return;
+    }
+
+    print("debug: Legacy settings SMS pattern fetch requested by user");
+    setState(() => _isFetchingSmsPatterns = true);
+    try {
+      final count = await _smsConfigService.refreshPatternsFromInternet();
+      print(
+          "debug: Legacy settings SMS pattern fetch succeeded with $count patterns");
       if (!mounted) return;
-      final applyToExisting = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Auto-categorize by Receiver'),
-          content: const Text(
-            'This feature will automatically categorize transactions based on previously categorized receivers/creditors.\n\n'
-            'Would you like to apply this to your existing uncategorized transactions?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('No'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Yes'),
-            ),
-          ],
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fetched $count SMS patterns from the internet.'),
         ),
       );
-
-      if (applyToExisting == true && mounted) {
-        // Apply to existing transactions
-        final provider =
-            Provider.of<TransactionProvider>(context, listen: false);
-        final count = await provider.applyAutoCategorizationToExisting();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Applied auto-categorization to $count existing transactions',
-              ),
-            ),
-          );
-        }
+    } catch (error) {
+      print("debug: Legacy settings SMS pattern fetch failed: $error");
+      if (!mounted) return;
+      final message = error.toString().replaceFirst('Exception: ', '');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isFetchingSmsPatterns = false);
       }
+      print("debug: Legacy settings SMS pattern fetch finished");
     }
   }
 
@@ -440,7 +441,6 @@ class _SettingsPageState extends State<SettingsPage>
                       style: TextStyle(
                           color: Theme.of(context).colorScheme.onPrimary),
                     ),
-                    backgroundColor: Theme.of(context).colorScheme.primary,
                     behavior: SnackBarBehavior.floating,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -460,7 +460,6 @@ class _SettingsPageState extends State<SettingsPage>
                       style: TextStyle(
                           color: Theme.of(context).colorScheme.onPrimary),
                     ),
-                    backgroundColor: Theme.of(context).colorScheme.primary,
                     behavior: SnackBarBehavior.floating,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -489,7 +488,6 @@ class _SettingsPageState extends State<SettingsPage>
                     style: TextStyle(
                         color: Theme.of(context).colorScheme.onPrimary),
                   ),
-                  backgroundColor: Theme.of(context).colorScheme.primary,
                   behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -536,7 +534,6 @@ class _SettingsPageState extends State<SettingsPage>
                     style:
                         TextStyle(color: Theme.of(context).colorScheme.onError),
                   ),
-                  backgroundColor: Theme.of(context).colorScheme.error,
                   behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -589,7 +586,6 @@ class _SettingsPageState extends State<SettingsPage>
                       style: TextStyle(
                           color: Theme.of(context).colorScheme.onPrimary),
                     ),
-                    backgroundColor: Theme.of(context).colorScheme.primary,
                     behavior: SnackBarBehavior.floating,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -618,7 +614,6 @@ class _SettingsPageState extends State<SettingsPage>
                         style: TextStyle(
                             color: Theme.of(context).colorScheme.onPrimary),
                       ),
-                      backgroundColor: Theme.of(context).colorScheme.primary,
                       behavior: SnackBarBehavior.floating,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -642,7 +637,6 @@ class _SettingsPageState extends State<SettingsPage>
                         style: TextStyle(
                             color: Theme.of(context).colorScheme.onError),
                       ),
-                      backgroundColor: Theme.of(context).colorScheme.error,
                       behavior: SnackBarBehavior.floating,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -688,7 +682,6 @@ class _SettingsPageState extends State<SettingsPage>
                 style:
                     TextStyle(color: Theme.of(context).colorScheme.onPrimary),
               ),
-              backgroundColor: Theme.of(context).colorScheme.primary,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -705,7 +698,6 @@ class _SettingsPageState extends State<SettingsPage>
               'Export failed: $e',
               style: TextStyle(color: Theme.of(context).colorScheme.onError),
             ),
-            backgroundColor: Theme.of(context).colorScheme.error,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
@@ -779,7 +771,6 @@ class _SettingsPageState extends State<SettingsPage>
                   style:
                       TextStyle(color: Theme.of(context).colorScheme.onPrimary),
                 ),
-                backgroundColor: Theme.of(context).colorScheme.primary,
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -797,7 +788,6 @@ class _SettingsPageState extends State<SettingsPage>
               'Import failed: $e',
               style: TextStyle(color: Theme.of(context).colorScheme.onError),
             ),
-            backgroundColor: Theme.of(context).colorScheme.error,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
@@ -862,6 +852,341 @@ class _SettingsPageState extends State<SettingsPage>
         print("debug: Error reloading transaction provider: $e");
       }
     }
+  }
+
+  String _scaleLabel(double scale) {
+    final formatted = scale
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+    return '${formatted}x';
+  }
+
+  String _paddingLabel(double value) {
+    final formatted = value
+        .toStringAsFixed(1)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+    return '${formatted}px';
+  }
+
+  int _closestOptionIndex(double value, List<double> options) {
+    int bestIndex = 0;
+    double bestDelta = (value - options.first).abs();
+    for (int i = 1; i < options.length; i++) {
+      final delta = (value - options[i]).abs();
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        bestIndex = i;
+      }
+    }
+    return bestIndex;
+  }
+
+  Future<void> _showFontSizeSheet(ThemeProvider themeProvider) async {
+    final theme = Theme.of(context);
+    final initialScale = themeProvider.uiScale;
+    final scaleOptions = themeProvider.availableUiScales;
+    final initialTopPadding = themeProvider.appTopPadding;
+    final paddingOptions = themeProvider.availableAppTopPaddings;
+    int selectedScaleIndex = _closestOptionIndex(initialScale, scaleOptions);
+    int selectedPaddingIndex =
+        _closestOptionIndex(initialTopPadding, paddingOptions);
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final selectedScale = scaleOptions[selectedScaleIndex];
+          final selectedTopPadding = paddingOptions[selectedPaddingIndex];
+
+          Future<void> updateScale(int index) async {
+            if (index == selectedScaleIndex) return;
+            setSheetState(() => selectedScaleIndex = index);
+            await themeProvider.setUiScale(scaleOptions[index]);
+          }
+
+          Future<void> updateTopPadding(int index) async {
+            if (index == selectedPaddingIndex) return;
+            setSheetState(() => selectedPaddingIndex = index);
+            await themeProvider.setAppTopPadding(paddingOptions[index]);
+          }
+
+          return Container(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              0,
+              20,
+              20 + MediaQuery.of(sheetContext).viewInsets.bottom,
+            ),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 16),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.onSurface.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'Display Size',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Preview and adjust interface scale and top padding.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withOpacity(0.65),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: theme.colorScheme.outline.withOpacity(0.18),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Preview',
+                          style: TextStyle(
+                            fontSize: 16 * selectedScale,
+                            fontWeight: FontWeight.w700,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Your settings and transaction labels adapt here.',
+                          style: TextStyle(
+                            fontSize: 13 * selectedScale,
+                            color: theme.colorScheme.onSurface.withOpacity(0.8),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Current size: ${_scaleLabel(selectedScale)}',
+                          style: TextStyle(
+                            fontSize: 12 * selectedScale,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Top padding: ${_paddingLabel(selectedTopPadding)}',
+                          style: TextStyle(
+                            fontSize: 12 * selectedScale,
+                            fontWeight: FontWeight.w600,
+                            color:
+                                theme.colorScheme.onSurface.withOpacity(0.72),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Slider(
+                    value: selectedScaleIndex.toDouble(),
+                    min: 0,
+                    max: (scaleOptions.length - 1).toDouble(),
+                    divisions: scaleOptions.length - 1,
+                    label: _scaleLabel(selectedScale),
+                    onChanged: (value) => updateScale(value.round()),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (int i = 0; i < scaleOptions.length; i++)
+                        ChoiceChip(
+                          label: Text(_scaleLabel(scaleOptions[i])),
+                          selected: i == selectedScaleIndex,
+                          onSelected: (_) => updateScale(i),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Top Padding',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Add extra space above the app content.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withOpacity(0.65),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (int i = 0; i < paddingOptions.length; i++)
+                        ChoiceChip(
+                          label: Text(_paddingLabel(paddingOptions[i])),
+                          selected: i == selectedPaddingIndex,
+                          onSelected: (_) => updateTopPadding(i),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () =>
+                              Navigator.of(sheetContext).pop(false),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => Navigator.of(sheetContext).pop(true),
+                          child: const Text('Apply'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (confirmed != true && mounted) {
+      await themeProvider.setUiScale(initialScale);
+      await themeProvider.setAppTopPadding(initialTopPadding);
+    }
+  }
+
+  Future<void> _showFontSheet(ThemeProvider themeProvider) async {
+    final theme = Theme.of(context);
+    final options = themeProvider.availableAppFonts;
+    AppFontOption selectedFont = themeProvider.appFont;
+
+    final pickedFont = await showModalBottomSheet<AppFontOption>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          return Container(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              0,
+              20,
+              20 + MediaQuery.of(sheetContext).viewInsets.bottom,
+            ),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 16),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.onSurface.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'Font',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  for (final option in options) ...[
+                    RadioListTile<AppFontOption>(
+                      value: option,
+                      groupValue: selectedFont,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        option.label,
+                        style: AppFontTheme.previewTextStyle(
+                          theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                          option,
+                          redesign: false,
+                        ),
+                      ),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setSheetState(() => selectedFont = value);
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(sheetContext).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () =>
+                              Navigator.of(sheetContext).pop(selectedFont),
+                          child: const Text('Apply'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (!mounted || pickedFont == null) return;
+    await themeProvider.setAppFont(pickedFont);
   }
 
   @override
@@ -935,6 +1260,81 @@ class _SettingsPageState extends State<SettingsPage>
                               },
                             ),
                             _buildDivider(context),
+                            Consumer<ThemeProvider>(
+                              builder: (context, themeProvider, child) {
+                                return _buildSettingTile(
+                                  icon: Icons.zoom_out_map_rounded,
+                                  title: 'Display size',
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        '${themeProvider.uiScaleLabel} • ${themeProvider.appTopPaddingLabel}',
+                                        style:
+                                            theme.textTheme.bodySmall?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: theme.colorScheme.onSurface
+                                              .withOpacity(0.65),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        Icons.chevron_right,
+                                        size: 18,
+                                        color: theme.colorScheme.onSurface
+                                            .withOpacity(0.3),
+                                      ),
+                                    ],
+                                  ),
+                                  onTap: () =>
+                                      _showFontSizeSheet(themeProvider),
+                                );
+                              },
+                            ),
+                            _buildDivider(context),
+                            Consumer<ThemeProvider>(
+                              builder: (context, themeProvider, child) {
+                                return _buildSettingTile(
+                                  icon: Icons.text_fields_rounded,
+                                  title: 'Font',
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        themeProvider.appFontLabel,
+                                        style:
+                                            theme.textTheme.bodySmall?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: theme.colorScheme.onSurface
+                                              .withOpacity(0.65),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        Icons.chevron_right,
+                                        size: 18,
+                                        color: theme.colorScheme.onSurface
+                                            .withOpacity(0.3),
+                                      ),
+                                    ],
+                                  ),
+                                  onTap: () => _showFontSheet(themeProvider),
+                                );
+                              },
+                            ),
+                            _buildDivider(context),
+                            _isLoadingRedesign
+                                ? const SizedBox.shrink()
+                                : _buildSettingTile(
+                                    icon: Icons.palette_rounded,
+                                    title: 'Use Redesign',
+                                    trailing: Switch(
+                                      value: _useRedesign,
+                                      onChanged: _toggleRedesign,
+                                    ),
+                                    onTap: null,
+                                  ),
+                            _buildDivider(context),
                             _buildSettingTile(
                               icon: Icons.toc_rounded,
                               title: 'Categories',
@@ -947,18 +1347,6 @@ class _SettingsPageState extends State<SettingsPage>
                                 );
                               },
                             ),
-                            _buildDivider(context),
-                            _isLoadingAutoCategorize
-                                ? const SizedBox.shrink()
-                                : _buildSettingTile(
-                                    icon: Icons.auto_awesome_rounded,
-                                    title: 'Auto-categorize by receiver',
-                                    trailing: Switch(
-                                      value: _autoCategorizeEnabled,
-                                      onChanged: _toggleAutoCategorize,
-                                    ),
-                                    onTap: null,
-                                  ),
                             _buildDivider(context),
                             _buildSettingTile(
                               icon: Icons.notifications_rounded,
@@ -988,6 +1376,24 @@ class _SettingsPageState extends State<SettingsPage>
                             ),
                             _buildDivider(context),
                             */
+                            _buildSettingTile(
+                              icon: Icons.sync_rounded,
+                              title: 'Fetch SMS patterns',
+                              trailing: _isFetchingSmsPatterns
+                                  ? SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                    )
+                                  : null,
+                              onTap: _isFetchingSmsPatterns
+                                  ? null
+                                  : _fetchSmsPatterns,
+                            ),
+                            _buildDivider(context),
                             _buildSettingTile(
                               icon: Icons.upload_rounded,
                               title: 'Export Data',
@@ -1324,7 +1730,7 @@ class _SettingsPageState extends State<SettingsPage>
               ),
               const SizedBox(width: 12),
               Text(
-                'Support the Developers',
+                'Support the Project',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: theme.colorScheme.primary,
                   fontWeight: FontWeight.w500,

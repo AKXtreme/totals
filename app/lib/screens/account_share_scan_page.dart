@@ -82,7 +82,7 @@ class _AccountShareScanPageState extends State<AccountShareScanPage> {
           UserAccount(
             accountNumber: entry.accountNumber,
             bankId: entry.bankId,
-            accountHolderName: payload.name,
+            accountHolderName: entry.name ?? payload.name,
             createdAt: now,
           ),
         );

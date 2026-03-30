@@ -298,6 +298,7 @@ class TransactionsHandler {
       'reference': transaction.reference,
       'creditor': transaction.creditor,
       'receiver': transaction.receiver,
+      'note': transaction.note,
       'time': transaction.time,
       'status': transaction.status,
       'currentBalance': transaction.currentBalance,

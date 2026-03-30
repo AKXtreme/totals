@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:totals/database/database_helper.dart';
 import 'package:totals/models/category.dart' as models;
+import 'package:totals/services/auto_categorization_service.dart';
 
 class CategoryRepository {
   Future<void> ensureSeeded() async {
@@ -14,6 +15,7 @@ class CategoryRepository {
           'essential': category.essential ? 1 : 0,
           'uncategorized': category.uncategorized ? 1 : 0,
           'iconKey': category.iconKey,
+          'colorKey': category.colorKey,
           'description': category.description,
           'flow': category.flow,
           'recurring': category.recurring ? 1 : 0,
@@ -73,6 +75,7 @@ class CategoryRepository {
     required bool essential,
     bool uncategorized = false,
     String? iconKey,
+    String? colorKey,
     String? description,
     String flow = 'expense',
     bool recurring = false,
@@ -84,6 +87,7 @@ class CategoryRepository {
       'essential': essential ? 1 : 0,
       'uncategorized': uncategorized ? 1 : 0,
       'iconKey': iconKey,
+      'colorKey': colorKey,
       'description': description,
       'flow': flow,
       'recurring': recurring ? 1 : 0,
@@ -96,6 +100,7 @@ class CategoryRepository {
       essential: essential,
       uncategorized: uncategorized,
       iconKey: iconKey,
+      colorKey: colorKey,
       description: description,
       flow: flow,
       recurring: recurring,
@@ -114,6 +119,7 @@ class CategoryRepository {
         'essential': category.essential ? 1 : 0,
         'uncategorized': category.uncategorized ? 1 : 0,
         'iconKey': category.iconKey,
+        'colorKey': category.colorKey,
         'description': category.description,
         'flow': category.flow,
         'recurring': category.recurring ? 1 : 0,
@@ -144,5 +150,7 @@ class CategoryRepository {
         whereArgs: [category.id],
       );
     });
+    await AutoCategorizationService.instance
+        .deleteRulesForCategory(category.id!);
   }
 }

@@ -85,6 +85,10 @@ class _BudgetFormSheetState extends State<BudgetFormSheet> {
     try {
       final amount = double.parse(_amountController.text);
       final alertThreshold = double.parse(_alertThresholdController.text);
+      final selectedCategoryIds = widget.budget?.categoryIds != null &&
+              widget.budget!.categoryIds!.isNotEmpty
+          ? List<int>.from(widget.budget!.categoryIds!)
+          : (_selectedCategoryId != null ? <int>[_selectedCategoryId!] : null);
 
       final budget = Budget(
         id: widget.budget?.id,
@@ -92,6 +96,7 @@ class _BudgetFormSheetState extends State<BudgetFormSheet> {
         type: _selectedType,
         amount: amount,
         categoryId: _selectedCategoryId,
+        categoryIds: selectedCategoryIds,
         startDate: widget.budget?.startDate ?? _getPeriodStart(),
         rollover: _rollover,
         alertThreshold: alertThreshold,

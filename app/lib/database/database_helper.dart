@@ -21,7 +21,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 16,
+      version: 20,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -29,11 +29,16 @@ class DatabaseHelper {
     // Defensive schema guard: ensure required columns exist even if an upgrade
     // didn't run (e.g., hot reload or DB version mismatch).
     await _ensureCategoriesSchema(db);
+    await _migrateLegacyCategoryColorKeys(db);
+    await _ensureBudgetsSchema(db);
     await _ensureGiftCategories(db);
     await _assignBuiltInCategoryKeys(db);
     await _seedBuiltInCategories(db);
     await _ensureProfileSchema(db);
     await _ensureTransactionFeesSchema(db);
+    await _ensureTransactionNotesSchema(db);
+    await _ensureAutoCategorizationSchema(db);
+    await _migrateLegacyReceiverMappingsToAutoRules(db);
 
     return db;
   }
@@ -47,6 +52,7 @@ class DatabaseHelper {
         essential INTEGER NOT NULL DEFAULT 0,
         uncategorized INTEGER NOT NULL DEFAULT 0,
         iconKey TEXT,
+        colorKey TEXT,
         description TEXT,
         flow TEXT NOT NULL DEFAULT 'expense',
         recurring INTEGER NOT NULL DEFAULT 0,
@@ -69,6 +75,7 @@ class DatabaseHelper {
         reference TEXT NOT NULL UNIQUE,
         creditor TEXT,
         receiver TEXT,
+        note TEXT,
         time TEXT,
         status TEXT,
         currentBalance TEXT,
@@ -160,6 +167,7 @@ class DatabaseHelper {
         type TEXT NOT NULL,
         amount REAL NOT NULL,
         categoryId INTEGER,
+        categoryIds TEXT,
         startDate TEXT NOT NULL,
         endDate TEXT,
         rollover INTEGER NOT NULL DEFAULT 0,
@@ -187,6 +195,38 @@ class DatabaseHelper {
     );
     await db.execute(
       "CREATE INDEX idx_receiver_mappings_categoryId ON receiver_category_mappings(categoryId)",
+    );
+
+    await db.execute('''
+      CREATE TABLE auto_category_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        counterparty TEXT NOT NULL,
+        normalizedCounterparty TEXT NOT NULL,
+        flow TEXT NOT NULL,
+        categoryId INTEGER NOT NULL,
+        createdAt TEXT NOT NULL,
+        UNIQUE(normalizedCounterparty, flow)
+      )
+    ''');
+    await db.execute(
+      "CREATE INDEX idx_auto_category_rules_flow ON auto_category_rules(flow)",
+    );
+    await db.execute(
+      "CREATE INDEX idx_auto_category_rules_categoryId ON auto_category_rules(categoryId)",
+    );
+
+    await db.execute('''
+      CREATE TABLE auto_category_prompt_dismissals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        counterparty TEXT NOT NULL,
+        normalizedCounterparty TEXT NOT NULL,
+        flow TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        UNIQUE(normalizedCounterparty, flow)
+      )
+    ''');
+    await db.execute(
+      "CREATE INDEX idx_auto_category_prompt_dismissals_flow ON auto_category_prompt_dismissals(flow)",
     );
 
     // User accounts table (for quick access accounts)
@@ -352,6 +392,7 @@ class DatabaseHelper {
           essential INTEGER NOT NULL DEFAULT 0,
           uncategorized INTEGER NOT NULL DEFAULT 0,
           iconKey TEXT,
+          colorKey TEXT,
           description TEXT,
           flow TEXT,
           recurring INTEGER NOT NULL DEFAULT 0
@@ -511,6 +552,7 @@ class DatabaseHelper {
             type TEXT NOT NULL,
             amount REAL NOT NULL,
             categoryId INTEGER,
+            categoryIds TEXT,
             startDate TEXT NOT NULL,
             endDate TEXT,
             rollover INTEGER NOT NULL DEFAULT 0,
@@ -669,6 +711,42 @@ class DatabaseHelper {
         print("debug: Error adding timeFrame column (might already exist): $e");
       }
     }
+
+    if (oldVersion < 17) {
+      // Add categoryIds column to budgets table for multi-category budgets
+      try {
+        await db.execute('ALTER TABLE budgets ADD COLUMN categoryIds TEXT');
+        print("debug: Added categoryIds column to budgets table");
+      } catch (e) {
+        print(
+            "debug: Error adding categoryIds column (might already exist): $e");
+      }
+    }
+
+    if (oldVersion < 18) {
+      // Add colorKey to categories table for category-specific colors.
+      try {
+        await db.execute('ALTER TABLE categories ADD COLUMN colorKey TEXT');
+        print("debug: Added colorKey column to categories table");
+      } catch (e) {
+        print("debug: Error adding colorKey column (might already exist): $e");
+      }
+      await _migrateLegacyCategoryColorKeys(db);
+    }
+
+    if (oldVersion < 19) {
+      try {
+        await db.execute('ALTER TABLE transactions ADD COLUMN note TEXT');
+        print("debug: Added note column to transactions table");
+      } catch (e) {
+        print("debug: Error adding note column (might already exist): $e");
+      }
+    }
+
+    if (oldVersion < 20) {
+      await _ensureAutoCategorizationSchema(db);
+      await _migrateLegacyReceiverMappingsToAutoRules(db);
+    }
   }
 
   Future<void> _seedBuiltInCategories(Database db) async {
@@ -681,6 +759,7 @@ class DatabaseHelper {
           'essential': category.essential ? 1 : 0,
           'uncategorized': category.uncategorized ? 1 : 0,
           'iconKey': category.iconKey,
+          'colorKey': category.colorKey,
           'description': category.description,
           'flow': category.flow,
           'recurring': category.recurring ? 1 : 0,
@@ -747,6 +826,7 @@ class DatabaseHelper {
           essential INTEGER NOT NULL DEFAULT 0,
           uncategorized INTEGER NOT NULL DEFAULT 0,
           iconKey TEXT,
+          colorKey TEXT,
           description TEXT,
           flow TEXT NOT NULL DEFAULT 'expense',
           recurring INTEGER NOT NULL DEFAULT 0,
@@ -756,13 +836,14 @@ class DatabaseHelper {
       ''');
 
       await txn.execute('''
-        INSERT INTO categories_new (id, name, essential, uncategorized, iconKey, description, flow, recurring, builtIn, builtInKey)
+        INSERT INTO categories_new (id, name, essential, uncategorized, iconKey, colorKey, description, flow, recurring, builtIn, builtInKey)
         SELECT
           id,
           name,
           COALESCE(essential, 0),
           COALESCE(uncategorized, 0),
           iconKey,
+          colorKey,
           description,
           CASE
             WHEN flow IS NULL OR TRIM(flow) = '' THEN 'expense'
@@ -806,6 +887,9 @@ class DatabaseHelper {
     if (!names.contains('iconKey')) {
       await addColumn('ALTER TABLE categories ADD COLUMN iconKey TEXT');
     }
+    if (!names.contains('colorKey')) {
+      await addColumn('ALTER TABLE categories ADD COLUMN colorKey TEXT');
+    }
     if (!names.contains('description')) {
       await addColumn('ALTER TABLE categories ADD COLUMN description TEXT');
     }
@@ -837,6 +921,56 @@ class DatabaseHelper {
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_builtInKey ON categories(builtInKey) WHERE builtInKey IS NOT NULL",
       );
     } catch (_) {}
+  }
+
+  Future<void> _migrateLegacyCategoryColorKeys(Database db) async {
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='categories'",
+    );
+    if (tables.isEmpty) return;
+
+    final cols = await db.rawQuery('PRAGMA table_info(categories)');
+    final names = cols
+        .map((r) => (r['name'] as String?)?.trim())
+        .whereType<String>()
+        .toSet();
+    if (!names.contains('colorKey')) return;
+
+    await db.execute('''
+      UPDATE categories
+      SET
+        colorKey = TRIM(SUBSTR(iconKey, 7)),
+        iconKey = 'more_horiz'
+      WHERE
+        iconKey LIKE 'color:%'
+        AND (colorKey IS NULL OR TRIM(colorKey) = '')
+    ''');
+  }
+
+  Future<void> _ensureBudgetsSchema(Database db) async {
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='budgets'",
+    );
+    if (tables.isEmpty) return;
+
+    final cols = await db.rawQuery('PRAGMA table_info(budgets)');
+    final names = cols
+        .map((r) => (r['name'] as String?)?.trim())
+        .whereType<String>()
+        .toSet();
+
+    Future<void> addColumn(String ddl) async {
+      try {
+        await db.execute(ddl);
+      } catch (_) {}
+    }
+
+    if (!names.contains('timeFrame')) {
+      await addColumn('ALTER TABLE budgets ADD COLUMN timeFrame TEXT');
+    }
+    if (!names.contains('categoryIds')) {
+      await addColumn('ALTER TABLE budgets ADD COLUMN categoryIds TEXT');
+    }
   }
 
   Future<void> _ensureProfileSchema(Database db) async {
@@ -918,8 +1052,6 @@ class DatabaseHelper {
       await prefs.setInt('active_profile_id', activeProfileId);
     }
 
-    if (activeProfileId == null) return;
-
     if (tableNames.contains('accounts')) {
       await db.update(
         'accounts',
@@ -956,12 +1088,119 @@ class DatabaseHelper {
     }
 
     if (!names.contains('serviceCharge')) {
-      await addColumn(
-          'ALTER TABLE transactions ADD COLUMN serviceCharge REAL');
+      await addColumn('ALTER TABLE transactions ADD COLUMN serviceCharge REAL');
     }
     if (!names.contains('vat')) {
       await addColumn('ALTER TABLE transactions ADD COLUMN vat REAL');
     }
+  }
+
+  Future<void> _ensureTransactionNotesSchema(Database db) async {
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'",
+    );
+    if (tables.isEmpty) return;
+
+    final cols = await db.rawQuery('PRAGMA table_info(transactions)');
+    final names = cols
+        .map((r) => (r['name'] as String?)?.trim())
+        .whereType<String>()
+        .toSet();
+
+    if (names.contains('note')) return;
+
+    try {
+      await db.execute('ALTER TABLE transactions ADD COLUMN note TEXT');
+    } catch (_) {}
+  }
+
+  Future<void> _ensureAutoCategorizationSchema(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS auto_category_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        counterparty TEXT NOT NULL,
+        normalizedCounterparty TEXT NOT NULL,
+        flow TEXT NOT NULL,
+        categoryId INTEGER NOT NULL,
+        createdAt TEXT NOT NULL,
+        UNIQUE(normalizedCounterparty, flow)
+      )
+    ''');
+    await db.execute(
+      "CREATE INDEX IF NOT EXISTS idx_auto_category_rules_flow ON auto_category_rules(flow)",
+    );
+    await db.execute(
+      "CREATE INDEX IF NOT EXISTS idx_auto_category_rules_categoryId ON auto_category_rules(categoryId)",
+    );
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS auto_category_prompt_dismissals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        counterparty TEXT NOT NULL,
+        normalizedCounterparty TEXT NOT NULL,
+        flow TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        UNIQUE(normalizedCounterparty, flow)
+      )
+    ''');
+    await db.execute(
+      "CREATE INDEX IF NOT EXISTS idx_auto_category_prompt_dismissals_flow ON auto_category_prompt_dismissals(flow)",
+    );
+  }
+
+  Future<void> _migrateLegacyReceiverMappingsToAutoRules(Database db) async {
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='receiver_category_mappings'",
+    );
+    if (tables.isEmpty) return;
+
+    final rows = await db.rawQuery('''
+      SELECT
+        m.accountNumber,
+        m.categoryId,
+        m.createdAt,
+        c.flow
+      FROM receiver_category_mappings m
+      INNER JOIN categories c ON c.id = m.categoryId
+      WHERE m.accountNumber IS NOT NULL AND TRIM(m.accountNumber) <> ''
+      ORDER BY
+        CASE
+          WHEN m.createdAt IS NULL OR TRIM(m.createdAt) = '' THEN 1
+          ELSE 0
+        END,
+        m.createdAt ASC,
+        m.id ASC
+    ''');
+    if (rows.isEmpty) return;
+
+    String normalizeCounterparty(String value) {
+      return value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+    }
+
+    final batch = db.batch();
+    for (final row in rows) {
+      final counterparty = (row['accountNumber'] as String?)?.trim();
+      final categoryId = row['categoryId'] as int?;
+      if (counterparty == null || counterparty.isEmpty || categoryId == null) {
+        continue;
+      }
+      final flow = ((row['flow'] as String?) ?? 'expense').trim().toLowerCase();
+      batch.insert(
+        'auto_category_rules',
+        {
+          'counterparty': counterparty.replaceAll(RegExp(r'\s+'), ' '),
+          'normalizedCounterparty': normalizeCounterparty(counterparty),
+          'flow': flow == 'income' ? 'income' : 'expense',
+          'categoryId': categoryId,
+          'createdAt': (row['createdAt'] as String?)?.trim().isNotEmpty == true
+              ? row['createdAt']
+              : DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+    await db.delete('receiver_category_mappings');
   }
 
   Future<void> _assignBuiltInCategoryKeys(Database db) async {

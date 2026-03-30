@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:another_telephony/telephony.dart';
+import 'package:flutter/foundation.dart';
 import 'package:totals/models/bank.dart';
 import 'package:totals/services/sms_config_service.dart';
 import 'package:totals/services/bank_config_service.dart';
@@ -12,16 +13,24 @@ import 'package:totals/models/account.dart';
 import 'package:totals/models/failed_parse.dart';
 import 'package:totals/repositories/failed_parse_repository.dart';
 import 'package:flutter/widgets.dart';
+import 'package:totals/services/failed_parse_review_service.dart';
 import 'package:totals/services/notification_service.dart';
+import 'package:totals/services/notification_settings_service.dart';
 import 'package:totals/services/budget_alert_service.dart';
+import 'package:totals/services/background_refresh_signal_service.dart';
 import 'package:totals/constants/cash_constants.dart';
 import 'package:totals/services/widget_service.dart';
+import 'package:totals/repositories/profile_repository.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:totals/utils/transaction_duplicate_detector.dart';
 
 enum ParseStatus {
   success,
   noBank,
   noPattern,
   duplicate,
+  unregisteredBank,
 }
 
 class ParseResult {
@@ -81,9 +90,14 @@ onBackgroundMessage(SmsMessage message) async {
     print("debug: BG: Checking if relevant...");
     if (await SmsService.isRelevantMessage(address)) {
       print("debug: BG: Message IS relevant. Processing...");
-      await SmsService.processMessage(body, address!,
-          notifyUser: true,
-          messageDate: DateTime.fromMillisecondsSinceEpoch(message.date!));
+      final receivedAt = message.date == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(message.date!);
+      final transaction = await SmsService.processMessage(body, address!,
+          notifyUser: true, messageDate: receivedAt);
+      if (transaction != null) {
+        BackgroundRefreshSignalService.notifyDataChanged();
+      }
       print("debug: BG: Processing finished.");
     } else {
       print("debug: BG: Message NOT relevant.");
@@ -98,17 +112,26 @@ class SmsService {
   final Telephony _telephony = Telephony.instance;
   static final BankConfigService _bankConfigService = BankConfigService();
   static List<Bank>? _cachedBanks;
+  static const String _atmCashCutoffPrefPrefix =
+      'atm_cash_transfer_cutoff_iso_profile_';
+  static const String _lastSmsCatchupPrefPrefix =
+      'sms_last_catchup_epoch_ms_profile_';
+  static const int _dashenBankId = 4;
 
   // Callback for foreground-only UI updates.
   ValueChanged<Transaction>? onTransactionSaved;
 
+  void _registerIncomingSmsListener() {
+    _telephony.listenIncomingSms(
+      onNewMessage: _handleForegroundMessage,
+      onBackgroundMessage: onBackgroundMessage,
+    );
+  }
+
   Future<void> init() async {
     final bool? result = await _telephony.requestSmsPermissions;
     if (result != null && result) {
-      _telephony.listenIncomingSms(
-        onNewMessage: _handleForegroundMessage,
-        onBackgroundMessage: onBackgroundMessage,
-      );
+      _registerIncomingSmsListener();
     } else {
       print("debug: SMS Permission denied");
     }
@@ -120,10 +143,12 @@ class SmsService {
 
     try {
       if (await SmsService.isRelevantMessage(message.address)) {
+        final receivedAt = message.date == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(message.date!);
         final tx = await SmsService.processMessage(
             message.body!, message.address!,
-            notifyUser: true,
-            messageDate: DateTime.fromMillisecondsSinceEpoch(message.date!));
+            notifyUser: true, messageDate: receivedAt);
         if (tx != null && onTransactionSaved != null) {
           onTransactionSaved!(tx);
         }
@@ -139,20 +164,82 @@ class SmsService {
       return const TodaySmsSyncResult(permissionDenied: true);
     }
 
-    final now = DateTime.now();
-    final startOfDay = DateTime(now.year, now.month, now.day);
-    final endOfDay = startOfDay.add(const Duration(days: 1));
+    _registerIncomingSmsListener();
+    await _getAtmCashTransferCutoff();
 
-    final filter = SmsFilter.where(SmsColumn.DATE)
-        .greaterThanOrEqualTo(startOfDay.millisecondsSinceEpoch.toString())
-        .and(SmsColumn.DATE)
-        .lessThan(endOfDay.millisecondsSinceEpoch.toString());
+    final scanEndedAt = DateTime.now();
+    final result = await _syncBankSmsRange(
+      start: _startOfDay(scanEndedAt),
+      includeStart: true,
+      end: scanEndedAt,
+      includeEnd: true,
+    );
+    if (!result.permissionDenied && result.errors == 0) {
+      await _setLastSmsCatchupAt(scanEndedAt);
+    }
+    return result;
+  }
+
+  Future<TodaySmsSyncResult> syncMissedBankSmsSinceLastCatchup() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return const TodaySmsSyncResult();
+    }
+
+    final permissionStatus = await Permission.sms.status;
+    if (!permissionStatus.isGranted) {
+      return const TodaySmsSyncResult(permissionDenied: true);
+    }
+
+    await _getAtmCashTransferCutoff();
+
+    final scanEndedAt = DateTime.now();
+    final startOfDay = _startOfDay(scanEndedAt);
+    final lastCatchupAt = await _getLastSmsCatchupAt();
+    final hasCursor = lastCatchupAt != null &&
+        lastCatchupAt.isAfter(startOfDay) &&
+        !lastCatchupAt.isAfter(scanEndedAt);
+
+    final result = await _syncBankSmsRange(
+      start: hasCursor ? lastCatchupAt : startOfDay,
+      includeStart: !hasCursor,
+      end: scanEndedAt,
+      includeEnd: true,
+    );
+
+    if (!result.permissionDenied && result.errors == 0) {
+      await _setLastSmsCatchupAt(scanEndedAt);
+    }
+
+    return result;
+  }
+
+  Future<TodaySmsSyncResult> _syncBankSmsRange({
+    required DateTime start,
+    required bool includeStart,
+    required DateTime end,
+    required bool includeEnd,
+  }) async {
+    final lowerBound = start.millisecondsSinceEpoch.toString();
+    final upperBound = end.millisecondsSinceEpoch.toString();
+
+    final startFilter = includeStart
+        ? SmsFilter.where(SmsColumn.DATE).greaterThanOrEqualTo(lowerBound)
+        : SmsFilter.where(SmsColumn.DATE).greaterThan(lowerBound);
+    final filter = includeEnd
+        ? startFilter.and(SmsColumn.DATE).lessThanOrEqualTo(upperBound)
+        : startFilter.and(SmsColumn.DATE).lessThan(upperBound);
 
     final messages = await _telephony.getInboxSms(
       filter: filter,
       sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.DESC)],
     );
 
+    return _processInboxMessages(messages);
+  }
+
+  Future<TodaySmsSyncResult> _processInboxMessages(
+    List<SmsMessage> messages,
+  ) async {
     int processed = 0;
     int added = 0;
     int duplicates = 0;
@@ -198,6 +285,7 @@ class SmsService {
             noPattern++;
             break;
           case ParseStatus.noBank:
+          case ParseStatus.unregisteredBank:
             skipped++;
             break;
         }
@@ -224,6 +312,16 @@ class SmsService {
     return bank != null;
   }
 
+  static String _normalizeSenderToken(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  static bool _addressMatchesCode(String normalizedAddress, String code) {
+    final normalizedCode = _normalizeSenderToken(code);
+    if (normalizedCode.isEmpty) return false;
+    return normalizedAddress.contains(normalizedCode);
+  }
+
   /// Identifies the bank associated with the sender address.
   static Future<Bank?> getRelevantBank(String? address) async {
     if (address == null) return null;
@@ -233,9 +331,12 @@ class SmsService {
       _cachedBanks = await _bankConfigService.getBanks();
     }
 
+    final normalizedAddress = _normalizeSenderToken(address);
+    if (normalizedAddress.isEmpty) return null;
+
     for (var bank in _cachedBanks!) {
       for (var code in bank.codes) {
-        if (address.contains(code)) {
+        if (_addressMatchesCode(normalizedAddress, code)) {
           return bank;
         }
       }
@@ -269,6 +370,146 @@ class SmsService {
 
     // Safe parse
     return double.tryParse(cleaned) ?? 0.0;
+  }
+
+  static Future<void> _recordFailedParse({
+    required String address,
+    required String body,
+    required String reason,
+    DateTime? timestamp,
+    int? bankId,
+  }) async {
+    if (bankId != null && !(await _hasRegisteredAccountForBank(bankId))) return;
+
+    await FailedParseRepository().add(
+      FailedParse(
+        address: address,
+        body: body,
+        reason: reason,
+        timestamp: (timestamp ?? DateTime.now()).toIso8601String(),
+      ),
+    );
+  }
+
+  static bool _looksLikeTransactionMessage(String messageBody) {
+    final normalized =
+        messageBody.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.isEmpty) return false;
+
+    const transactionKeywords = <String>[
+      'debited',
+      'credited',
+      'deposit',
+      'withdraw',
+      'withdrawal',
+      'transfer',
+      'transferred',
+      'payment',
+      'paid',
+      'purchase',
+      'received',
+      'sent',
+      'spent',
+      'cash out',
+      'cashout',
+      'atm',
+      'trx',
+      'txn',
+      'transaction',
+    ];
+    const supportingKeywords = <String>[
+      'balance',
+      'amount',
+      'amt',
+      'available balance',
+      'ref',
+      'reference',
+      'account',
+      'ac',
+      'a/c',
+      'card',
+      'merchant',
+      'pos',
+      'wallet',
+      'etb',
+      'birr',
+      'br',
+    ];
+
+    final hasTransactionKeyword = _containsAny(normalized, transactionKeywords);
+    final hasSupportingKeyword = _containsAny(normalized, supportingKeywords);
+    final hasMonetaryAmount = RegExp(
+      r'(?:etb|birr|br)\s*\d|\d[\d,]*(?:\.\d{1,2})?\s*(?:etb|birr|br)',
+      caseSensitive: false,
+    ).hasMatch(messageBody);
+
+    return hasTransactionKeyword && (hasSupportingKeyword || hasMonetaryAmount);
+  }
+
+  static Future<bool> _hasRegisteredAccountForBank(int bankId) async {
+    final accounts = await AccountRepository().getAccounts();
+    return accounts.any((account) => account.bank == bankId);
+  }
+
+  static bool _containsAny(String text, List<String> values) {
+    for (final value in values) {
+      if (text.contains(value)) return true;
+    }
+    return false;
+  }
+
+  static Bank? _bankById(List<Bank> banks, int bankId) {
+    for (final bank in banks) {
+      if (bank.id == bankId) return bank;
+    }
+    return null;
+  }
+
+  static Account? _accountForBank(List<Account> accounts, int bankId) {
+    for (final account in accounts) {
+      if (account.bank == bankId) return account;
+    }
+    return null;
+  }
+
+  static Account? _maskedAccountMatch(
+    List<Account> accounts, {
+    required int bankId,
+    required String extractedAccount,
+    required int? maskPattern,
+  }) {
+    final trimmedAccount = extractedAccount.trim();
+    if (trimmedAccount.isEmpty) return null;
+
+    final suffix = maskPattern != null &&
+            maskPattern > 0 &&
+            trimmedAccount.length > maskPattern
+        ? trimmedAccount.substring(trimmedAccount.length - maskPattern)
+        : trimmedAccount;
+
+    for (final account in accounts) {
+      if (account.bank != bankId) continue;
+      if (account.accountNumber.endsWith(suffix)) return account;
+    }
+    return null;
+  }
+
+  static Future<void> _saveUpdatedAccountBalance(
+    AccountRepository accRepo,
+    Account account,
+    double newBalance,
+  ) async {
+    final updated = Account(
+      accountNumber: account.accountNumber,
+      bank: account.bank,
+      balance: newBalance,
+      accountHolderName: account.accountHolderName,
+      settledBalance: account.settledBalance,
+      pendingCredit: account.pendingCredit,
+      profileId: account.profileId,
+    );
+    await accRepo.saveAccount(updated);
+    print("debug: Account balance updated for ${account.accountHolderName}");
   }
 
   static bool _isAtmWithdrawal(
@@ -311,12 +552,20 @@ class SmsService {
     final bankId = withdrawal.bankId;
     if (bankId == null || bankId == CashConstants.bankId) return;
 
+    if (await _isWithdrawalBeforeCashCutoff(withdrawal)) {
+      print(
+          "debug: Skipping historical ATM cash transfer for ${withdrawal.reference}");
+      return;
+    }
+
     final cashReference = CashConstants.buildAtmReference(withdrawal.reference);
     if (existingTransactions.any((t) => t.reference == cashReference)) {
       return;
     }
 
     await _ensureCashAccount();
+    final currentCashBalance =
+        await _currentCashWalletBalance(existingTransactions);
 
     final cashTransaction = Transaction(
       amount: withdrawal.amount,
@@ -325,11 +574,137 @@ class SmsService {
       time: withdrawal.time ?? DateTime.now().toIso8601String(),
       bankId: CashConstants.bankId,
       type: 'CREDIT',
+      currentBalance:
+          (currentCashBalance + withdrawal.amount).toStringAsFixed(2),
       transactionLink: withdrawal.reference,
       accountNumber: CashConstants.defaultAccountNumber,
     );
 
     await TransactionRepository().saveTransaction(cashTransaction);
+  }
+
+  static Future<double> _currentCashWalletBalance(
+    List<Transaction> existingTransactions,
+  ) async {
+    final accountRepo = AccountRepository();
+    final accounts = await accountRepo.getAccounts();
+    final accountBase = accounts
+        .where((a) => a.bank == CashConstants.bankId)
+        .fold<double>(0.0, (sum, account) => sum + account.balance);
+
+    final txDelta = existingTransactions
+        .where((t) => t.bankId == CashConstants.bankId)
+        .fold<double>(0.0, (sum, transaction) {
+      if (transaction.type == 'DEBIT') return sum - transaction.amount;
+      if (transaction.type == 'CREDIT') return sum + transaction.amount;
+      return sum;
+    });
+
+    return accountBase + txDelta;
+  }
+
+  static Future<bool> _isWithdrawalBeforeCashCutoff(
+      Transaction withdrawal) async {
+    final withdrawalTime = DateTime.tryParse(withdrawal.time ?? '');
+    if (withdrawalTime == null) return false;
+    final cutoff = await _getAtmCashTransferCutoff();
+    return withdrawalTime.isBefore(cutoff);
+  }
+
+  static Future<DateTime> _getAtmCashTransferCutoff() async {
+    final profileRepo = ProfileRepository();
+    final activeProfileId = await profileRepo.getActiveProfileId();
+    final key = activeProfileId != null
+        ? '$_atmCashCutoffPrefPrefix$activeProfileId'
+        : '${_atmCashCutoffPrefPrefix}default';
+
+    final prefs = await SharedPreferences.getInstance();
+    final existingIso = prefs.getString(key);
+    if (existingIso != null) {
+      final parsed = DateTime.tryParse(existingIso);
+      if (parsed != null) return parsed;
+    }
+
+    final cutoff = (await profileRepo.getActiveProfile())?.createdAt ??
+        (await profileRepo.getDefaultProfile())?.createdAt ??
+        DateTime.now();
+
+    await prefs.setString(key, cutoff.toIso8601String());
+    await _cleanupHistoricalAtmCashTransactions(cutoff);
+    return cutoff;
+  }
+
+  static DateTime _startOfDay(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  static Future<DateTime?> _getLastSmsCatchupAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getInt(await _lastSmsCatchupPrefKey());
+    if (raw == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(raw);
+  }
+
+  static Future<void> _setLastSmsCatchupAt(DateTime time) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      await _lastSmsCatchupPrefKey(),
+      time.millisecondsSinceEpoch,
+    );
+  }
+
+  static Future<String> _lastSmsCatchupPrefKey() async {
+    final profileRepo = ProfileRepository();
+    final activeProfileId = await profileRepo.getActiveProfileId();
+    return activeProfileId != null
+        ? '$_lastSmsCatchupPrefPrefix$activeProfileId'
+        : '${_lastSmsCatchupPrefPrefix}default';
+  }
+
+  static Future<void> _cleanupHistoricalAtmCashTransactions(
+      DateTime cutoff) async {
+    final txRepo = TransactionRepository();
+    final transactions = await txRepo.getTransactions();
+    final staleReferences = transactions
+        .where((transaction) {
+          if (transaction.bankId != CashConstants.bankId) return false;
+          if (!transaction.reference
+              .startsWith(CashConstants.atmReferencePrefix)) {
+            return false;
+          }
+          final txTime = DateTime.tryParse(transaction.time ?? '');
+          if (txTime == null) return false;
+          return txTime.isBefore(cutoff);
+        })
+        .map((transaction) => transaction.reference)
+        .toList(growable: false);
+
+    if (staleReferences.isEmpty) return;
+
+    await txRepo.deleteTransactionsByReferences(staleReferences);
+    print(
+        "debug: Removed ${staleReferences.length} historical ATM cash transfer(s) before cutoff");
+  }
+
+  static bool _isDashenExpenseDuplicate(
+    Map<String, dynamic> details,
+    List<Transaction> existingTransactions,
+  ) {
+    final bankId = details['bankId'];
+    final type = (details['type'] ?? '').toString().toUpperCase();
+    final amount = details['amount'];
+    if (bankId != _dashenBankId || type != 'DEBIT' || amount is! num) {
+      return false;
+    }
+
+    return hasExactAmountAndBalanceDuplicate(
+      bankId: bankId,
+      type: type,
+      amount: amount.toDouble(),
+      currentBalance: details['currentBalance']?.toString(),
+      accountNumber: details['accountNumber']?.toString(),
+      existingTransactions: existingTransactions,
+    );
   }
 
   // Static processing logic so it can be used by background handler too.
@@ -338,12 +713,14 @@ class SmsService {
     String senderAddress, {
     DateTime? messageDate,
     bool notifyUser = false,
+    bool skipDashenExpenseDuplicates = true,
   }) async {
     final result = await _processMessageInternal(
       messageBody,
       senderAddress,
       messageDate: messageDate,
       notifyUser: notifyUser,
+      skipDashenExpenseDuplicates: skipDashenExpenseDuplicates,
       recordFailure: true,
     );
     return result.transaction;
@@ -353,12 +730,14 @@ class SmsService {
     String messageBody,
     String senderAddress, {
     DateTime? messageDate,
+    bool skipDashenExpenseDuplicates = true,
   }) async {
     return _processMessageInternal(
       messageBody,
       senderAddress,
       messageDate: messageDate,
       notifyUser: false,
+      skipDashenExpenseDuplicates: skipDashenExpenseDuplicates,
       recordFailure: false,
     );
   }
@@ -368,6 +747,7 @@ class SmsService {
     String senderAddress, {
     DateTime? messageDate,
     bool notifyUser = false,
+    bool skipDashenExpenseDuplicates = true,
     bool recordFailure = true,
   }) async {
     print("debug: Processing message: $messageBody");
@@ -379,6 +759,19 @@ class SmsService {
       return const ParseResult(
         status: ParseStatus.noBank,
         reason: "No matching bank",
+      );
+    }
+
+    // Check if the user has a registered account for this bank
+    final registeredAccounts = await AccountRepository().getAccounts();
+    final hasRegisteredAccount =
+        registeredAccounts.any((a) => a.bank == bank.id);
+    if (!hasRegisteredAccount) {
+      print(
+          "debug: No registered account for bank ${bank.name} (${bank.id}) - skipping.");
+      return const ParseResult(
+        status: ParseStatus.unregisteredBank,
+        reason: "No registered account for this bank",
       );
     }
 
@@ -397,16 +790,49 @@ class SmsService {
 
     if (details == null) {
       print("debug: No matching pattern found for message from $senderAddress");
-      if (recordFailure) {
-        await FailedParseRepository().add(FailedParse(
+      if (recordFailure && _looksLikeTransactionMessage(messageBody)) {
+        if (notifyUser) {
+          final reviewEnabled = await NotificationSettingsService.instance
+              .isFailedParseReviewNotificationsEnabled();
+          if (reviewEnabled) {
+            final reviewId =
+                await FailedParseReviewService.instance.storeCandidate(
+              bank: bank,
+              address: senderAddress,
+              body: messageBody,
+              messageDate: messageDate,
+            );
+            final shown = await NotificationService.instance
+                .showFailedParseReviewNotification(
+              reviewId: reviewId,
+              bankName: bank.shortName,
+              messageBody: messageBody,
+            );
+            if (!shown) {
+              await FailedParseReviewService.instance
+                  .discardCandidate(reviewId);
+              await _recordFailedParse(
+                address: senderAddress,
+                body: messageBody,
+                reason: FailedParse.noMatchingPatternReason,
+                timestamp: messageDate,
+                bankId: bank.id,
+              );
+            }
+          }
+        } else {
+          await _recordFailedParse(
             address: senderAddress,
             body: messageBody,
-            reason: "No matching pattern",
-            timestamp: DateTime.now().toIso8601String()));
+            reason: FailedParse.noMatchingPatternReason,
+            timestamp: messageDate,
+            bankId: bank.id,
+          );
+        }
       }
       return const ParseResult(
         status: ParseStatus.noPattern,
-        reason: "No matching pattern",
+        reason: FailedParse.noMatchingPatternReason,
       );
     }
 
@@ -419,6 +845,8 @@ class SmsService {
       // If pattern extracted a time but we have message date, prefer message date for historical accuracy
       details['time'] = messageDate.toIso8601String();
     }
+
+    final parsedBankId = (details['bankId'] as num?)?.toInt() ?? bank.id;
 
     // 3. Check duplicate transaction
     TransactionRepository txRepo = TransactionRepository();
@@ -437,11 +865,13 @@ class SmsService {
         }
       }
       if (recordFailure) {
-        await FailedParseRepository().add(FailedParse(
-            address: senderAddress,
-            body: messageBody,
-            reason: "Duplicate transaction $newRef",
-            timestamp: DateTime.now().toIso8601String()));
+        await _recordFailedParse(
+          address: senderAddress,
+          body: messageBody,
+          reason: "Duplicate transaction $newRef",
+          timestamp: messageDate,
+          bankId: parsedBankId,
+        );
       }
       return ParseResult(
         status: ParseStatus.duplicate,
@@ -449,64 +879,62 @@ class SmsService {
       );
     }
 
+    if (skipDashenExpenseDuplicates &&
+        _isDashenExpenseDuplicate(details, existingTx)) {
+      print("debug: Duplicate Dashen debit skipped by amount and balance");
+      if (recordFailure) {
+        await _recordFailedParse(
+          address: senderAddress,
+          body: messageBody,
+          reason: "Duplicate Dashen debit by amount and balance",
+          timestamp: messageDate,
+          bankId: parsedBankId,
+        );
+      }
+      return const ParseResult(
+        status: ParseStatus.duplicate,
+        reason: "Duplicate Dashen debit by amount and balance",
+      );
+    }
+
     // 4. Update Account Balance
     // We need to match the Bank ID from the pattern, not just assume 1 (CBE)
-    int bankId = details['bankId'] ?? bank.id;
+    int bankId = parsedBankId;
     final banks = await _bankConfigService.getBanks();
-    final currentBank = banks.firstWhere((b) => b.id == bankId);
-    if (currentBank.uniformMasking == false) {
+    final currentBank = _bankById(banks, bankId);
+    if (currentBank == null) {
+      print("debug: No bank config found for bank $bankId");
+    } else if (currentBank.uniformMasking == false) {
       AccountRepository accRepo = AccountRepository();
       List<Account> accounts = await accRepo.getAccounts();
-      int index = accounts.indexWhere((a) {
-        return a.bank == bankId;
-      });
-      Account old = accounts[index];
-      double newBalance = details['currentBalance'] != null
-          ? sanitizeAmount(details['currentBalance'])
-          : old.balance;
-
-      Account updated = Account(
-          accountNumber: old.accountNumber,
-          bank: old.bank,
-          balance: newBalance,
-          accountHolderName: old.accountHolderName,
-          settledBalance: old.settledBalance,
-          pendingCredit: old.pendingCredit);
-      await accRepo.saveAccount(updated);
-      print("debug: Account balance updated for ${old.accountHolderName}");
+      final account = _accountForBank(accounts, bankId);
+      if (account == null) {
+        print("debug: No matching account found for bank $bankId");
+      } else {
+        final newBalance = details['currentBalance'] != null
+            ? sanitizeAmount(details['currentBalance'])
+            : account.balance;
+        await _saveUpdatedAccountBalance(accRepo, account, newBalance);
+      }
     } else if (details['accountNumber'] != null) {
       AccountRepository accRepo = AccountRepository();
       List<Account> accounts = await accRepo.getAccounts();
 
-      String extractedAccount = details['accountNumber'];
+      final extractedAccount = details['accountNumber'].toString();
+      final account = currentBank.uniformMasking == true
+          ? _maskedAccountMatch(
+              accounts,
+              bankId: bankId,
+              extractedAccount: extractedAccount,
+              maskPattern: currentBank.maskPattern,
+            )
+          : null;
 
-      int index = -1;
-      final banks = await _bankConfigService.getBanks();
-      final bank = banks.firstWhere((b) => b.id == bankId);
-      if (bank.uniformMasking == true) {
-        index = accounts.indexWhere((a) {
-          if (a.bank != bankId) return false;
-          return a.accountNumber.endsWith(extractedAccount
-              .substring(extractedAccount.length - bank.maskPattern!));
-        });
-      }
-
-      if (index != -1) {
-        Account old = accounts[index];
-        double newBalance = details['currentBalance'] != null
+      if (account != null) {
+        final newBalance = details['currentBalance'] != null
             ? sanitizeAmount(details['currentBalance'])
-            : old.balance;
-
-        // Update balance
-        Account updated = Account(
-            accountNumber: old.accountNumber,
-            bank: old.bank,
-            balance: newBalance,
-            accountHolderName: old.accountHolderName,
-            settledBalance: old.settledBalance,
-            pendingCredit: old.pendingCredit);
-        await accRepo.saveAccount(updated);
-        print("debug: Account balance updated for ${old.accountHolderName}");
+            : account.balance;
+        await _saveUpdatedAccountBalance(accRepo, account, newBalance);
       } else {
         print(
             "No matching account found for bank $bankId and account $extractedAccount");

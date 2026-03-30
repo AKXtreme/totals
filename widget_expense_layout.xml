@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal" android:padding="12dp" android:gravity="top" android:background="@drawable/widget_background">
+
+	<LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_gravity="top" android:orientation="vertical">
+
+		<TextView android:id="@+id/widget_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Today's Spending" android:textColor="#AAAAAA" android:textSize="13sp" />
+
+		<LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="2dp">
+
+			<TextView android:id="@+id/expense_total_value" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0" android:textColor="#FFFFFF" android:textSize="34sp" android:textStyle="bold" />
+
+			<TextView android:id="@+id/expense_total_currency" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text=" ETB" android:textColor="#FFFFFF" android:textSize="16sp" android:layout_gravity="bottom" android:layout_marginBottom="4dp" />
+
+		</LinearLayout>
+
+	</LinearLayout>
+
+	<LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1.2" android:layout_gravity="top" android:orientation="vertical" android:gravity="end">
+
+		<ImageView android:id="@+id/category_bar" android:layout_width="match_parent" android:layout_height="10dp" android:layout_marginBottom="8dp" android:scaleType="fitXY" android:background="@drawable/category_bar_background" />
+
+		<LinearLayout android:id="@+id/category_row_0" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:visibility="gone">
+
+			<ImageView android:id="@+id/category_dot_0" android:layout_width="8dp" android:layout_height="8dp" android:src="@drawable/category_dot_0" />
+
+			<TextView android:id="@+id/category_name_0" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="6dp" android:text="Category" android:textColor="#CCCCCC" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" />
+
+			<TextView android:id="@+id/category_amount_0" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0 ETB" android:textColor="#FFFFFF" android:textSize="11sp" />
+		</LinearLayout>
+
+		<LinearLayout android:id="@+id/category_row_1" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="2dp" android:visibility="gone">
+
+			<ImageView android:id="@+id/category_dot_1" android:layout_width="8dp" android:layout_height="8dp" android:src="@drawable/category_dot_1" />
+
+			<TextView android:id="@+id/category_name_1" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="6dp" android:text="Category" android:textColor="#CCCCCC" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" />
+
+			<TextView android:id="@+id/category_amount_1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0 ETB" android:textColor="#FFFFFF" android:textSize="11sp" />
+		</LinearLayout>
+
+		<LinearLayout android:id="@+id/category_row_2" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="2dp" android:visibility="gone">
+
+			<ImageView android:id="@+id/category_dot_2" android:layout_width="8dp" android:layout_height="8dp" android:src="@drawable/category_dot_2" />
+
+			<TextView android:id="@+id/category_name_2" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="6dp" android:text="Category" android:textColor="#CCCCCC" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" />
+
+			<TextView android:id="@+id/category_amount_2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0 ETB" android:textColor="#FFFFFF" android:textSize="11sp" />
+		</LinearLayout>
+
+		<TextView android:id="@+id/last_updated" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="end" android:layout_marginTop="4dp" android:text="--" android:textColor="#666666" android:textSize="9sp" />
+
+	</LinearLayout>
+
+</LinearLayout>

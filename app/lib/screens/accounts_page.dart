@@ -7,6 +7,7 @@ import 'package:totals/models/user_account.dart';
 import 'package:totals/widgets/add_user_account_form.dart';
 import 'package:totals/screens/account_share_qr_page.dart';
 import 'package:totals/screens/account_share_scan_page.dart';
+import 'package:totals/services/bank_config_service.dart';
 
 class AccountsPage extends StatefulWidget {
   const AccountsPage({super.key});
@@ -17,6 +18,7 @@ class AccountsPage extends StatefulWidget {
 
 class _AccountsPageState extends State<AccountsPage> {
   final UserAccountRepository _userAccountRepo = UserAccountRepository();
+  final BankConfigService _bankConfigService = BankConfigService();
   final TextEditingController _searchController = TextEditingController();
   List<Bank> _banks = [];
   List<UserAccount> _userAccounts = [];
@@ -46,8 +48,14 @@ class _AccountsPageState extends State<AccountsPage> {
       _isLoading = true;
     });
     try {
-      // Load all banks from assets (same as form uses)
-      _banks = AllBanksFromAssets.getAllBanks();
+      final configuredBanks = await _bankConfigService.getBanks();
+      final mergedBanksById = <int, Bank>{
+        for (final bank in configuredBanks) bank.id: bank,
+      };
+      for (final legacyBank in AllBanksFromAssets.getAllBanks()) {
+        mergedBanksById.putIfAbsent(legacyBank.id, () => legacyBank);
+      }
+      _banks = mergedBanksById.values.toList();
 
       // Load user accounts
       final accounts = await _userAccountRepo.getUserAccounts();
@@ -148,15 +156,16 @@ class _AccountsPageState extends State<AccountsPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
+        final mediaQuery = MediaQuery.of(context);
         return ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           child: Container(
-            height: MediaQuery.of(context).size.height * 0.85,
+            height: mediaQuery.size.height * 0.85,
             decoration: BoxDecoration(
               color: Theme.of(context).scaffoldBackgroundColor,
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
               child: AddUserAccountForm(
                 onAccountAdded: () {
                   _loadData();
@@ -354,11 +363,11 @@ class _AccountsPageState extends State<AccountsPage> {
                               size: 64,
                               color: colorScheme.onSurfaceVariant,
                             ),
-                          const SizedBox(height: 16),
-                          Text(
-                            _searchQuery.isNotEmpty
-                                ? 'No accounts found'
-                                : 'No accounts yet',
+                            const SizedBox(height: 16),
+                            Text(
+                              _searchQuery.isNotEmpty
+                                  ? 'No accounts found'
+                                  : 'No accounts yet',
                               style: theme.textTheme.titleLarge?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
@@ -394,8 +403,8 @@ class _AccountsPageState extends State<AccountsPage> {
                             return _AccountCard(
                               account: account,
                               bank: bank,
-                              isSelected: _selectedKeys
-                                  .contains(_accountKey(account)),
+                              isSelected:
+                                  _selectedKeys.contains(_accountKey(account)),
                               isSelectionMode: _isSelectionMode,
                               onTap: _isSelectionMode
                                   ? () => _toggleSelection(account)
@@ -550,9 +559,7 @@ class _AccountCard extends StatelessWidget {
                       isSelected
                           ? Icons.check_circle
                           : Icons.radio_button_unchecked,
-                      color: isSelected
-                          ? selectionColor
-                          : colorScheme.outline,
+                      color: isSelected ? selectionColor : colorScheme.outline,
                     )
                   else
                     IconButton(

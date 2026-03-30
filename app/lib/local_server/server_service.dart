@@ -10,10 +10,12 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:shelf_static/shelf_static.dart';
 import 'network_utils.dart';
 import 'handlers/accounts_handler.dart';
+import 'handlers/budgets_handler.dart';
 import 'handlers/transactions_handler.dart';
 import 'handlers/summary_handler.dart';
 import 'handlers/banks_handler.dart';
 import 'handlers/categories_handler.dart';
+import 'handlers/shared_accounts_handler.dart';
 
 /// Log entry for request logging
 class ServerLogEntry {
@@ -128,12 +130,16 @@ class ServerService {
 
     // Mount API handlers
     final accountsHandler = AccountsHandler();
+    final sharedAccountsHandler = SharedAccountsHandler();
+    final budgetsHandler = BudgetsHandler();
     final transactionsHandler = TransactionsHandler();
     final summaryHandler = SummaryHandler();
     final banksHandler = BanksHandler();
     final categoriesHandler = CategoriesHandler();
 
     router.mount('/api/accounts', accountsHandler.router.call);
+    router.mount('/api/shared-accounts', sharedAccountsHandler.router.call);
+    router.mount('/api/budgets', budgetsHandler.router.call);
     router.mount('/api/transactions', transactionsHandler.router.call);
     router.mount('/api/summary', summaryHandler.router.call);
     router.mount('/api/banks', banksHandler.router.call);

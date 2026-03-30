@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:totals/components/custom_inputfield.dart';
-import 'package:totals/models/bank.dart';
 import 'package:totals/data/all_banks_from_assets.dart';
-import 'package:totals/repositories/user_account_repository.dart';
+import 'package:totals/models/bank.dart';
 import 'package:totals/models/user_account.dart';
+import 'package:totals/repositories/user_account_repository.dart';
+import 'package:totals/services/bank_config_service.dart';
+import 'package:totals/services/sms_config_service.dart';
+import 'package:totals/widgets/inline_bank_selector.dart';
 
 class AddUserAccountForm extends StatefulWidget {
   final void Function() onAccountAdded;
@@ -21,10 +24,14 @@ class _AddUserAccountFormState extends State<AddUserAccountForm> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _accountNumber = TextEditingController();
   final TextEditingController _accountHolderName = TextEditingController();
-  int? selected_bank;
-  bool isFormValid = false;
+  final BankConfigService _bankConfigService = BankConfigService();
+  final SmsConfigService _smsConfigService = SmsConfigService();
+
+  int? _selectedBankId;
+  bool _isFormValid = false;
+  bool _isLoadingBanks = true;
   List<Bank> _banks = [];
-  bool _isLoadingBanks = false;
+  Set<int> _supportedBankIds = <int>{};
 
   @override
   void initState() {
@@ -41,236 +48,200 @@ class _AddUserAccountFormState extends State<AddUserAccountForm> {
     super.dispose();
   }
 
-  void _loadBanks() {
-    final banks = AllBanksFromAssets.getAllBanks();
-    if (mounted) {
+  List<BankSelectorOption> get _bankOptions {
+    return buildBankSelectorOptions(_banks, _supportedBankIds);
+  }
+
+  bool get _hasSupportedBanks {
+    return _bankOptions.any((option) => option.isSupported);
+  }
+
+  bool get _canSubmit {
+    return _isFormValid && _selectedBankId != null && _hasSupportedBanks;
+  }
+
+  String _normalizeBankToken(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  String _bankDedupeKey(Bank bank) {
+    final short = _normalizeBankToken(bank.shortName);
+    final name = _normalizeBankToken(bank.name);
+    if (short.contains('mpesa') || name.contains('mpesa')) {
+      return 'mpesa';
+    }
+    if (short.isNotEmpty) return short;
+    if (name.isNotEmpty) return name;
+    return bank.image.toLowerCase();
+  }
+
+  List<Bank> _dedupeBanks(List<Bank> banks) {
+    final dedupedByKey = <String, Bank>{};
+    for (final bank in banks) {
+      final key = _bankDedupeKey(bank);
+      final existing = dedupedByKey[key];
+      if (existing == null) {
+        dedupedByKey[key] = bank;
+        continue;
+      }
+
+      final shouldReplace = key == 'mpesa' && bank.id == 8 && existing.id != 8;
+      if (shouldReplace) dedupedByKey[key] = bank;
+    }
+    return dedupedByKey.values.toList();
+  }
+
+  Future<Set<int>> _loadSupportedBankIds() async {
+    try {
+      final patterns = await _smsConfigService.getPatterns();
+      return patterns.map((pattern) => pattern.bankId).toSet();
+    } catch (e) {
+      debugPrint("debug: Error loading SMS patterns: $e");
+      return <int>{};
+    }
+  }
+
+  Future<void> _loadBanks() async {
+    final supportedBankIds = await _loadSupportedBankIds();
+
+    try {
+      final configuredBanks = await _bankConfigService.getBanks();
+      final mergedById = <int, Bank>{
+        for (final bank in configuredBanks) bank.id: bank,
+      };
+      for (final legacyBank in AllBanksFromAssets.getAllBanks()) {
+        mergedById.putIfAbsent(legacyBank.id, () => legacyBank);
+      }
+      final banks = _dedupeBanks(mergedById.values.toList());
+      if (!mounted) return;
+
       setState(() {
         _banks = banks;
+        _supportedBankIds = supportedBankIds;
+        _selectedBankId = resolveSupportedBankId(
+          banks: banks,
+          supportedBankIds: supportedBankIds,
+          preferredBankId: _selectedBankId,
+        );
         _isLoadingBanks = false;
-        if (banks.isNotEmpty) {
-          selected_bank = banks.first.id;
-        }
+      });
+    } catch (e) {
+      debugPrint("debug: Error loading banks: $e");
+      final fallbackBanks = _dedupeBanks(AllBanksFromAssets.getAllBanks());
+      if (!mounted) return;
+
+      setState(() {
+        _banks = fallbackBanks;
+        _supportedBankIds = supportedBankIds;
+        _selectedBankId = resolveSupportedBankId(
+          banks: fallbackBanks,
+          supportedBankIds: supportedBankIds,
+          preferredBankId: _selectedBankId,
+        );
+        _isLoadingBanks = false;
       });
     }
   }
 
-  void _submitForm() async {
-    if (_formKey.currentState!.validate() && selected_bank != null) {
-      try {
-        final accountRepo = UserAccountRepository();
-        final accountExists = await accountRepo.userAccountExists(
-          _accountNumber.text.trim(),
-          selected_bank!,
-        );
+  Future<void> _submitForm() async {
+    if (!_formKey.currentState!.validate() || _selectedBankId == null) {
+      return;
+    }
 
-        if (accountExists) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('This account already exists'),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
-          return;
-        }
+    try {
+      final accountRepo = UserAccountRepository();
+      final accountExists = await accountRepo.userAccountExists(
+        _accountNumber.text.trim(),
+        _selectedBankId!,
+      );
 
-        final account = UserAccount(
-          accountNumber: _accountNumber.text.trim(),
-          bankId: selected_bank!,
-          accountHolderName: _accountHolderName.text.trim(),
-          createdAt: DateTime.now().toIso8601String(),
-        );
-
-        await accountRepo.saveUserAccount(account);
-
+      if (accountExists) {
         if (mounted) {
-          Navigator.of(context).pop();
-          widget.onAccountAdded();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Account added successfully'),
+              content: Text('This account already exists'),
               behavior: SnackBarBehavior.floating,
             ),
           );
         }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error adding account: $e'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
+        return;
+      }
+
+      final account = UserAccount(
+        accountNumber: _accountNumber.text.trim(),
+        bankId: _selectedBankId!,
+        accountHolderName: _accountHolderName.text.trim(),
+        createdAt: DateTime.now().toIso8601String(),
+      );
+
+      await accountRepo.saveUserAccount(account);
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        widget.onAccountAdded();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Account added successfully'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error adding account: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     }
   }
 
   void _validateForm() {
     setState(() {
-      isFormValid =
+      _isFormValid =
           _accountHolderName.text.isNotEmpty && _accountNumber.text.isNotEmpty;
     });
   }
 
-  void _showBankSelectionModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          decoration: BoxDecoration(
-            color: Theme.of(context).scaffoldBackgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+  Widget _buildUnsupportedBankNotice(
+    BuildContext context, {
+    required String message,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colorScheme.errorContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: colorScheme.error.withValues(alpha: 0.16),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline,
+            size: 18,
+            color: colorScheme.error,
           ),
-          child: Column(
-            children: [
-              Center(
-                child: Container(
-                  margin: const EdgeInsets.only(top: 12, bottom: 8),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurfaceVariant
-                        .withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurface,
+                height: 1.35,
               ),
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  "Select Bank",
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: _isLoadingBanks
-                    ? const Center(child: CircularProgressIndicator())
-                    : _banks.isEmpty
-                        ? Center(
-                            child: Text(
-                              "No banks available",
-                              style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                            ),
-                          )
-                        : GridView.builder(
-                            padding: const EdgeInsets.all(16),
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3,
-                              crossAxisSpacing: 16,
-                              mainAxisSpacing: 16,
-                              childAspectRatio: 0.8,
-                            ),
-                            itemCount: _banks.length,
-                            itemBuilder: (context, index) {
-                              final bank = _banks[index];
-                              final isSelected = selected_bank == bank.id;
-                              return GestureDetector(
-                                onTap: () {
-                                  if (mounted) {
-                                    setState(() {
-                                      selected_bank = bank.id;
-                                    });
-                                    Navigator.pop(context);
-                                  }
-                                },
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? Theme.of(context)
-                                            .colorScheme
-                                            .primary
-                                            .withOpacity(0.1)
-                                        : Theme.of(context).colorScheme.surface,
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color: isSelected
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .primary
-                                          : Theme.of(context)
-                                              .colorScheme
-                                              .outline
-                                              .withOpacity(0.2),
-                                      width: 2,
-                                    ),
-                                  ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Container(
-                                        width: 50,
-                                        height: 50,
-                                        decoration: const BoxDecoration(
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: ClipOval(
-                                          child: Image.asset(
-                                            bank.image,
-                                            fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (context, error, stackTrace) {
-                                              return Container(
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .surfaceVariant,
-                                                child: Icon(
-                                                  Icons.account_balance,
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        bank.shortName,
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: isSelected
-                                              ? FontWeight.bold
-                                              : FontWeight.w500,
-                                          color: isSelected
-                                              ? Theme.of(context)
-                                                  .colorScheme
-                                                  .primary
-                                              : Theme.of(context)
-                                                  .colorScheme
-                                                  .onSurface,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-              ),
-            ],
+            ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 
@@ -278,6 +249,7 @@ class _AddUserAccountFormState extends State<AddUserAccountForm> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final hintColor = colorScheme.onSurfaceVariant;
 
     if (_isLoadingBanks) {
       return const Center(child: CircularProgressIndicator());
@@ -295,7 +267,7 @@ class _AddUserAccountFormState extends State<AddUserAccountForm> {
             ),
             const SizedBox(height: 16),
             Text(
-              "No banks available",
+              'No banks available',
               style: TextStyle(
                 fontSize: 16,
                 color: colorScheme.onSurfaceVariant,
@@ -306,28 +278,24 @@ class _AddUserAccountFormState extends State<AddUserAccountForm> {
       );
     }
 
-    if (selected_bank == null || _banks.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final selectedBankData = _banks.firstWhere(
-      (element) => element.id == selected_bank,
-      orElse: () => _banks.first,
-    );
-
     return Form(
       key: _formKey,
       child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom +
+              MediaQuery.of(context).viewPadding.bottom +
+              20,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "Add Quick Access Account",
+                  'Add Quick Access Account',
                   style: theme.textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colorScheme.onSurface,
@@ -341,150 +309,104 @@ class _AddUserAccountFormState extends State<AddUserAccountForm> {
                   ),
                   style: IconButton.styleFrom(
                     backgroundColor:
-                        colorScheme.surfaceVariant.withOpacity(0.3),
+                        colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.3,
+                    ),
                     shape: const CircleBorder(),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 32),
-
-            // Bank Selector
             Text(
-              "Bank",
+              'Bank',
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 8),
-            GestureDetector(
-              onTap: _showBankSelectionModal,
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: colorScheme.outline.withOpacity(0.2),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: colorScheme.outline.withOpacity(0.1),
-                        ),
-                      ),
-                      child: ClipOval(
-                        child: Image.asset(
-                          selectedBankData.image,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              color: colorScheme.surfaceVariant,
-                              child: Icon(
-                                Icons.account_balance,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Text(
-                        selectedBankData.name,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ],
-                ),
-              ),
+            InlineBankSelector(
+              options: _bankOptions,
+              selectedBankId: _selectedBankId,
+              borderRadius: 12,
+              onChanged: (bankId) {
+                setState(() {
+                  _selectedBankId = bankId;
+                });
+              },
             ),
-
+            if (!_hasSupportedBanks) ...[
+              const SizedBox(height: 12),
+              _buildUnsupportedBankNotice(
+                context,
+                message:
+                    'Only banks with parsing patterns can be added right now. Unsupported banks stay visible in the selector but cannot be chosen yet.',
+              ),
+            ],
             const SizedBox(height: 24),
-
-            // Account Number
             CustomTextField(
               controller: _accountNumber,
-              labelText: "Account Number",
+              labelText: 'Account Number',
               keyboardType: TextInputType.number,
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return "Enter account number";
+                  return 'Enter account number';
                 }
                 if (value.trim().isEmpty) {
-                  return "Enter account number";
+                  return 'Enter account number';
                 }
                 return null;
               },
             ),
-
             const SizedBox(height: 20),
-
-            // Account Holder Name
             CustomTextField(
               controller: _accountHolderName,
-              labelText: "Account Holder Name",
+              labelText: 'Account Holder Name',
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return "Enter account holder name";
+                  return 'Enter account holder name';
                 }
                 if (value.trim().isEmpty) {
-                  return "Enter account holder name";
+                  return 'Enter account holder name';
                 }
                 return null;
               },
             ),
-
             const SizedBox(height: 32),
-
-            // Action Buttons
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
+                      foregroundColor: hintColor,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: const Text("Cancel"),
+                    child: const Text('Cancel'),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 Expanded(
                   flex: 2,
-                  child: ElevatedButton(
-                    onPressed: isFormValid ? _submitForm : null,
-                    style: ElevatedButton.styleFrom(
+                  child: FilledButton(
+                    onPressed: _canSubmit ? _submitForm : null,
+                    style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: colorScheme.primary,
                       foregroundColor: Colors.white,
-                      elevation: 0,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      disabledBackgroundColor: colorScheme.surfaceVariant,
+                      disabledBackgroundColor:
+                          colorScheme.surfaceContainerHighest,
                       disabledForegroundColor: colorScheme.onSurfaceVariant,
                     ),
                     child: const Text(
-                      "Add Account",
+                      'Add Account',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,

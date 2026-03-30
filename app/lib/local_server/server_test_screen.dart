@@ -146,7 +146,6 @@ class _ServerTestScreenState extends State<ServerTestScreen> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text('Copied: $url'),
-                                backgroundColor: Colors.green,
                               ),
                             );
                           }

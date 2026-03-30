@@ -7,15 +7,17 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.os.Build
+import android.os.Bundle
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
-import es.antonborri.home_widget.HomeWidgetProvider
+import androidx.core.content.ContextCompat
 import es.antonborri.home_widget.HomeWidgetPlugin
+import es.antonborri.home_widget.HomeWidgetProvider
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -28,6 +30,15 @@ class ExpenseWidgetProvider : HomeWidgetProvider() {
         private const val PREF_KEY_HIDDEN_PREFIX = "expense_widget_hidden_"
         private const val PREF_KEY_FLOW_PREFIX = "expense_widget_show_income_"
     }
+
+    private data class WidgetMode(
+        val widthDp: Int,
+        val heightDp: Int,
+        val compact: Boolean,
+        val showTitle: Boolean,
+        val showLastUpdated: Boolean,
+        val maxCategoryRows: Int
+    )
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
@@ -47,6 +58,7 @@ class ExpenseWidgetProvider : HomeWidgetProvider() {
                 val appWidgetManager = AppWidgetManager.getInstance(context)
                 onUpdate(context, appWidgetManager, intArrayOf(widgetId), prefs)
             }
+
             ACTION_TOGGLE_FLOW -> {
                 val widgetId = intent.getIntExtra(
                     AppWidgetManager.EXTRA_APPWIDGET_ID,
@@ -65,6 +77,17 @@ class ExpenseWidgetProvider : HomeWidgetProvider() {
         }
     }
 
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: Bundle
+    ) {
+        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+        val prefs = HomeWidgetPlugin.getData(context)
+        onUpdate(context, appWidgetManager, intArrayOf(appWidgetId), prefs)
+    }
+
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
@@ -73,60 +96,24 @@ class ExpenseWidgetProvider : HomeWidgetProvider() {
     ) {
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.widget_expense_layout)
+            val mode = resolveWidgetMode(appWidgetManager, widgetId)
+
             val hiddenKey = "$PREF_KEY_HIDDEN_PREFIX$widgetId"
             val isHidden = widgetData.getBoolean(hiddenKey, false)
             val flowKey = "$PREF_KEY_FLOW_PREFIX$widgetId"
             val showIncome = widgetData.getBoolean(flowKey, false)
 
-            val toggleIntent = Intent(context, ExpenseWidgetProvider::class.java).apply {
-                action = ACTION_TOGGLE_VISIBILITY
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-            }
-            val toggleFlowIntent = Intent(context, ExpenseWidgetProvider::class.java).apply {
-                action = ACTION_TOGGLE_FLOW
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-            }
-            val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            } else {
-                PendingIntent.FLAG_UPDATE_CURRENT
-            }
-            val launchIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-            val launchPendingIntent = PendingIntent.getActivity(
-                context,
-                widgetId + 1000,
-                launchIntent,
-                pendingFlags
-            )
-            views.setOnClickPendingIntent(R.id.widget_root, launchPendingIntent)
-            val togglePendingIntent = PendingIntent.getBroadcast(
-                context,
-                widgetId,
-                toggleIntent,
-                pendingFlags
-            )
-            views.setOnClickPendingIntent(R.id.toggle_visibility, togglePendingIntent)
-            val toggleFlowPendingIntent = PendingIntent.getBroadcast(
-                context,
-                widgetId + 2000,
-                toggleFlowIntent,
-                pendingFlags
-            )
-            views.setOnClickPendingIntent(R.id.toggle_flow, toggleFlowPendingIntent)
+            bindClickActions(context, views, widgetId)
             views.setImageViewResource(
                 R.id.toggle_visibility,
                 if (isHidden) R.drawable.ic_visibility_off else R.drawable.ic_visibility_on
             )
+            applyResponsiveLayout(context, views, mode)
 
             val totalKey = if (showIncome) "income_total" else "expense_total"
-            val totalRawKey =
-                if (showIncome) "income_total_raw" else "expense_total_raw"
-            val lastUpdatedKey =
-                if (showIncome) "income_last_updated" else "expense_last_updated"
-            val categoryPrefix =
-                if (showIncome) "income_category" else "category"
+            val totalRawKey = if (showIncome) "income_total_raw" else "expense_total_raw"
+            val lastUpdatedKey = if (showIncome) "income_last_updated" else "expense_last_updated"
+            val categoryPrefix = if (showIncome) "income_category" else "category"
 
             val totalAmount = widgetData.getString(totalKey, "0 ETB") ?: "0 ETB"
             val lastUpdated = widgetData.getString(lastUpdatedKey, null)
@@ -137,14 +124,14 @@ class ExpenseWidgetProvider : HomeWidgetProvider() {
             val value = parts.getOrNull(0) ?: "0"
             val currency = parts.getOrNull(1) ?: "ETB"
 
-            views.setTextViewText(R.id.last_updated, lastUpdated)
             views.setTextViewText(
                 R.id.widget_title,
                 if (showIncome) "Today's Income" else "Today's Spending"
             )
+            views.setTextViewText(R.id.last_updated, lastUpdated)
             views.setTextViewText(
                 R.id.toggle_flow,
-                if (showIncome) "Show Spending" else "Show Income"
+                if (showIncome) "Show expense" else "Show income"
             )
 
             val categoryRowIds = listOf(
@@ -169,143 +156,251 @@ class ExpenseWidgetProvider : HomeWidgetProvider() {
             )
 
             val rankColors = intArrayOf(
-                Color.parseColor("#5AC8FA"),
-                Color.parseColor("#FFB347"),
-                Color.parseColor("#FF5D73")
+                ContextCompat.getColor(context, R.color.budget_widget_progress_safe),
+                ContextCompat.getColor(context, R.color.budget_widget_progress_warn),
+                ContextCompat.getColor(context, R.color.budget_widget_progress_danger)
             )
+
+            val totalRaw = widgetData.getString(totalRawKey, null)
+                ?.toDoubleOrNull()
+                ?: parseCompactAmount(widgetData.getString(totalKey, null))
+            val rawAmounts = DoubleArray(3) { index ->
+                widgetData.getString("${categoryPrefix}_${index}_amount_raw", null)
+                    ?.toDoubleOrNull()
+                    ?.takeIf { it > 0.0 }
+                    ?: parseCompactAmount(
+                        widgetData.getString("${categoryPrefix}_${index}_amount", null)
+                    )
+            }
+            val names = Array(3) { index ->
+                widgetData.getString("${categoryPrefix}_${index}_name", "") ?: ""
+            }
+            val labels = Array(3) { index ->
+                widgetData.getString("${categoryPrefix}_${index}_amount", "") ?: ""
+            }
+
+            val sumTop = rawAmounts.sum()
+            var base = if (totalRaw > 0.0) totalRaw else sumTop
+            if (base < sumTop) base = sumTop
+
+            createCategoryBarBitmap(
+                context = context,
+                appWidgetManager = appWidgetManager,
+                widgetId = widgetId,
+                values = rawAmounts,
+                base = base,
+                colors = rankColors
+            )?.let { bitmap ->
+                views.setImageViewBitmap(R.id.category_bar, bitmap)
+            }
 
             if (isHidden) {
                 views.setTextViewText(R.id.expense_total_value, "***")
                 views.setTextViewText(R.id.expense_total_currency, "")
-                views.setViewVisibility(R.id.category_bar, View.VISIBLE)
-
-                val barBitmap = createCategoryBarBitmap(
-                    context = context,
-                    appWidgetManager = appWidgetManager,
-                    widgetId = widgetId,
-                    widgetData = widgetData,
-                    colors = rankColors,
-                    totalRawKey = totalRawKey,
-                    totalKey = totalKey,
-                    categoryPrefix = categoryPrefix
-                )
-                if (barBitmap != null) {
-                    views.setImageViewBitmap(R.id.category_bar, barBitmap)
-                }
-
-                val totalRaw = widgetData.getString(totalRawKey, null)
-                    ?.toDoubleOrNull()
-                    ?: parseCompactAmount(widgetData.getString(totalKey, null))
-                val amounts = DoubleArray(3) { index ->
-                    widgetData.getString("${categoryPrefix}_${index}_amount_raw", null)
-                        ?.toDoubleOrNull()
-                        ?.takeIf { it > 0.0 }
-                        ?: parseCompactAmount(
-                            widgetData.getString("${categoryPrefix}_${index}_amount", null)
-                        )
-                }
-                val sumTop = amounts.sum()
-                var base = if (totalRaw > 0.0) totalRaw else sumTop
-                if (base < sumTop) base = sumTop
-
-                for (i in 0..2) {
-                    val name =
-                        widgetData.getString("${categoryPrefix}_${i}_name", "") ?: ""
-                    if (name.isNotEmpty()) {
-                        val percent = if (base > 0.0) {
-                            ((amounts[i] / base) * 100).roundToInt()
-                        } else {
-                            0
-                        }
-                        views.setViewVisibility(categoryRowIds[i], View.VISIBLE)
-                        views.setTextViewText(categoryNameIds[i], name)
-                        views.setTextViewText(categoryAmountIds[i], "$percent%")
-                        views.setInt(categoryDotIds[i], "setColorFilter", rankColors[i])
-                    } else {
-                        views.setViewVisibility(categoryRowIds[i], View.INVISIBLE)
-                    }
-                }
             } else {
                 views.setTextViewText(R.id.expense_total_value, value)
                 views.setTextViewText(R.id.expense_total_currency, " $currency")
-                views.setViewVisibility(R.id.category_bar, View.VISIBLE)
+            }
 
-                val barBitmap = createCategoryBarBitmap(
-                    context = context,
-                    appWidgetManager = appWidgetManager,
-                    widgetId = widgetId,
-                    widgetData = widgetData,
-                    colors = rankColors,
-                    totalRawKey = totalRawKey,
-                    totalKey = totalKey,
-                    categoryPrefix = categoryPrefix
-                )
-                if (barBitmap != null) {
-                    views.setImageViewBitmap(R.id.category_bar, barBitmap)
+            for (i in 0..2) {
+                if (i >= mode.maxCategoryRows || names[i].isBlank()) {
+                    views.setViewVisibility(categoryRowIds[i], View.GONE)
+                    continue
                 }
 
-                for (i in 0..2) {
-                    val name =
-                        widgetData.getString("${categoryPrefix}_${i}_name", "") ?: ""
-                    val amount =
-                        widgetData.getString("${categoryPrefix}_${i}_amount", "") ?: ""
+                views.setViewVisibility(categoryRowIds[i], View.VISIBLE)
+                views.setTextViewText(categoryNameIds[i], names[i])
+                views.setInt(categoryDotIds[i], "setColorFilter", rankColors[i])
 
-                    if (name.isNotEmpty()) {
-                        views.setViewVisibility(categoryRowIds[i], View.VISIBLE)
-                        views.setTextViewText(categoryNameIds[i], name)
-                        views.setTextViewText(categoryAmountIds[i], amount)
-                        views.setInt(categoryDotIds[i], "setColorFilter", rankColors[i])
+                val valueLabel = if (isHidden) {
+                    val percent = if (base > 0.0) {
+                        ((rawAmounts[i] / base) * 100).roundToInt().coerceIn(0, 999)
                     } else {
-                        views.setViewVisibility(categoryRowIds[i], View.INVISIBLE)
+                        0
                     }
+                    "$percent%"
+                } else {
+                    labels[i]
                 }
+                views.setTextViewText(categoryAmountIds[i], valueLabel)
             }
 
             appWidgetManager.updateAppWidget(widgetId, views)
         }
     }
 
+    private fun resolveWidgetMode(
+        appWidgetManager: AppWidgetManager,
+        widgetId: Int
+    ): WidgetMode {
+        val options = appWidgetManager.getAppWidgetOptions(widgetId)
+
+        val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+            .takeIf { it > 0 }
+            ?: options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH).takeIf { it > 0 }
+            ?: 240
+        val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
+            .takeIf { it > 0 }
+            ?: options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).takeIf { it > 0 }
+            ?: 110
+
+        val compact = widthDp < 220 || heightDp < 120
+        val showTitle = widthDp >= 178
+        val showLastUpdated = heightDp >= 108
+        val maxCategoryRows = when {
+            widthDp < 182 || heightDp < 112 -> 1
+            widthDp < 226 || heightDp < 146 -> 2
+            else -> 3
+        }
+
+        return WidgetMode(
+            widthDp = widthDp,
+            heightDp = heightDp,
+            compact = compact,
+            showTitle = showTitle,
+            showLastUpdated = showLastUpdated,
+            maxCategoryRows = maxCategoryRows
+        )
+    }
+
+    private fun applyResponsiveLayout(context: Context, views: RemoteViews, mode: WidgetMode) {
+        val density = context.resources.displayMetrics.density
+        val horizontalPadding = if (mode.compact) 10 else 12
+        val verticalPadding = if (mode.compact) 10 else 12
+
+        views.setViewPadding(
+            R.id.widget_root,
+            (horizontalPadding * density).roundToInt(),
+            (verticalPadding * density).roundToInt(),
+            (horizontalPadding * density).roundToInt(),
+            (verticalPadding * density).roundToInt()
+        )
+
+        views.setViewVisibility(
+            R.id.widget_title,
+            if (mode.showTitle) View.VISIBLE else View.GONE
+        )
+        views.setViewVisibility(
+            R.id.last_updated,
+            if (mode.showLastUpdated) View.VISIBLE else View.GONE
+        )
+
+        views.setTextViewTextSize(
+            R.id.widget_title,
+            TypedValue.COMPLEX_UNIT_SP,
+            if (mode.compact) 12f else 13f
+        )
+        views.setTextViewTextSize(
+            R.id.toggle_flow,
+            TypedValue.COMPLEX_UNIT_SP,
+            if (mode.compact) 10f else 11f
+        )
+        views.setTextViewTextSize(
+            R.id.expense_total_value,
+            TypedValue.COMPLEX_UNIT_SP,
+            if (mode.compact) 24f else 30f
+        )
+        views.setTextViewTextSize(
+            R.id.expense_total_currency,
+            TypedValue.COMPLEX_UNIT_SP,
+            if (mode.compact) 11f else 13f
+        )
+        views.setTextViewTextSize(
+            R.id.last_updated,
+            TypedValue.COMPLEX_UNIT_SP,
+            if (mode.compact) 7.5f else 8f
+        )
+
+        val rowNameIds = listOf(R.id.category_name_0, R.id.category_name_1, R.id.category_name_2)
+        val rowAmountIds = listOf(
+            R.id.category_amount_0,
+            R.id.category_amount_1,
+            R.id.category_amount_2
+        )
+        rowNameIds.forEach { id ->
+            views.setTextViewTextSize(
+                id,
+                TypedValue.COMPLEX_UNIT_SP,
+                if (mode.compact) 10f else 11f
+            )
+        }
+        rowAmountIds.forEach { id ->
+            views.setTextViewTextSize(
+                id,
+                TypedValue.COMPLEX_UNIT_SP,
+                if (mode.compact) 10f else 11f
+            )
+        }
+    }
+
+    private fun bindClickActions(context: Context, views: RemoteViews, widgetId: Int) {
+        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val launchPendingIntent = PendingIntent.getActivity(
+            context,
+            widgetId + 1000,
+            launchIntent,
+            pendingFlags
+        )
+        views.setOnClickPendingIntent(R.id.widget_root, launchPendingIntent)
+
+        val toggleIntent = Intent(context, ExpenseWidgetProvider::class.java).apply {
+            action = ACTION_TOGGLE_VISIBILITY
+            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+        }
+        val togglePendingIntent = PendingIntent.getBroadcast(
+            context,
+            widgetId,
+            toggleIntent,
+            pendingFlags
+        )
+        views.setOnClickPendingIntent(R.id.toggle_visibility, togglePendingIntent)
+
+        val toggleFlowIntent = Intent(context, ExpenseWidgetProvider::class.java).apply {
+            action = ACTION_TOGGLE_FLOW
+            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+        }
+        val toggleFlowPendingIntent = PendingIntent.getBroadcast(
+            context,
+            widgetId + 2000,
+            toggleFlowIntent,
+            pendingFlags
+        )
+        views.setOnClickPendingIntent(R.id.toggle_flow, toggleFlowPendingIntent)
+    }
+
     private fun createCategoryBarBitmap(
         context: Context,
         appWidgetManager: AppWidgetManager,
         widgetId: Int,
-        widgetData: SharedPreferences,
-        colors: IntArray,
-        totalRawKey: String,
-        totalKey: String,
-        categoryPrefix: String
+        values: DoubleArray,
+        base: Double,
+        colors: IntArray
     ): Bitmap? {
         val options = appWidgetManager.getAppWidgetOptions(widgetId)
         val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
             .takeIf { it > 0 }
-            ?: options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH)
+            ?: options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH).takeIf { it > 0 }
+            ?: 240
+
         val density = context.resources.displayMetrics.density
-        val widthPx = (widthDp * density).toInt().coerceAtLeast(1)
-        val heightPx = (10 * density).toInt().coerceAtLeast(1)
-
-        val totalRaw = widgetData.getString(totalRawKey, null)
-            ?.toDoubleOrNull()
-            ?: parseCompactAmount(widgetData.getString(totalKey, null))
-        val amounts = DoubleArray(3) { index ->
-            widgetData.getString("${categoryPrefix}_${index}_amount_raw", null)
-                ?.toDoubleOrNull()
-                ?.takeIf { it > 0.0 }
-                ?: parseCompactAmount(
-                    widgetData.getString("${categoryPrefix}_${index}_amount", null)
-                )
-        }
-
-        val sumTop = amounts.sum()
-        var base = if (totalRaw > 0.0) totalRaw else sumTop
-        if (base < sumTop) base = sumTop
-        if (base <= 0.0) {
-            return Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
-        }
+        val widthPx = ((widthDp - 24).coerceAtLeast(96) * density).toInt().coerceAtLeast(1)
+        val heightPx = (8f * density).toInt().coerceAtLeast(1)
 
         val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        if (base <= 0.0) return bitmap
+
         val canvas = Canvas(bitmap)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         val radius = heightPx / 2f
+
         val clipPath = Path().apply {
             addRoundRect(
                 RectF(0f, 0f, widthPx.toFloat(), heightPx.toFloat()),
@@ -317,11 +412,12 @@ class ExpenseWidgetProvider : HomeWidgetProvider() {
         canvas.clipPath(clipPath)
 
         var startX = 0f
-        for (i in 0..2) {
-            val fraction = amounts[i] / base
+        for (index in values.indices) {
+            val fraction = (values[index] / base).coerceIn(0.0, 1.0)
             val segmentWidth = (fraction * widthPx).toFloat()
             if (segmentWidth <= 0f) continue
-            paint.color = colors[i]
+
+            paint.color = colors[index % colors.size]
             val endX = (startX + segmentWidth).coerceAtMost(widthPx.toFloat())
             canvas.drawRect(startX, 0f, endX, heightPx.toFloat(), paint)
             startX = endX
@@ -334,6 +430,7 @@ class ExpenseWidgetProvider : HomeWidgetProvider() {
         if (raw.isNullOrBlank()) return 0.0
         val normalized = raw.trim().lowercase(Locale.US).replace("etb", "").trim()
         if (normalized.isEmpty()) return 0.0
+
         val multiplier = when {
             normalized.endsWith("k") -> 1000.0
             normalized.endsWith("m") -> 1000000.0
